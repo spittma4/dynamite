@@ -1,5 +1,6 @@
 import type { GrooveThresholds } from '@shared';
 
+import { GROOVE } from '../nouns';
 import { GROOVE_COLOURS } from '../render/palette';
 
 /**
@@ -18,7 +19,7 @@ export interface GrooveBandView {
 
 const LABELS: Record<GrooveBandKey, string> = {
     onFire: 'ON FIRE',
-    groove: 'IN THE GROOVE',
+    groove: `IN THE ${GROOVE}`,
     baseline: '',
     churn: 'THE CHURN',
     meltdown: 'MELTDOWN',

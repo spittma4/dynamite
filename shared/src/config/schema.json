@@ -286,6 +286,24 @@
                 }
             }
         },
+        "tempoFloorsMs": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "markSpacing",
+                "leadInMs"
+            ],
+            "properties": {
+                "markSpacing": {
+                    "type": "number",
+                    "minimum": 250
+                },
+                "leadInMs": {
+                    "type": "number",
+                    "minimum": 400
+                }
+            }
+        },
         "carry": {
             "type": "object",
             "additionalProperties": false,
@@ -1264,6 +1282,7 @@
                     "additionalProperties": false,
                     "required": [
                         "clicks",
+                        "leadSeconds",
                         "clickSeconds",
                         "perfectMs",
                         "okMs"
@@ -1272,6 +1291,10 @@
                         "clicks": {
                             "type": "integer",
                             "minimum": 1
+                        },
+                        "leadSeconds": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
                         },
                         "clickSeconds": {
                             "type": "number",

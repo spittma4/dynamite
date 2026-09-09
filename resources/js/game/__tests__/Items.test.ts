@@ -19,9 +19,9 @@ import {
     flightPose,
     flightProgress,
     itemSkin,
-    kegLook,
     placementOf,
 } from '../render/Items';
+import { KEG_WORD, kegLook } from '../render/stationGlyphs';
 
 /**
  * The item layer's decisions (F06 §Client). Everything here is a function of the
@@ -35,6 +35,20 @@ const CHORES = {
     stomp: 'STOMPING',
     repair: 'CALLING MAINTENANCE',
 };
+
+/**
+ * The words the panels print. The Jig's keg gauge wrote `quality.toFixed(1)`
+ * under a label reading 'KEG', so the panel said 'KEG / 0.7' — a float straight
+ * off the schema. The glyph tint already knew what 0.7 meant.
+ */
+describe('KEG_WORD', () => {
+    it('gives every look the panel a word instead of the number', () => {
+        expect(KEG_WORD[kegLook(0.4, false)]).toBe('DUD');
+        expect(KEG_WORD[kegLook(0.7, false)]).toBe('DAMP');
+        expect(KEG_WORD[kegLook(1, false)]).toBe('FULL');
+        expect(KEG_WORD[kegLook(1, true)]).toBe('PRIME');
+    });
+});
 
 describe('kegLook', () => {
     it('reads the three quality steps the server writes', () => {

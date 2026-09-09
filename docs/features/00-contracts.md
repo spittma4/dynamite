@@ -337,7 +337,7 @@ stations tick), no clipboard, no snap, arrows keep walking, `E` goes to the modu
 
 `LevelConfig` top-level keys (root `additionalProperties: false`; `?` = optional, default in §13):
 `key name notes? day players layout groove clipboardSeconds clipboardMemorySeconds? interrupts?
-movement? bpm windowFloorsMs carry stations recipes orders hazards grading scoring? economy scaling copy?`.
+movement? bpm windowFloorsMs tempoFloorsMs? carry stations recipes orders hazards grading scoring? economy scaling copy?`.
 
 - `day: { shiftSeconds, orderBook, endsOn: 'either'|'book'|'clock'|'never', earlyFinishBonusPerMinute, earlyFinishCap }`.
   `endsOn === 'never'` (Sandbox) ⇔ `shiftSeconds === 0 && orderBook === 0`: the day starts on `start`,
@@ -357,6 +357,25 @@ movement? bpm windowFloorsMs carry stations recipes orders hazards grading scori
 - `scoring?: { perOrder }` — read by F09 `truckCredit` for the departure toast only; never added to `FactoryState.score`.
 - `recipes`, `orders`, `economy`, `scaling`, `windowFloorsMs`, `bpm`, `clipboardSeconds`, `copy?: { clipboard: string[] }`
   (`additionalProperties: true` on `copy` only) as in F02 §Data.
+- `tempoFloorsMs?: { markSpacing, leadInMs }` — the other half of ADR 0009's flat execution
+  difficulty (F14, EL-186). `windowFloorsMs` bounds how forgiving a mark is; this bounds how close
+  two marks may sit and how much warning the first one gives. Schema minimums `250` / `400`, so a
+  level may raise its own floors and never lower them, exactly as `windowFloorsMs` carries `100` /
+  `45`. `validateLevelConfig` enforces three semantic rules against it — **T1** every judged marker
+  series is at least `markSpacing` apart (`crimp.clickSeconds`, `knots.secondsPerKnot`, the pour
+  grid `60000 / bpm`, the dock's `1000 / beepHz`); **T2** `okMs < spacing / 2` for each of those, so
+  an OK window never reaches half way to its neighbour; **T3** `leadMs >= leadInMs` and
+  `okMs <= leadMs` for `crimp.leadSeconds`, `toss.arcSeconds` and the pour's
+  `min(beatsByQuality) * 60000 / bpm`, plus `okMs <= leadMs` alone at both ends of the Slammer's
+  charge (`okMsAtMinCharge` vs `minChargeSeconds`, `okMsAtMaxCharge` vs `maxChargeSeconds`) and for
+  `carry.catchOkMs` against `carry.throwFlightSeconds` — a self-timed hold and a flight already in
+  the air are cues the player caused, so neither earns a reaction-time floor, but neither may have
+  its window open before it. **T3's lead floor** binds only `crimp.leadSeconds`, `toss.arcSeconds`
+  and the pour grid; `knots.secondsPerKnot` and `carry.throwFlightSeconds` are deliberately outside
+  it, because both are tempo fields F14's Dexterity dial scales with nothing to clamp to, so a floor
+  on them would make a hard rung's output fail re-validation. The second clause survives that
+  transform on its own: windows never widen faster than the beat (`w <= s`), so
+  `catchOkMs * w <= flight * 1000 * s`.
 
 `StationConfig` keys (`additionalProperties: false`): `id type line joinMode anchor workTiles rackTiles
 inputShelf? outputShelf? floorRing nominalSeconds floorSeconds staffing churnSensitive minigame`.
@@ -365,7 +384,9 @@ inputShelf? outputShelf? floorRing nominalSeconds floorSeconds staffing churnSen
 `rackTiles` may be `[]`. An output shelf accepts the `output.type` of the recipe whose `station ===
 type`. `minigame` by type:
 - `boom_powder`: `{ heat: { minChargeSeconds, maxChargeSeconds, okMsAtMaxCharge, okMsAtMinCharge, deadCenterMs, churnBandDrift, overholdMs? }, comboTiers, overflowSpills, comboBannerSeconds? }`
-- `assembly`: `{ pour: { beatsByQuality, perfectMs, okMs, primeKegWindowMultiplier }, knots: { long, short, secondsPerKnot, perfectMs, okMs }, crimp: { clicks, clickSeconds, perfectMs, okMs }, toss: { arcSeconds, perfectMs, okMs }, casings?: { stock, dentChance } }`
+- `assembly`: `{ pour: { beatsByQuality, perfectMs, okMs, primeKegWindowMultiplier }, knots: { long, short, secondsPerKnot, perfectMs, okMs }, crimp: { clicks, leadSeconds, clickSeconds, perfectMs, okMs }, toss: { arcSeconds, perfectMs, okMs }, casings?: { stock, dentChance } }`
+  (`crimp.leadSeconds` is required, added by F14/EL-186: the gap before the ratchet and the gap
+  inside it are different design problems that were only ever one number by accident)
   (`casings` configures F08's input-shelf feeder — the M1 casing supply)
 - `dock`: `{ beepHz, perfectMs, okMs, tailgateWindowSeconds, tailgateHoldSeconds?, leaveSeconds? }` (`rattlyOkMs`, `laneIsSlot` are M2 and not accepted)
 
@@ -671,6 +692,12 @@ modules: `shared/src/sim/slammer.ts` (F07: `SlammerMg`, `encodeMg`, `decodeMg`, 
 `idleMg`, `KEG_QUALITY` — no spark-tile picker); `shared/src/sim/jig.ts` (F08: `JigConfig` incl.
 `casings`, `JigMg`, `JigState`, `JigEvent`, `JigEffect`, `createJigState`, `reduceJig`, `toMg`,
 `stationStatus`, timing helpers); `shared/src/sim/orders.ts` + `shared/src/sim/dock.ts` (F09, §10.6).
+One of those timing helpers carries a signature other features read:
+`crimpClicks(lastKnotAt: number, clicks: number, leadSeconds: number, clickSeconds: number):
+number[]` — four parameters since F14/EL-186, and it now places click `i` at
+`lastKnotAt + leadSeconds + i * clickSeconds` counting from `i = 0`, so the ratchet gets the beat
+of warning the knots get (`knotTimes`) instead of opening one click after the knot the player is
+still resolving.
 
 ### 10.4 Items — `game-server/src/sim/items.ts` (F06)
 
@@ -1003,6 +1030,7 @@ consumers read the applied value and never branch on `undefined`.
 | `movement.floorItemSpeed` | `0.4` | F03 `World.tileSpeed` |
 | `movement.spillSpeed` | `0.6` | F03 `World.tileSpeed` |
 | `clipboardMemorySeconds` | `60` | F05 |
+| `tempoFloorsMs` | `{ markSpacing: 250, leadInMs: 400 }` | F02 `validateLevelConfig` T1–T3; F14 `applyDifficulty` clamps |
 | `interrupts.everySeconds` | `6` | F05 |
 | `interrupts.pauseSeconds` | `0.5` | F05 |
 | `carry.putDownSeconds` | `0.3` | F06 |

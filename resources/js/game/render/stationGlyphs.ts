@@ -24,6 +24,36 @@ export const GLYPH_COLOURS: Record<string, number> = {
     parts: 0x9aa4b0,
 };
 
+/**
+ * The quality spectrum as a name (contracts §3): a dud is grey and deflated, a
+ * damp keg steams, a prime keg glows. Prime is checked last so a keg knocked
+ * down to damp stops glowing the moment its quality drops. It lives here rather
+ * than with the floor-size drawing in `render/Items.ts` because that module
+ * pulls Phaser in at runtime, and the Jig's panel needs the same answer.
+ */
+export type KegLook = 'dud' | 'damp' | 'normal' | 'prime';
+
+export function kegLook(quality: number, prime: boolean): KegLook {
+    if (quality <= 0.4) return 'dud';
+
+    if (quality < 1) return 'damp';
+
+    return prime ? 'prime' : 'normal';
+}
+
+/**
+ * The same four states as a word, for the panels that print them. The Jig's keg
+ * gauge wrote `quality.toFixed(1)` under a label reading 'KEG' — 'KEG / 0.7' is
+ * a float out of the schema, and no player can decode it into 'this one pours
+ * slowly'. The tint has always known the answer; now the readout says it too.
+ */
+export const KEG_WORD: Record<KegLook, string> = {
+    dud: 'DUD',
+    damp: 'DAMP',
+    normal: 'FULL',
+    prime: 'PRIME',
+};
+
 export const UNKNOWN_GLYPH = 0x8a8a94;
 export const HALO_COLOUR = 0xf5c542;
 const GLYPH_OUTLINE = 0x1c1c22;

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { ItemType, StationConfig } from '@shared';
 
-import { FUSE_SET, NEED_KEG, SHELF_FULL, SHELF_FULL_HANDS } from '../minigames/Jig';
+import { NEED_KEG, SHELF_FULL, SHELF_FULL_HANDS } from '../minigames/Jig';
+import { FUSE_SET } from '../nouns';
 import { type JigStall, apron, outwardSide, shortageOf } from '../render/intake';
 
 /** The ways the Jig stops, as `StationState.mg` reports them. */

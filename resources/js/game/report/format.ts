@@ -60,7 +60,9 @@ export function pnlLines(p: ReportPayload, copy: Copy): string[] {
         row('Rework', String(p.rework)),
         '',
         row('Verdict:', p.verdict),
-        `Revenue ${pnl.revenue} − Waste ${pnl.waste} = ${pnl.profit}`,
+        // The unit was on the grade line below and nowhere else, so the money
+        // the day actually turned on read as three numbers with no denomination.
+        `Revenue ${pnl.revenue} − Waste ${pnl.waste} = ${pnl.profit} coin`,
     ];
 
     if (pnl.profit < 0) lines.push(copy.report.loss);

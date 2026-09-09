@@ -9,8 +9,8 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import { truckIn, truckLeaves } from '../../nouns';
 import type { Factory } from '../../scenes/Factory';
-import { mmss } from '../../ui/format';
 
 /**
  * The dock wall as read from across the floor (F09 §Client): how long the truck
@@ -56,13 +56,10 @@ export function bayLabel(mg: DockMg, serverNow: number): BayLabel {
     if (mg.tailgateUntil > serverNow) return { text: 'SLAM IT', kind: 'slam' };
 
     if (mg.truck.phase === 'docked') {
-        return {
-            text: `TRUCK LEAVES ${mmss(mg.truck.leavesAt - serverNow)}`,
-            kind: 'countdown',
-        };
+        return { text: truckLeaves(mg.truck.leavesAt - serverNow), kind: 'countdown' };
     }
 
-    return { text: `NEXT ${mmss(mg.truck.arrivesAt - serverNow)}`, kind: 'next' };
+    return { text: truckIn(mg.truck.arrivesAt - serverNow), kind: 'next' };
 }
 
 /** The bay light is lit for `flashMs` after each beep, and dark before the first. */

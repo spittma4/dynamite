@@ -45,7 +45,6 @@ const OVERFILL_FRACTION = 0.2;
 /** docs/04: an OK toss lands askew on the jig surface and A has to square it up. */
 const SURFACE_TAX_SECONDS = 0.5;
 const FETCH_SECONDS = 0.6;
-const CRIMP_PROGRESS_SECONDS = 0.6;
 const PRIME_QUALITY = 1;
 const EPSILON = 1e-9;
 
@@ -243,10 +242,20 @@ export function knotTimes(startAt: number, count: number, secondsPerKnot: number
     return times;
 }
 
-export function crimpClicks(lastKnotAt: number, clicks: number, clickSeconds: number): number[] {
+/**
+ * The ratchet gets the same beat of warning the knots get, and then steps at
+ * its own gap: the wait before the first click and the wait between clicks are
+ * two design problems that were only ever one number by accident (F14).
+ */
+export function crimpClicks(
+    lastKnotAt: number,
+    clicks: number,
+    leadSeconds: number,
+    clickSeconds: number,
+): number[] {
     const times: number[] = [];
 
-    for (let i = 1; i <= clicks; i++) times.push(lastKnotAt + i * clickSeconds);
+    for (let i = 0; i < clicks; i++) times.push(lastKnotAt + leadSeconds + i * clickSeconds);
 
     return times;
 }
@@ -467,7 +476,16 @@ function progressOf(state: JigState, view: JigTickView, rearming: boolean): numb
         return 0.5 + 0.25 * clamp01(state.knotIndex / n);
     }
 
-    return 0.75 + 0.25 * clamp01((view.now - state.beatStartAt) / CRIMP_PROGRESS_SECONDS);
+    return 0.75 + 0.25 * clamp01((view.now - state.beatStartAt) / crimpSpan(state.cfg.crimp));
+}
+
+/**
+ * The bar has to empty on the click the player is judged against, so it reads
+ * the ratchet's own length out of config rather than a constant that was only
+ * ever right for one tuning (F14).
+ */
+function crimpSpan(cfg: JigConfig['crimp']): number {
+    return Math.max(cfg.leadSeconds + (cfg.clicks - 1) * cfg.clickSeconds, EPSILON);
 }
 
 export function reduceJig(state: JigState, event: JigEvent, rng: () => number): JigEffect[] {
@@ -762,9 +780,9 @@ function enterKnots(state: JigState, view: JigTickView, rng: () => number): void
 
 function enterCrimp(state: JigState, fallback: number): void {
     const lastKnotAt = state.knotAt[state.knotAt.length - 1] ?? fallback;
-    const { clicks, clickSeconds } = state.cfg.crimp;
+    const { clicks, leadSeconds, clickSeconds } = state.cfg.crimp;
 
-    state.crimpClickAt = crimpClicks(lastKnotAt, clicks, clickSeconds);
+    state.crimpClickAt = crimpClicks(lastKnotAt, clicks, leadSeconds, clickSeconds);
     state.beatStartAt = lastKnotAt;
     state.phase = 'crimp';
 }

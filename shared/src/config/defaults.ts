@@ -20,6 +20,18 @@ export const LEVEL_DEFAULTS = {
         spillSpeed: 0.6,
     },
     clipboardMemorySeconds: 60,
+    /**
+     * 250 ms is the tightest two marks may sit. It is twice `windowFloorsMs.ok`
+     * with margin, so an OK window clamped up to 100 ms still cannot reach its
+     * neighbour; and it clears the ~200 ms inter-onset boundary under which a
+     * series stops reading as separate marks and starts reading as one texture,
+     * which matters because counting marks is harder than syncing to them.
+     * 400 ms is the least warning a mark may give: median simple visual reaction
+     * time is ~250 ms with a tail past 300, so a player who reacts rather than
+     * predicts must still get a tap in. It is also one beat at the campaign's
+     * bpm 150 — the warning the knots already get (`jig.ts` `knotTimes`).
+     */
+    tempoFloorsMs: { markSpacing: 250, leadInMs: 400 },
     interrupts: { everySeconds: 6, pauseSeconds: 0.5 },
     carry: { putDownSeconds: 0.3, hitStaggerSeconds: 0.5 },
     hazards: { unjamSeconds: 4, sweepSecondsPerTile: 1.5, repairSeconds: 10, bannerSeconds: 3 },
@@ -71,6 +83,7 @@ export function applyDefaults(level: LevelConfig): LevelConfig {
     filled.movement = { ...LEVEL_DEFAULTS.movement, ...filled.movement };
     filled.interrupts = { ...LEVEL_DEFAULTS.interrupts, ...filled.interrupts };
     filled.clipboardMemorySeconds ??= LEVEL_DEFAULTS.clipboardMemorySeconds;
+    filled.tempoFloorsMs = { ...LEVEL_DEFAULTS.tempoFloorsMs, ...filled.tempoFloorsMs };
     filled.scoring = { ...LEVEL_DEFAULTS.scoring, ...filled.scoring };
     filled.carry.putDownSeconds ??= LEVEL_DEFAULTS.carry.putDownSeconds;
     filled.carry.hitStaggerSeconds ??= LEVEL_DEFAULTS.carry.hitStaggerSeconds;

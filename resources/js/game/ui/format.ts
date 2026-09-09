@@ -18,3 +18,13 @@ export function pct(fraction: number): string {
 export function fixed(value: number, decimals: number): string {
     return value.toFixed(decimals);
 }
+
+/**
+ * How far `Space` throws what you are carrying. It is `level.carry.throwTiles`,
+ * a per-level knob, and two surfaces say it in the same breath — the help
+ * panel's floor row and the Slammer's hands panel — so both read the number off
+ * the level rather than one hedging while the other asserts.
+ */
+export function throwDistance(tiles: number): string {
+    return `${tiles} tile${tiles === 1 ? '' : 's'}`;
+}

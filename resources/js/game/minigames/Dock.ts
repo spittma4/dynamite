@@ -4,6 +4,7 @@ import {
     type DockMg,
     type DockMinigame,
     type PlayerState,
+    STATION_LABEL,
     type StationState,
     beepPhase,
     parseDockMg,
@@ -11,8 +12,8 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import { TRUCK_LEAVING, truckIn, truckLeaves } from '../nouns';
 import type { Factory } from '../scenes/Factory';
-import { mmss } from '../ui/format';
 import { BayWall, type ReturnsItem } from './dock/BayWall';
 import { TruckSprite } from './dock/TruckSprite';
 import type {
@@ -144,13 +145,13 @@ export function dockKeyAction(
 export function truckHeadline(mg: DockMg, serverNow: number): string {
     const { phase, loaded, slots, leavesAt, arrivesAt } = mg.truck;
 
-    if (phase === 'leaving') return 'TRUCK LEAVING';
-    if (phase === 'away') return `NEXT TRUCK ${mmss(arrivesAt - serverNow)}`;
+    if (phase === 'leaving') return TRUCK_LEAVING;
+    if (phase === 'away') return truckIn(arrivesAt - serverNow);
 
-    // The bay wall carries the verb for a reason (`BayWall.ts`): a bare 0:12
-    // floating over a doorway is a number with no subject. The panel the player
-    // is actually looking at once they arrive was dropping it again.
-    return `TRUCK ${loaded}/${slots} · LEAVES ${mmss(leavesAt - serverNow)}`;
+    // The clock leads and the load follows it, so the phrase is the one the bay
+    // wall and the `Tab` board say word for word: a player glancing between the
+    // three in the last ten seconds of a truck reads one sentence, not three.
+    return `${truckLeaves(leavesAt - serverNow)} · ${loaded}/${slots}`;
 }
 
 class DockOverlay implements MinigameOverlay {
@@ -203,7 +204,7 @@ class DockOverlay implements MinigameOverlay {
         const mg = this.mg;
 
         if (!mg) {
-            this.head.setText('DOCK');
+            this.head.setText(STATION_LABEL.dock);
             this.row.clear();
 
             return;

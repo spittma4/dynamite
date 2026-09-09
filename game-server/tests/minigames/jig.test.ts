@@ -54,7 +54,7 @@ const CFG: JigConfig = {
         primeKegWindowMultiplier: 1.5,
     },
     knots: { long: 3, short: 2, secondsPerKnot: 0.4, perfectMs: 60, okMs: 140 },
-    crimp: { clicks: 3, clickSeconds: 0.2, perfectMs: 80, okMs: 200 },
+    crimp: { clicks: 3, leadSeconds: 0.4, clickSeconds: 0.4, perfectMs: 80, okMs: 180 },
     toss: { arcSeconds: 0.5, perfectMs: 120, okMs: 250 },
     casings: { stock: 3, dentChance: 0.3 },
     kegPours: 2,
@@ -277,12 +277,25 @@ describe('timing helpers', () => {
         expect(knotTimes(102.4, 2, 0.4)).toHaveLength(2);
     });
 
-    it('schedules the ratchet clicks after the last knot', () => {
-        const clicks = crimpClicks(103.6, 3, 0.2);
+    /**
+     * F14: the gap before the ratchet and the gap inside it are separate
+     * numbers, so the test drives them apart — with one `clickSeconds` doing
+     * both jobs these three assertions cannot all hold.
+     */
+    it('opens the ratchet a lead-in after the last knot and clicks a click apart', () => {
+        const clicks = crimpClicks(103.6, 3, 0.4, 0.25);
 
-        expect(clicks[0] ?? 0).toBeCloseTo(103.8, 6);
-        expect(clicks[1] ?? 0).toBeCloseTo(104, 6);
-        expect(clicks[2] ?? 0).toBeCloseTo(104.2, 6);
+        expect(clicks[0] ?? 0).toBeCloseTo(104, 6);
+        expect(clicks[1] ?? 0).toBeCloseTo(104.25, 6);
+        expect(clicks[2] ?? 0).toBeCloseTo(104.5, 6);
+    });
+
+    it('gives the shipped crimp a beat of warning and a beat between clicks', () => {
+        const clicks = crimpClicks(103.6, 3, CFG.crimp.leadSeconds, CFG.crimp.clickSeconds);
+
+        expect(clicks[0] ?? 0).toBeCloseTo(104, 6);
+        expect(clicks[1] ?? 0).toBeCloseTo(104.4, 6);
+        expect(clicks[2] ?? 0).toBeCloseTo(104.8, 6);
     });
 
     it('frays on two missed knots and not on one', () => {
@@ -713,13 +726,74 @@ describe('crimp and the finished stick', () => {
         expect(state.phase).toBe('knots');
     });
 
+    /**
+     * F08 reads both crimp tempo fields, so a level that sets them apart has to
+     * see them apart: the ratchet opens on `leadSeconds` and steps on
+     * `clickSeconds`.
+     */
+    it('schedules the ratchet from the crimp lead-in rather than the click gap', () => {
+        const cfg: JigConfig = {
+            ...CFG,
+            crimp: { ...CFG.crimp, leadSeconds: 0.6, clickSeconds: 0.25 },
+        };
+        const state = createJigState(cfg, TILES);
+
+        state.phase = 'knots';
+        state.lanes = ['l'];
+        state.knotAt = [103.6];
+        state.knotIndex = 1;
+        tickJig(state, { now: 103.6 });
+
+        expect(state.phase).toBe('crimp');
+        expect(state.crimpClickAt[0] ?? 0).toBeCloseTo(104.2, 6);
+        expect(state.crimpClickAt[1] ?? 0).toBeCloseTo(104.45, 6);
+        expect(state.crimpClickAt[2] ?? 0).toBeCloseTo(104.7, 6);
+    });
+
+    it('leaves a beat between the last knot and the first click of the shipped ratchet', () => {
+        const state = atCrimp();
+        const lastKnot = state.knotAt[state.knotAt.length - 1] ?? 0;
+
+        expect((state.crimpClickAt[0] ?? 0) - lastKnot).toBeCloseTo(CFG.crimp.leadSeconds, 6);
+        expect((state.crimpClickAt[1] ?? 0) - (state.crimpClickAt[0] ?? 0)).toBeCloseTo(
+            CFG.crimp.clickSeconds,
+            6,
+        );
+    });
+
+    it('grades the tap on the third click by the crimp windows', () => {
+        const onIt = atCrimp();
+
+        send(onIt, 'a1', 'crimp', { at: crimpAt(onIt) + 0.05 });
+        expect(onIt.last?.grade).toBe('perfect');
+
+        const nearly = atCrimp();
+
+        send(nearly, 'a1', 'crimp', { at: crimpAt(nearly) - 0.17 });
+        expect(nearly.last?.grade).toBe('ok');
+
+        // 190 ms scored OK on the shipped 200 ms window; at 180 it is a miss,
+        // which is the half of the retune the player feels.
+        const past = atCrimp();
+
+        send(past, 'a1', 'crimp', { at: crimpAt(past) + 0.19 });
+        expect(past.last?.grade).toBe('miss');
+    });
+
+    /**
+     * F14: this asserted `ok`, which was the defect written down. `judge` is
+     * symmetric on the offset from the last click, so at 200 ms clicks and a
+     * 200 ms window a tap on click two was exactly on the edge and scored — and
+     * counting the ratchet, the one thing the crimp asks for, earned nothing.
+     */
     it('judges the tap against the third click', () => {
         const state = atCrimp();
         const second = state.crimpClickAt[1] ?? 0;
 
         send(state, 'a1', 'crimp', { at: second });
 
-        expect(state.last?.grade).toBe('ok');
+        expect(state.last?.grade).toBe('miss');
+        expect(state.last?.note).toBe('early');
     });
 
     it('completes the stick with the attributes the cycle earned', () => {
@@ -1154,6 +1228,24 @@ describe('stationStatus', () => {
 
         expect(before.state).toBe('working');
         expect(after.progress).toBeGreaterThan(before.progress);
+    });
+
+    /**
+     * The bar is the Jig's across-the-room tell (ADR 0009), so it has to run out
+     * with the ratchet: a bar that reads full while two clicks are still ahead
+     * tells the room the stick is done when nobody has crimped it yet.
+     */
+    it('fills the crimp bar across the whole ratchet, not the first click', () => {
+        const state = atCrimp();
+        const third = state.crimpClickAt[state.crimpClickAt.length - 1] ?? 0;
+        const first = state.crimpClickAt[0] ?? 0;
+
+        expect(stationStatus(state, makeView({ now: first })).progress).toBeCloseTo(
+            0.75 + 0.25 / 3,
+            6,
+        );
+        expect(stationStatus(state, makeView({ now: third - 0.05 })).progress).toBeLessThan(1);
+        expect(stationStatus(state, makeView({ now: third })).progress).toBeCloseTo(1, 6);
     });
 
     it('reads idle at an unmanned picker and tracks the re-arm bar', () => {

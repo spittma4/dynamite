@@ -1,22 +1,36 @@
 import type { ItemType, LevelConfig, StationConfig, Tile } from '@shared';
 
+import { FUSE_SET } from '../nouns';
+
 /** Somewhere the thing in your hands is allowed to go. */
 export interface DropTarget {
     stationId: string;
     tiles: Tile[];
 }
 
+// `parts` is the schema's name for the type, never the player's: the object it
+// carries is the fuse set, which is what the rack, the cradle, the phase strip
+// and the floor sign all call it.
 const PLURAL: Partial<Record<ItemType, string>> = {
     keg: 'KEGS',
     casing: 'CASINGS',
     stick: 'STICKS',
     crate: 'CRATES',
-    parts: 'PARTS',
+    parts: `${FUSE_SET}S`,
 };
 
 /** What a sign would call a pile of these. */
 export function pluralOf(type: ItemType): string {
     return PLURAL[type] ?? type.toUpperCase();
+}
+
+/** The thing a recipe key makes, or `null` when no recipe on this level makes it. */
+function outputOf(product: string, recipes: LevelConfig['recipes']): ItemType | null {
+    for (const [key, recipe] of Object.entries(recipes)) {
+        if (key === product || recipe.output.product === product) return recipe.output.type;
+    }
+
+    return null;
 }
 
 /**
@@ -26,13 +40,14 @@ export function pluralOf(type: ItemType): string {
  * makes, and that is the noun every other surface already uses for it.
  */
 export function productLabel(product: string, recipes: LevelConfig['recipes']): string {
-    for (const [key, recipe] of Object.entries(recipes)) {
-        if (key === product || recipe.output.product === product) {
-            return recipe.output.type.toUpperCase();
-        }
-    }
+    return outputOf(product, recipes)?.toUpperCase() ?? product.replace(/_/g, ' ').toUpperCase();
+}
 
-    return product.replace(/_/g, ' ').toUpperCase();
+/** The same noun a count needs — `4/8 STICKS` — off the signs' own plural. */
+export function productPlural(product: string, recipes: LevelConfig['recipes']): string {
+    const type = outputOf(product, recipes);
+
+    return type ? pluralOf(type) : `${productLabel(product, recipes)}S`;
 }
 
 /**
@@ -83,6 +98,15 @@ export function shelfLabel(
 
     return 'IN';
 }
+
+/**
+ * The two signs on the keg errand, off the same builder that paints them. Three
+ * sentences quoted them by hand — the Slammer's hands panel, the Jig's route
+ * line and the help panel — so a level that named the shelf anything else would
+ * have sent all three players to a sign the floor does not have.
+ */
+export const KEGS_IN = shelfLabel('in', ['keg'], null);
+export const KEGS_OUT = shelfLabel('out', undefined, 'keg');
 
 /**
  * Where one station will take the thing in your hands. The dock has no shelf —

@@ -155,13 +155,13 @@ describe('truckHeadline', () => {
         const loading = mg({ truck: { ...mg().truck, loaded: 3 } });
 
         // Was 'TRUCK 3/8 · 00:12' — the bare number the bay wall exists to avoid.
-        expect(truckHeadline(loading, 28)).toBe('TRUCK 3/8 · LEAVES 00:12');
+        expect(truckHeadline(loading, 28)).toBe('TRUCK LEAVES 00:12 · 3/8');
     });
 
     it('counts down to the next truck while it is away', () => {
         const away = mg({ truck: { ...mg().truck, phase: 'away', arrivesAt: 80 } });
 
-        expect(truckHeadline(away, 42)).toBe('NEXT TRUCK 00:38');
+        expect(truckHeadline(away, 42)).toBe('TRUCK IN 00:38');
     });
 
     it('says the truck is pulling out while it leaves', () => {
@@ -197,8 +197,8 @@ describe('bayLabel', () => {
         const away = mg({ truck: { ...mg().truck, phase: 'away', arrivesAt: 80 } });
         const leaving = mg({ truck: { ...mg().truck, phase: 'leaving', arrivesAt: 80 } });
 
-        expect(bayLabel(away, 75)).toEqual({ text: 'NEXT 00:05', kind: 'next' });
-        expect(bayLabel(leaving, 41)).toEqual({ text: 'NEXT 00:39', kind: 'next' });
+        expect(bayLabel(away, 75)).toEqual({ text: 'TRUCK IN 00:05', kind: 'next' });
+        expect(bayLabel(leaving, 41)).toEqual({ text: 'TRUCK IN 00:39', kind: 'next' });
     });
 
     it('shouts SLAM IT for as long as the tailgate window is open', () => {

@@ -355,6 +355,210 @@ describe('validateLevelConfig — the rules a JSON Schema cannot state', () => {
     });
 });
 
+/**
+ * ADR 0009 promises flat execution difficulty enforced by millisecond floors,
+ * but `windowFloorsMs` only ever guarded the tolerances. These rules are the
+ * other half: how far apart the marks sit, and how much warning a player gets
+ * before the first one.
+ */
+describe('validateLevelConfig — the tempo floors', () => {
+    /** The assembly station's four phases, still raw JSON. */
+    function rawPhases(level: Record<string, unknown>): Record<string, Record<string, unknown>> {
+        const stations = level.stations as { minigame: Record<string, Record<string, unknown>> }[];
+
+        return stations[1]!.minigame;
+    }
+
+    function rawHeat(level: Record<string, unknown>): Record<string, unknown> {
+        const stations = level.stations as { minigame: { heat: Record<string, unknown> } }[];
+
+        return stations[0]!.minigame.heat;
+    }
+
+    it('fills tempoFloorsMs from the contract defaults', () => {
+        const result = validateLevelConfig(rawLevelFixture());
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.value.tempoFloorsMs).toEqual({ markSpacing: 250, leadInMs: 400 });
+    });
+
+    /**
+     * `semanticErrors` reads the level as parsed and `applyDefaults` only runs
+     * afterwards, so these are the first rules in this validator to depend on a
+     * key no shipped level file carries. Without that, every rule below would
+     * compare against `undefined` and pass everything.
+     */
+    it('applies the mark floor to a level carrying no tempoFloorsMs key', () => {
+        const level = rawLevelFixture();
+
+        expect(level.tempoFloorsMs).toBeUndefined();
+        rawPhases(level).crimp!.clickSeconds = 0.2;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /crimp: 200 ms apart is tighter than the 250 ms mark floor/,
+        );
+    });
+
+    it('lets a level raise its own tempo floors but never lower them', () => {
+        const raised = rawLevelFixture();
+        raised.tempoFloorsMs = { markSpacing: 500, leadInMs: 800 };
+
+        expect(errorsOf(raised).join('\n')).toMatch(/knots: 400 ms apart/);
+
+        const lowered = rawLevelFixture();
+        lowered.tempoFloorsMs = { markSpacing: 50, leadInMs: 60 };
+
+        const errors = errorsOf(lowered).join('\n');
+
+        expect(errors).toMatch(/tempoFloorsMs\/markSpacing/);
+        expect(errors).toMatch(/tempoFloorsMs\/leadInMs/);
+    });
+
+    it('refuses a beat grid tighter than the mark floor', () => {
+        const level = rawLevelFixture();
+        level.bpm = 300;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /^bpm: 200 ms apart is tighter than the 250 ms mark floor$/m,
+        );
+    });
+
+    it('refuses a shove beep tighter than the mark floor', () => {
+        const level = rawLevelFixture();
+        const stations = level.stations as { minigame: Record<string, unknown> }[];
+        stations[2]!.minigame.beepHz = 5;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /stations\.dock-a\.minigame: 200 ms apart is tighter than the 250 ms mark floor/,
+        );
+    });
+
+    it('refuses an OK window that reaches half way to the neighbouring mark', () => {
+        const level = rawLevelFixture();
+        const knots = rawPhases(level).knots!;
+        knots.okMs = 200;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /knots\.okMs: 200 ms is wider than half the 400 ms between marks/,
+        );
+    });
+
+    it('refuses a lead-in tighter than the lead floor', () => {
+        const level = rawLevelFixture();
+        rawPhases(level).crimp!.leadSeconds = 0.3;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /crimp: 300 ms of lead-in is tighter than the 400 ms lead floor/,
+        );
+    });
+
+    /**
+     * B swings and tosses with two keys, so a toss window wider than its arc
+     * would score an OK for mashing both together (jig.ts:1012).
+     */
+    it('refuses a window that opens before its own cue', () => {
+        const level = rawLevelFixture();
+        const toss = rawPhases(level).toss!;
+        toss.okMs = 600;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /toss\.okMs: 600 ms opens before its own 500 ms lead-in/,
+        );
+    });
+
+    it('refuses a slammer OK window that opens before the charge could start', () => {
+        const level = rawLevelFixture();
+        rawHeat(level).okMsAtMinCharge = 800;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /heat\.okMsAtMinCharge: 800 ms opens before its own 700 ms lead-in/,
+        );
+    });
+
+    /**
+     * The charge's OK window grows with the hold (slammer.ts:72-76), so the two
+     * ends are two rules. Comparing the widest window against the shortest hold
+     * would be the tidier line and would reject this level, which is legal.
+     */
+    it('accepts a wide window at the long end of a long charge', () => {
+        const level = rawLevelFixture();
+        const heat = rawHeat(level);
+        heat.maxChargeSeconds = 2.0;
+        heat.okMsAtMaxCharge = 900;
+
+        expect(errorsOf(level)).toEqual([]);
+    });
+
+    /**
+     * The block all five levels shipped, and the reason a playtester called the
+     * crimp impossible: clicks 200 ms apart, a window that spans a whole click
+     * interval, and a first click 200 ms after the knot it follows. T3's second
+     * clause is the one thing it got right — at okMs 200 against a 200 ms lead
+     * the window opens exactly on the cue rather than before it.
+     */
+    it('reports every tempo fault in the crimp as it shipped', () => {
+        const level = rawLevelFixture();
+        rawPhases(level).crimp = {
+            clicks: 3,
+            leadSeconds: 0.2,
+            clickSeconds: 0.2,
+            perfectMs: 80,
+            okMs: 200,
+        };
+
+        expect(errorsOf(level).filter((e) => e.includes('.crimp'))).toEqual([
+            'stations.assembly-a.minigame.crimp: 200 ms apart is tighter than the 250 ms mark floor',
+            'stations.assembly-a.minigame.crimp.okMs: 200 ms is wider than half the 200 ms between marks',
+            'stations.assembly-a.minigame.crimp: 200 ms of lead-in is tighter than the 400 ms lead floor',
+        ]);
+    });
+
+    /**
+     * The catch's only cue is the throw itself (itemThrow.ts sets `arrivesAt`
+     * from `throwFlightSeconds`), and `judgeCatch` is the same symmetric judge
+     * as the crimp's. A flight shorter than the window opens the OK before the
+     * item has left the thrower's hands, which is a mash rather than a catch.
+     */
+    it('refuses a catch window that opens before the throw', () => {
+        const level = rawLevelFixture();
+        const carry = level.carry as Record<string, unknown>;
+        carry.throwFlightSeconds = 0.1;
+        carry.catchOkMs = 110;
+
+        expect(errorsOf(level).join('\n')).toMatch(
+            /carry\.catchOkMs: 110 ms opens before its own 100 ms lead-in/,
+        );
+    });
+
+    /**
+     * The flight is on Dexterity's tempo line with no floor of its own, so only
+     * the second clause binds it: a lead floor here would make a hard rung's own
+     * output fail re-validation (ADR 0014 invariant 1).
+     */
+    it('accepts a flight shorter than the lead floor while the window still fits it', () => {
+        const level = rawLevelFixture();
+        const carry = level.carry as Record<string, unknown>;
+        carry.throwFlightSeconds = 0.3;
+
+        expect(errorsOf(level)).toEqual([]);
+    });
+
+    it('accepts the retuned crimp', () => {
+        const level = rawLevelFixture();
+        rawPhases(level).crimp = {
+            clicks: 3,
+            leadSeconds: 0.4,
+            clickSeconds: 0.4,
+            perfectMs: 80,
+            okMs: 180,
+        };
+
+        expect(errorsOf(level)).toEqual([]);
+    });
+});
+
 function layoutErrorsOf(input: unknown): string[] {
     const result = validateLayoutConfig(input);
 

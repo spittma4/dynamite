@@ -1,7 +1,9 @@
 import type { EmoteKind, StationType } from '@shared';
 
-import { FUSE_SET } from '../minigames/Jig';
+import { FUSE_SET, INTAKE_ZONE, ORDER_BOARD, PRIME_KEG } from '../nouns';
+import { KEGS_IN } from '../render/dropTargets';
 import { type ArrowKey, emoteForArrow } from '../input/intent';
+import { throwDistance } from './format';
 
 /** One line of help: the key (or keys) on the left, what it does on the right. */
 export type HelpRow = readonly [string, string];
@@ -15,8 +17,12 @@ export interface HelpSection {
  * The nudge the HUD shows so nobody has to guess that help exists. It names the
  * question rather than the panel: a player stuck on "where does this keg go" does
  * not press a key labelled help, because help sounds like a list of keybinds.
+ *
+ * `Tab` rides along because nothing else on the HUD mentions it: the order
+ * board — the answer to "what am I making" — was reachable only by opening help
+ * first and reading down to the fifth floor row.
  */
-export const HELP_HINT = 'H · what do I do?';
+export const HELP_HINT = 'H · what do I do?   ·   TAB · orders';
 
 const ARROW_GLYPH: Record<ArrowKey, string> = {
     up: '\u2191',
@@ -45,21 +51,29 @@ function shoutRow(): HelpRow {
     return ['Shift + arrows', `Shout: ${shouts.join(' \u00b7 ')}`];
 }
 
-const FLOOR: HelpSection = {
-    title: 'Anywhere on the floor',
-    rows: [
-        ['WASD / arrows', 'Walk. Carrying something slows you down.'],
-        ['E', 'Pick up, put down, join a work tile, catch a throw, pull a lever.'],
-        // Not "two tiles": the distance is `carry.throwTiles`, a per-level knob.
-        // Every shipped level is 2 today, so the count was not yet a lie — but it
-        // is the same drift `shoutRow()` was rebuilt to make impossible.
-        ['Space', 'Throw what you are carrying, a couple of tiles ahead. E catches it.'],
-        ['Esc', 'Leave the station. You lose the cycle you were part-way through.'],
-        ['Tab', 'The order board.'],
-        shoutRow(),
-        ['H', 'Close this help.'],
-    ],
-};
+/**
+ * The floor controls. The throw is the one row with a number in it, and the
+ * number is `level.carry.throwTiles` — so it is read off the level here and on
+ * the Slammer's hands panel alike. Hedging it in one place while the other
+ * asserted 'two tiles' left the drift live on the surface nobody checked.
+ */
+function floorSection(throwTiles: number): HelpSection {
+    return {
+        title: 'Anywhere on the floor',
+        rows: [
+            ['WASD / arrows', 'Walk. Carrying something slows you down.'],
+            ['E', 'Pick up, put down, join a work tile, catch a throw, pull a lever.'],
+            [
+                'Space',
+                `Throw what you are carrying, ${throwDistance(throwTiles)} ahead. E catches it.`,
+            ],
+            ['Esc', 'Leave the station. You lose the cycle you were part-way through.'],
+            ['Tab', `The ${ORDER_BOARD.toLowerCase()}.`],
+            shoutRow(),
+            ['H', 'Close this help.'],
+        ],
+    };
+}
 
 /**
  * What each station actually asks of you. The mini-games are deliberately
@@ -72,7 +86,10 @@ const STATIONS: Record<StationType, HelpSection> = {
         rows: [
             ['← ↑ →', 'Mash the three chutes, one each. A fourth press overflows and spills at your feet.'],
             ['Hold Space', 'Charge. The faster you mashed, the faster it climbs — and the tighter the window.'],
-            ['Release', 'Let go inside the green band. The gold line is a PRIME keg.'],
+            [
+                'Release',
+                `Let go on the gold line for a ${PRIME_KEG}. The orange band still counts \u2014 outside it the keg comes out damp or dud.`,
+            ],
             ['Watch out', 'Releasing late makes a damp keg and throws a spark onto the pile.'],
             [
                 'Shelf full?',
@@ -121,7 +138,7 @@ const FLOW: HelpSection = {
         ],
         [
             '2 · Assembly',
-            'Carry a keg into the striped zone, face the KEGS IN shelf and press E. A keg and a casing become a stick.',
+            `Carry a keg into ${INTAKE_ZONE}, face the ${KEGS_IN} shelf and press E. A keg and a casing become a stick.`,
         ],
         [
             'Casings',
@@ -140,8 +157,10 @@ const FLOW: HelpSection = {
  * because that is the part nobody can guess; the floor controls stay below it
  * so the two are never in separate screens.
  */
-export function helpSections(station: StationType | null): HelpSection[] {
-    if (station && STATIONS[station]) return [STATIONS[station], FLOW, FLOOR];
+export function helpSections(station: StationType | null, throwTiles: number): HelpSection[] {
+    const floor = floorSection(throwTiles);
 
-    return [FLOW, FLOOR];
+    if (station && STATIONS[station]) return [STATIONS[station], FLOW, floor];
+
+    return [FLOW, floor];
 }

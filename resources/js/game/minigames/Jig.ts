@@ -24,7 +24,15 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
-import { pluralOf, producedBy, shelfLabel } from '../render/dropTargets';
+import {
+    FUSE_SET,
+    HANDS_FULL,
+    INTAKE_ZONE,
+    NOTHING_ON_THE_BOARD,
+    PRIME_KEG,
+} from '../nouns';
+import { KEGS_OUT, pluralOf, producedBy, shelfLabel } from '../render/dropTargets';
+import { KEG_WORD, kegLook } from '../render/stationGlyphs';
 import type { Factory } from '../scenes/Factory';
 import type { MinigameOverlay, OverlayContext, OverlayFactory, OverlayKey } from './types';
 
@@ -77,6 +85,7 @@ export const JIG_COLOURS = {
     brass: 0xf5d67a,
     label: 0xbbbbbb,
     dim: 0x6a6a78,
+    wait: 0x7fd3ff,
     text: 0xffffff,
     lane: 0x3b7de0,
 } as const;
@@ -103,9 +112,6 @@ const GRADE_COLOURS: Record<JigGrade, number> = {
  */
 export const CRADLE_FULL = 'CRADLE FULL';
 export const AISLE_BODY = 'BODY IN THE AISLE';
-
-/** One phrase for the one object B fetches, so no surface invents a fourth. */
-export const FUSE_SET = 'FUSE SET';
 
 const NOTE_LABELS: Record<Exclude<JigNote, ''>, string> = {
     early: 'EARLY',
@@ -205,6 +211,9 @@ export function moveCursor(cursor: number, delta: number, count: number): number
 export const CASINGS_COMING = `${pluralOf('casing')} COMING`;
 export const NEED_KEG = 'NEED A KEG';
 
+/** The jig winding itself back to the top of the phrase; it clears on its own. */
+export const RE_ARMING = 'RE-ARMING';
+
 /**
  * A packed shelf, said to the hands that are reading it. 'TAKE ONE BACK' is an
  * instruction a player already holding a keg physically cannot follow, and
@@ -264,12 +273,10 @@ export function kegSource(level: Pick<LevelConfig, 'stations' | 'recipes'>): str
  * drift apart.
  */
 export function kegRoute(source: string, inSign: string): string {
-    const tray = shelfLabel('out', undefined, 'keg');
-
     // `putDownItem` (game-server/src/sim/items.ts) shelves onto the tile the
     // player is FACING, and the apron is two tiles — the shelf and the aisle you
     // stand in. 'E in the striped zone' was true from only one of them.
-    return `ESC · walk to ${source} · E at ${tray} · back in the striped zone, face ${inSign}, E`;
+    return `ESC · walk to ${source} · E at ${KEGS_OUT} · back in ${INTAKE_ZONE}, face ${inSign}, E`;
 }
 
 /** Whether the machine has powder for the next stick, wherever it is sitting. */
@@ -292,12 +299,36 @@ export function pickerBlock(input: {
     keg: { poursLeft: number } | null;
     carrying: string;
 }): string {
-    if (input.now < input.rearmAt) return 'RE-ARMING';
-    if (input.carrying !== '') return 'HANDS FULL';
+    if (input.now < input.rearmAt) return RE_ARMING;
+    if (input.carrying !== '') return HANDS_FULL;
     if (kegShortage(input.kegs, input.keg)) return NEED_KEG;
     if (input.casings === 0) return input.room > 0 ? CASINGS_COMING : SHELF_FULL;
 
     return '';
+}
+
+/**
+ * The two stops nobody can hurry: the jig is re-arming itself, and the jig is
+ * printing its own casings. Both clear on their own, and neither is anybody's
+ * errand — the same split `shortageOf` draws on the floor with `Shortage.act`.
+ */
+const PICKER_WAITS: readonly string[] = [RE_ARMING, CASINGS_COMING];
+
+/**
+ * What colour a stopped picker says it in. Red is this floor's word for a fault
+ * — the miss grade, the overfill, the red beacon — so a wait painted in it told
+ * a player who had done nothing wrong that they had, at the one moment the
+ * answer was to stand still. A wait gets its own colour; a shortage somebody
+ * has to move for keeps the alarm.
+ *
+ * `wait` is a pale blue rather than a teal because it is drawn touching `ok`:
+ * `drawPicker` writes RE-ARMING in it and fills the re-arm bar in `ok` directly
+ * beneath. The first teal was 1.01:1 against that green — the same brightness —
+ * so to a deuteranope the colour picked to be 'not the OK green' *was* the OK
+ * green. Luminance is the one separation colour blindness cannot take away.
+ */
+export function blockColour(block: string): number {
+    return PICKER_WAITS.includes(block) ? JIG_COLOURS.wait : JIG_COLOURS.miss;
 }
 
 /**
@@ -937,7 +968,7 @@ class JigOverlay implements MinigameOverlay {
         labels.write('block', PAD, TRACK_Y + CHIP_H + 10, block, {
             size: 14,
             bold: true,
-            colour: JIG_COLOURS.miss,
+            colour: blockColour(block),
         });
 
         // A station name is not an instruction. Three of the four presses this
@@ -954,7 +985,7 @@ class JigOverlay implements MinigameOverlay {
             return;
         }
 
-        if (block !== 'RE-ARMING') return;
+        if (block !== RE_ARMING) return;
 
         const bar = TRACK_Y + CHIP_H + 30;
 
@@ -984,7 +1015,11 @@ class JigOverlay implements MinigameOverlay {
 
         for (let p = 0; p < mg.keg.poursLeft; p++) g.fillCircle(x + 40 + p * 10, TRACK_Y + 8, 3);
 
-        labels.write('keg-value', x + 36, TRACK_Y + 16, mg.keg.quality.toFixed(1), {
+        // Was `quality.toFixed(1)`: 'KEG / 0.7' is a schema float, and the same
+        // field already has words on the floor — `kegLook` is what tints the glyph.
+        const word = KEG_WORD[kegLook(mg.keg.quality, mg.keg.prime)];
+
+        labels.write('keg-value', x + 36, TRACK_Y + 16, word, {
             size: 12,
             colour: JIG_COLOURS.label,
         });
@@ -1046,7 +1081,7 @@ class JigOverlay implements MinigameOverlay {
             'pour-beats',
             ctx.width - PAD,
             TRACK_Y + TRACK_H + 8,
-            `${pour.beats} BEATS${pour.primeKeg ? ' · PRIME KEG' : ''}`,
+            `${pour.beats} BEATS${pour.primeKeg ? ` · ${PRIME_KEG}` : ''}`,
             { size: 12, colour: JIG_COLOURS.label, originX: 1 },
         );
     }
@@ -1181,7 +1216,7 @@ class JigOverlay implements MinigameOverlay {
         });
 
         if (mg.orderChip.length === 0) {
-            labels.write('order-none', ctx.width - PAD, STRIP_Y + 8, 'NOTHING ON THE BOARD', {
+            labels.write('order-none', ctx.width - PAD, STRIP_Y + 8, NOTHING_ON_THE_BOARD, {
                 size: 12,
                 colour: JIG_COLOURS.dim,
                 originX: 1,

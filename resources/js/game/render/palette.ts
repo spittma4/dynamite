@@ -1,6 +1,7 @@
 import type { Banner, Line } from '@shared';
 
 import type { GrooveBandKey } from '../ui/grooveBand';
+import type { OrderTone } from '../ui/orderBoard';
 
 /**
  * Every colour the client draws with. The docs fix eight player indices and
@@ -30,6 +31,18 @@ export const BANNER_COLOURS: Record<Exclude<Banner, ''>, number> = {
     'CLEAN SWEEP': 0x2bb5a0,
     'HOT STREAK': 0xf5c542,
     TAILGATE: 0xffffff,
+};
+
+/**
+ * The order board's four voices. A truck on the clock is amber and never red:
+ * the deadline is pressure, not a fault, and red on this floor means somebody
+ * dropped something.
+ */
+export const BOARD_COLOURS: Record<OrderTone, number> = {
+    now: 0xffffff,
+    urgent: 0xf2d33b,
+    waiting: 0xbbbbbb,
+    done: 0x7a7d82,
 };
 
 export const TOAST_COLOURS = {

@@ -679,6 +679,69 @@ describe('the ladder', () => {
     });
 });
 
+/**
+ * F14 T1-T3 restated over the shipped files rather than asserted through the
+ * validator, so a level that drifts is caught by the arithmetic a player feels
+ * and not only by the rule that happens to encode it today.
+ */
+interface Series {
+    what: string;
+    spacingMs: number;
+    okMs: number;
+}
+
+interface Lead {
+    what: string;
+    leadMs: number;
+    okMs: number;
+}
+
+function seriesOf(config: LevelConfig): Series[] {
+    const beatMs = 60000 / config.bpm;
+    const assembly = stationOf(config, 'assembly-a').minigame as {
+        pour: { okMs: number };
+        knots: { secondsPerKnot: number; okMs: number };
+        crimp: { clickSeconds: number; okMs: number };
+    };
+    const dock = stationOf(config, 'dock-a').minigame as { beepHz: number; okMs: number };
+
+    return [
+        { what: 'pour', spacingMs: beatMs, okMs: assembly.pour.okMs },
+        {
+            what: 'knots',
+            spacingMs: assembly.knots.secondsPerKnot * 1000,
+            okMs: assembly.knots.okMs,
+        },
+        { what: 'crimp', spacingMs: assembly.crimp.clickSeconds * 1000, okMs: assembly.crimp.okMs },
+        { what: 'shove', spacingMs: 1000 / dock.beepHz, okMs: dock.okMs },
+    ];
+}
+
+/**
+ * Only the cues T3's lead floor binds: the pour's cheapest keg, the crimp's new
+ * lead-in and the toss's arc. `knots.secondsPerKnot` and `carry.throwFlightSeconds`
+ * clear 400 ms as authored but sit on F14's tempo clamp line, so a lead floor on
+ * them would make a hard Dexterity rung's own output fail re-validation (ADR 0014
+ * invariant 1) — they are excluded on purpose, and the exclusion is the reason
+ * they are absent here. The flight still answers T3's second clause, which is
+ * transform-safe and has a case of its own below.
+ */
+function leadsOf(config: LevelConfig): Lead[] {
+    const beatMs = 60000 / config.bpm;
+    const assembly = stationOf(config, 'assembly-a').minigame as {
+        pour: { beatsByQuality: Record<string, number>; okMs: number };
+        crimp: { leadSeconds: number; okMs: number };
+        toss: { arcSeconds: number; okMs: number };
+    };
+    const beats = Math.min(...Object.values(assembly.pour.beatsByQuality));
+
+    return [
+        { what: 'pour', leadMs: beats * beatMs, okMs: assembly.pour.okMs },
+        { what: 'crimp', leadMs: assembly.crimp.leadSeconds * 1000, okMs: assembly.crimp.okMs },
+        { what: 'toss', leadMs: assembly.toss.arcSeconds * 1000, okMs: assembly.toss.okMs },
+    ];
+}
+
 describe('the numbers that have to add up', () => {
     it.each(TIMED)('%s lands its last truck before the whistle', (key) => {
         const config = level(key);
@@ -758,6 +821,66 @@ describe('the numbers that have to add up', () => {
 
         expect(dock.okMs).toBeGreaterThanOrEqual(ok);
         expect(dock.perfectMs).toBeGreaterThanOrEqual(perfect);
+    });
+
+    it.each(LEVEL_KEYS)('%s spaces every judged series above the mark floor', (key) => {
+        const config = level(key);
+        const { markSpacing } = config.tempoFloorsMs ?? LEVEL_DEFAULTS.tempoFloorsMs;
+
+        for (const { what, spacingMs } of seriesOf(config)) {
+            expect({ what, spacingMs, clears: spacingMs >= markSpacing }).toEqual({
+                what,
+                spacingMs,
+                clears: true,
+            });
+        }
+    });
+
+    it.each(LEVEL_KEYS)('%s keeps every OK window off the neighbouring mark', (key) => {
+        const config = level(key);
+
+        for (const { what, spacingMs, okMs } of seriesOf(config)) {
+            expect({ what, okMs, coupled: okMs < spacingMs / 2 }).toEqual({
+                what,
+                okMs,
+                coupled: true,
+            });
+        }
+    });
+
+    it.each(LEVEL_KEYS)('%s warns before every window it opens', (key) => {
+        const config = level(key);
+        const { leadInMs } = config.tempoFloorsMs ?? LEVEL_DEFAULTS.tempoFloorsMs;
+
+        for (const { what, leadMs, okMs } of leadsOf(config)) {
+            expect({ what, leadMs, okMs, warned: leadMs >= leadInMs && okMs <= leadMs }).toEqual({
+                what,
+                leadMs,
+                okMs,
+                warned: true,
+            });
+        }
+    });
+
+    it.each(LEVEL_KEYS)('%s opens the slammer window inside its own charge', (key) => {
+        const config = level(key);
+        const { heat } = stationOf(config, 'powder-a').minigame as {
+            heat: {
+                minChargeSeconds: number;
+                maxChargeSeconds: number;
+                okMsAtMinCharge: number;
+                okMsAtMaxCharge: number;
+            };
+        };
+
+        expect(heat.okMsAtMinCharge).toBeLessThanOrEqual(heat.minChargeSeconds * 1000);
+        expect(heat.okMsAtMaxCharge).toBeLessThanOrEqual(heat.maxChargeSeconds * 1000);
+    });
+
+    it.each(LEVEL_KEYS)('%s opens the catch window inside its own flight', (key) => {
+        const { carry } = level(key);
+
+        expect(carry.catchOkMs).toBeLessThanOrEqual(carry.throwFlightSeconds * 1000);
     });
 });
 

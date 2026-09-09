@@ -116,7 +116,9 @@ describe('pnlLines', () => {
         expect(lines[4]).toMatch(/^Rework +0$/);
         expect(lines[5]).toBe('');
         expect(lines[6]).toMatch(/^Verdict: +DISASTER$/);
-        expect(lines[7]).toBe('Revenue 480 − Waste 212 = 268');
+        // The currency had a name on the grade line and nowhere else, so the
+        // equation above it was three bare numbers.
+        expect(lines[7]).toBe('Revenue 480 − Waste 212 = 268 coin');
         expect(lines[8]).toBe('× D (0.75) = 201 coin');
         expect(lines).toHaveLength(9);
     });
@@ -127,7 +129,7 @@ describe('pnlLines', () => {
             copy,
         );
 
-        expect(lines).toContain('Revenue 120 − Waste 400 = -280');
+        expect(lines).toContain('Revenue 120 − Waste 400 = -280 coin');
         expect(lines).toContain(copy.report.loss);
     });
 

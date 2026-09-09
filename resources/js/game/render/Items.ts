@@ -2,6 +2,7 @@ import { TILE_PX, type Copy, type FactoryState, type ItemState } from '@shared';
 import Phaser from 'phaser';
 
 import { UI } from './palette';
+import { type KegLook, kegLook } from './stationGlyphs';
 import type { Factory, FactoryConn } from '../scenes/Factory';
 
 /**
@@ -37,8 +38,6 @@ export const ITEM_COLOURS: Record<string, number> = {
 };
 
 const UNKNOWN_COLOUR = 0x8a8a94;
-
-export type KegLook = 'dud' | 'damp' | 'normal' | 'prime';
 
 export const KEG_COLOURS: Record<KegLook, number> = {
     dud: 0x6b6b73,
@@ -87,19 +86,6 @@ export type ItemPlacement =
     | { kind: 'flight' }
     | { kind: 'tile'; x: number; y: number }
     | { kind: 'held'; sessionId: string };
-
-/**
- * The quality spectrum the Slammer writes (contracts §3): a dud is grey and
- * deflated, a damp keg steams, a prime keg glows. Prime is checked last so a
- * keg knocked down to damp stops glowing the moment its quality drops.
- */
-export function kegLook(quality: number, prime: boolean): KegLook {
-    if (quality <= 0.4) return 'dud';
-
-    if (quality < 1) return 'damp';
-
-    return prime ? 'prime' : 'normal';
-}
 
 export function itemSkin(look: ItemLook): ItemSkin {
     const keg = look.type === 'keg' ? kegLook(look.quality, look.prime) : null;

@@ -23,7 +23,7 @@ import { lineColour } from './palette';
 import { blockedTargets, dropTargets, producedBy, shelfLabel } from './dropTargets';
 import { type Shortage, apron, outwardSide, shortageOf } from './intake';
 import { type GlyphItem, drawItemGlyph } from './stationGlyphs';
-import { parseJigMg } from '../minigames/Jig';
+import { JIG_COLOURS, parseJigMg } from '../minigames/Jig';
 import type { Factory, FactoryConn } from '../scenes/Factory';
 
 /**
@@ -61,6 +61,14 @@ const SIGN_PX = 10;
 const STATE_PX = 11;
 const COUNTER_PX = 9;
 const BUBBLE_PX = 10;
+/**
+ * The longest sentence `shortageOf` can hand a bubble is SHELF_FULL_HANDS, 44
+ * characters — about 265 px at 10 px monospace, over eight tiles wide, centred
+ * on the machine and painted across whatever is beside it. Five tiles is as
+ * wide as a bubble may run before it wraps; `paintBubble` already sizes its
+ * panel to the height Phaser measures, so the wrap costs nothing else.
+ */
+const BUBBLE_WRAP_PX = TILE_PX * 5;
 const BUBBLE_PAD = 4;
 const STATE_GAP = 6;
 const BUBBLE_GAP = 6;
@@ -99,8 +107,26 @@ const STATE_LABELS: Record<string, StateLabel> = {
     damaged: { text: 'DAMAGED', colour: STATION_COLOURS.damaged },
 };
 
-export function stateLabel(state: string): StateLabel | null {
-    return STATE_LABELS[state] ?? null;
+/**
+ * The word over the machine, in the colour the answer deserves.
+ *
+ * `stationStatus` (`shared/src/sim/jig.ts`) calls a station starved the moment
+ * an operator is seated with no casing on the shelf — and the Jig prints its
+ * own casings, so the red STARVED was drawn directly above the bubble reading
+ * 'CASINGS COMING'. Red is this floor's word for a fault: the miss grade, the
+ * overfill, the red beacon. It told a player who had done nothing wrong that
+ * they had, at the one moment the answer was to stand still.
+ *
+ * `Shortage.act` is the same split the Jig's own `blockColour` draws, and the
+ * floor is where the label is read from. A jam and a damaged machine keep their
+ * colours whatever the shelf holds: neither of them is a wait.
+ */
+export function stateLabel(state: string, shortage: Shortage | null = null): StateLabel | null {
+    const label = STATE_LABELS[state] ?? null;
+
+    if (!label || state !== 'starved' || shortage?.act !== false) return label;
+
+    return { text: label.text, colour: JIG_COLOURS.wait };
 }
 
 /**
@@ -355,7 +381,7 @@ class StationSprite {
         this.nameLabel.setPosition(this.centre.x, this.centre.y);
         this.stateText = text(scene, '', STATE_PX);
         this.stateText.setPosition(this.centre.x, this.top * TILE_PX - STATE_GAP);
-        this.bubbleText = text(scene, '', BUBBLE_PX);
+        this.bubbleText = text(scene, '', BUBBLE_PX, '#ffffff', false, BUBBLE_WRAP_PX);
         this.stateText.setVisible(false);
         this.bubbleText.setVisible(false);
 
@@ -441,7 +467,7 @@ class StationSprite {
         const glyphs = this.shelves.map((shelf) => ({ shelf, ...shelfContents(st, shelf, state) }));
         const inShelf = glyphs.find(({ shelf }) => shelf.kind === 'in');
         const shortage = this.shortage(inShelf, mg, handsFull);
-        const label = stateLabel(st.state);
+        const label = stateLabel(st.state, shortage);
         const bubble = stationBubble(st, state.phase, copy, shortage, hasWorkFor(this.cfg, mg));
 
         // Full alpha for the thing in your hands, and for a machine stood waiting
@@ -738,12 +764,14 @@ function text(
     size: number,
     colour = '#ffffff',
     bold = false,
+    wrapPx = 0,
 ): Phaser.GameObjects.Text {
     const label = scene.add.text(0, 0, value, {
         fontFamily: 'monospace',
         fontSize: `${size}px`,
         color: colour,
         fontStyle: bold ? 'bold' : 'normal',
+        ...(wrapPx > 0 ? { wordWrap: { width: wrapPx }, align: 'center' } : {}),
     });
 
     label.setOrigin(0.5, 1);

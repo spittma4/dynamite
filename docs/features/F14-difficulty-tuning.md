@@ -1,5 +1,58 @@
 # F14 — Difficulty: two dials, a tempo floor, and the crimp retune
-**Status:** [ ] Design reviewed · [ ] Implemented · [ ] Unit tests green · [ ] Verified in the running app
+**Status:** [x] Design reviewed · [ ] Implemented · [ ] Unit tests green · [ ] Verified in the running app
+
+**Landed so far — EL-186, Stage A only (tasks 1–4).** The tempo floors and the crimp retune, which
+are a bug fix for ADR 0009's enforcement gap and were always worth landing on their own:
+`TempoFloorsMs` and `LevelConfig.tempoFloorsMs?`, the required `CrimpConfig.leadSeconds`, the
+`floors` resolution line at the top of `semanticErrors`, **T1–T3** in `validate.ts` — including
+T3's second clause over `carry.throwFlightSeconds`, the judged window the first draft of the audit
+missed — `crimpClicks`'s fourth parameter and `enterCrimp` passing it, `progressOf` deriving the
+station bar's ratchet ramp from config instead of a 0.6 s constant, and the retuned `crimp` block
+in all five level files plus every fixture and `devLevel.ts`.
+
+**Deliberately not landed — EL-190.** **T4, T5, T5b and T6** are validator rules this doc groups
+with T1–T3, and every shipped level already satisfies all four, so none of them can catch anything
+today. Each is there because a dial can break it: T6 catches a charge range a Dexterity rung can
+invert, T5/T5b catch a book a Pressure rung can push past the whistle, and T4 is the window
+ordering the clamps have to preserve. They land with the transform that can violate them, and
+their rejection tests land with it. `applyDifficulty`, `difficulty.ts`, the seam,
+`FactoryState.dexterity` / `pressure` and both admin surfaces are likewise EL-190's.
+
+**Two paths in the plan below are wrong and the work followed the code instead.** There is no
+`shared/tests/jig.test.ts`: the Jig's tests live in `game-server/tests/minigames/jig.test.ts`
+(alongside `dock` and `slammer`), which is where EL-186's three crimp cases went. The T1–T3
+property cases went into `shared/tests/levels.test.ts` — the suite that already reads the five
+shipped files off disk — rather than into a new file.
+
+**Two known breaks outside EL-186's file scope, both handed over rather than edited.**
+
+**1. `resources/js/game/__tests__/Jig.test.ts` — the client typecheck is red.** `leadSeconds` is
+required, so the hand-built `AssemblyMinigame` at line 75 fails with
+`TS2741: Property 'leadSeconds' is missing in type … but required in type 'CrimpConfig'`, and only
+`npm run typecheck:client` covers that path — `shared` and `game-server` being green hides it. The
+same file also still encodes the pre-retune 0.2 s ratchet as fixture data. Three lines:
+
+| line | from | to |
+|---|---|---|
+| 75 | `crimp: { clicks: 3, clickSeconds: 0.2, perfectMs: 80, okMs: 200 },` | `crimp: { clicks: 3, leadSeconds: 0.4, clickSeconds: 0.4, perfectMs: 80, okMs: 180 },` |
+| 343 | `crimpClickAt: [103.8, 104, 104.2]` | `crimpClickAt: [104, 104.4, 104.8]` |
+| 350 | `expect(crimp?.to).toBeCloseTo(104.2 + 0.2 + MAX_INPUT_BACKDATE_S, 6)` | `expect(crimp?.to).toBeCloseTo(104.8 + 0.18 + MAX_INPUT_BACKDATE_S, 6)` |
+
+`beatStartAt: 103.6` stays as it is — the last knot is still the anchor. Line 350's `0.2` is
+`okMs / 1000` and has to move with the window, which is the reason this is three lines and not the
+one the type error points at. Verify with `npm run typecheck:client`.
+
+**2. `docs/features/F08-jig.md` still documents the bug as the spec.** A reader who trusts F08 will
+reintroduce the coupling fault, so it needs the retune written through it: **:31** ("three 0.2 s
+clicks, tap on the third, ±80/±200"), **:175** (the `CrimpConfig` type, no `leadSeconds`), **:259**
+(the three-argument `crimpClicks` signature and `[last + 0.2, last + 0.4, last + 0.6]`), **:295-296**
+(the config table at 3 / 0.2 and 80 / 200), **:416-422** (the walkthrough, including *"a tap on click
+2, −200 ms, is OK by the inclusive bound"* — the exact defect this doc removes), **:646** (the
+acceptance bullet at 0.2 s and ±80/±200) and **:701** (the manual-verification target "about 8.5 s"
+for a solo cycle; the phrase is now 4.8 s and a solo cycle is machine-bound at 8.33 s, so the
+wall-clock walkthrough is ~9.1 s). Until F08's owner takes it, F08's crimp section should be read as
+superseded by *The crimp: two compounding faults, and the retune*, below.
+
 **Owns:** `shared/src/sim/difficulty.ts` · `shared/tests/difficulty.test.ts` · `app/Enums/Dexterity.php` · `app/Enums/Pressure.php` · `database/migrations/*_add_difficulty_to_factories_table.php` · `app/Livewire/Admin/Factories/Index.php` · `resources/views/livewire/admin/factories/index.blade.php` · `tests/Feature/Difficulty/*`
 **Touches:** F02 — `shared/src/config/types.ts`, `schema.json`, `defaults.ts`, `validate.ts` (the tempo floors, the `floors` default resolution, and the new semantic rules T1–T6), `shared/src/index.ts` (one `export *` line), `shared/src/schema/FactoryState.ts` (two fields), `shared/src/report.ts` (`RunPayload.difficulty`) · F12 — the `crimp` block in all five `config/game/levels/*.json`, a `difficulty` section in `config/game/copy.json` and in `Copy` · F03 — `game-server/src/laravel/api.ts` and `config/levels.ts` (one response field, one transform call), `FactoryRoom.onCreate` (two state writes), `finishDay` (one payload field) · F08 — `shared/src/sim/jig.ts` `crimpClicks` / `enterCrimp` · F04 — `resources/js/game/ui/Hud.ts` (two label lines in the `Tab` order board) · F11 — `resources/js/game/scenes/Report.ts` (one subtitle line under the day header) · F01 — `Factory` casts, `FactoryPolicy::tune`, `Factories\Show`, `FactoryConfigController`, `routes/web.php` admin group
 **Reads:** `docs/decisions/0014-two-difficulty-dials.md` (**the decision this doc implements — binding over anything below**) · `docs/features/00-contracts.md` (v2.1 — binding; §3 schema, §5 the signed seam, §8 level config, §9 run payload, §12 ownership, §13 defaults) · ADR 0009 (flat execution difficulty; the ms floors) · ADR 0008 (the explosion is the only loss) · ADR 0011, ADR 0013 (crew size is its own axis) · `docs/features/F08-jig.md` · `docs/features/F12-levels-sandbox.md` · `docs/04-minigames.md` · `docs/13-config-schema.md` · `.ai/rules/config.md`
@@ -387,7 +440,7 @@ reads `floors` — the resolved pair above — never `level.tempoFloorsMs`:
 |---|---|---|
 | **T1 spacing floor** | `spacingMs ≥ floors.markSpacing`, where spacing is `crimp.clickSeconds × 1000`, `knots.secondsPerKnot × 1000`, the pour grid `60000 / bpm`, and dock `1000 / beepHz` (ADR 0014) | every marker series |
 | **T2 coupling** | `okMs < spacingMs / 2` — an OK window can never reach a neighbouring mark, and two adjacent OK windows never touch (ADR 0014) | crimp, knots, pour, shove |
-| **T3 lead-in** | `leadMs ≥ floors.leadInMs` **and** `okMs ≤ leadMs` — a window may not open before its own cue | `crimp.leadSeconds` / `crimp.okMs`; `toss.arcSeconds` / `toss.okMs`; pour `min(beatsByQuality) × 60000 / bpm` / `pour.okMs`; the Slammer at **both** ends of its charge (below) |
+| **T3 lead-in** | `leadMs ≥ floors.leadInMs` **and** `okMs ≤ leadMs` — a window may not open before its own cue. The second clause alone where the cue is the player's own act | `crimp.leadSeconds` / `crimp.okMs`; `toss.arcSeconds` / `toss.okMs`; pour `min(beatsByQuality) × 60000 / bpm` / `pour.okMs`; second clause only: the Slammer at **both** ends of its charge (below) and `carry.throwFlightSeconds` / `carry.catchOkMs` |
 | **T4 ordering** | `perfectMs ≤ okMs` | every pair `windowsOf` already collects — carry's catch, each assembly phase, the dock, and `heat.deadCenterMs` against the narrower of its two OK windows |
 | **T6 charge range** | `heat.minChargeSeconds < heat.maxChargeSeconds` | boom_powder — see *Clamping*, where a Dexterity rung can invert a range a level authored correctly |
 
@@ -508,6 +561,7 @@ identical mini-game blocks, so one table covers the whole campaign:
 | dock shove (`beepHz` 1) | 1000 ms | ✓ | 180 | ✓ `180 < 500` | free-running beep | n/a |
 | jig toss (`arcSeconds` 0.5) | single target | n/a | 250 | n/a | 500 ms | ✓ |
 | slammer release (charge 0.7–1.5 s) | single target | n/a | 105 at min, 225 at max | n/a | 700 ms / 1500 ms | ✓ both ends: `105 ≤ 700`, `225 ≤ 1500` |
+| carry catch (`throwFlightSeconds` 0.5) | single target | n/a | 150 | n/a | 500 ms | ✓ second clause only: `150 ≤ 500` |
 | **jig crimp (as shipped)** | **200 ms** | **✗** | **200** | **✗** | **200 ms** | **✗** |
 
 Nothing else violates a rule, which is the useful half of the finding: the tempo hole was
@@ -518,13 +572,68 @@ rather than a fix:
   exactly at the arc's midpoint, so B cannot score by mashing `swing` and `toss` together
   (jig.ts:962-967, jig.ts:1012). It passes with 250 ms to spare, and it is why T3 states
   `okMs ≤ leadMs` explicitly: at `arcSeconds` 0.25 that mash would have been an OK.
+- **A prime keg's pour window is the one thing the audit found that T2 does not catch.**
+  `pourWindow` multiplies both windows by `primeKegWindowMultiplier` 1.5
+  (`shared/src/sim/jig.ts:189-193`), so a prime keg's effective OK window is `140 × 1.5 = 210` ms
+  against a 400 ms beat — 10 ms past the half-beat T2 draws the line at. T2 is specified above
+  against the *authored* `pour.okMs`, and deliberately so: checking the widened window would reject
+  all five shipped levels at rung 2, and the prime keg is a reward rather than a series the player
+  has to count — there is only one judged mark in a pour, so a tap a whole beat early still misses
+  by 400 ms. It is recorded here because it is the only place in the campaign where a window can
+  cross the coupling line, and because the fix, if a playtest ever wants one, is `pour.okMs` 130 or
+  a multiplier of 1.4 rather than a change to the rule.
+- **`knots.secondsPerKnot` and `carry.throwFlightSeconds` are not under T3's *lead floor*, and that
+  is load-bearing rather than an oversight.** Both give the player a real lead-in — one beat before
+  the first knot (`knotTimes`), the flight before a catch — and both clear 400 ms as authored. But
+  the Dexterity table above puts them on the *tempo* line, where `secondsPerKnot` clamps to
+  `markSpacing` (0.25 s) and `throwFlightSeconds` clamps to nothing at all. At rung 4 they become
+  0.32 s and 0.40 s, so a lead floor over them would make `applyDifficulty`'s own output fail
+  re-validation and break ADR 0014 invariant 1. `crimp.leadSeconds` and `toss.arcSeconds` are on
+  the `lead` line, clamp to `leadInMs`, and survive every rung — which is why they are the two
+  fields the lead floor names.
+- **The catch is under T3's second clause, and the first draft of this audit missed it entirely.**
+  `judgeCatch` (`shared/src/sim/items.ts:112-124`) is the same symmetric perfect/ok/miss judge as
+  `judge` and `judgeShove`, and its cue is the throw: `arrivesAt = now + carry.throwFlightSeconds`
+  (`game-server/src/sim/itemThrow.ts:113`). `windowsOf` floor-checked `catchOkMs` and
+  `catchPerfectMs` against `windowFloorsMs` and nothing checked the flight, so a level with
+  `throwFlightSeconds` 0.1 and `catchOkMs` 110 validated clean and then scored OK at every moment
+  of the flight *and* 5 ms before the thrower let go — a mash, which is the exact fault the second
+  clause exists to prevent. As shipped the campaign is fair (150 ms against a 500 ms flight), so
+  this is a hole in the guarantee rather than in the content, and `cuesOf` now emits a `carry` cue
+  with `anticipated: false` beside the Slammer's two. Clause 2 is transform-safe here without a
+  clamp, because the Dexterity table keeps `w ≤ s`: `catchOkMs × w ≤ flight × 1000 × w ≤
+  flight × 1000 × s`.
 - **The retuned crimp costs the Jig 0.6 s of execution per stick** (a 1.2 s ratchet instead of
-  0.6 s). The cycle rule is `max(execution + interrupts, machine)` and Assembly's machine time
-  at peak staffing is `floorSeconds / efficiency = 5.0 / 1.15 ≈ 4.35 s`, so a phrase that ran
-  just under the machine now runs just over it. Level 3 has the least slack — a book of 13
-  against a jig that makes roughly 70 sticks solo. If the playtest finds 13 unreachable at
-  `fullBook`, the fix is `orders.qtyPerTruck.base` or the `machine` group, not a tighter crimp.
-  F14 exists precisely so that nobody pays for a Pressure problem with their thumbs.
+  0.6 s), and an earlier draft of this bullet named the wrong victim. The cycle rule is
+  `max(execution + interrupts, machine)` with `machine = floorSeconds / efficiency × 0.75` after a
+  Perfect (docs/05:40-45), and a flawless long-fuse phrase off a good keg went 4.2 s → 4.8 s. Worked
+  against Assembly's staffing curve (`{1: 0.6, 2: 1.0, 3: 1.15}`, `floorSeconds` 5.0):
+
+  | crew at Assembly | machine | execution | cycle before → after | change |
+  |---|---|---|---|---|
+  | solo | `5.0 / 0.6` = 8.33 s | 4.2 → 4.8 s | 8.33 → 8.33 s | none — machine-bound with 3.5 s to spare |
+  | pair | 5.00 s | 4.2 → 4.8 s | 5.00 → 5.00 s | none — still machine-bound |
+  | pair, chaining Perfects | `5.00 × 0.75` = 3.75 s | 4.2 → 4.8 s | 4.20 → 4.80 s | **−12.5 % throughput** |
+  | trio | `5.0 / 1.15` = 4.35 s | 4.2 → 4.8 s | 4.35 → 4.80 s | −9 % |
+
+  So no shipped level's *demand* moved: level 3 asks ~0.13 sticks/s against a pair's 0.20, and a
+  pair is machine-bound at 5.0 s either side of the retune. What moved is the **skill ceiling**. The
+  Perfect re-arm bonus is now fully masked — a phrase longer than the machine means playing
+  flawlessly buys nothing — and the marginal value of a third body at Assembly fell from 13 %
+  (5.00 → 4.35) to 4 % (5.00 → 4.80), and to nothing on a Perfect streak. ADR 0009 wants a skill
+  ceiling at *every* station; this retune taxed only the players who had reached Assembly's.
+- **If a playtest wants that ceiling back, the lever is the crimp's length, not its windows.**
+  `clicks` 3 → 2 keeps `leadSeconds` 0.4 and `clickSeconds` 0.4, lands the ratchet in 0.8 s, brings
+  the long-fuse phrase to 4.4 s and clears every floor (T1 400 ≥ 250, T2 `180 < 200`, T3 lead
+  400 ≥ 400 and `180 ≤ 400`). EL-186 did **not** pull it, because three clicks is canon in three
+  places this workstream does not own: `docs/04-minigames.md:182` (*"Three eighth-note ratchet
+  clicks. Tap `Space` on the third"*), `docs/04:187` and `:201` (*toss-on-the-crimp*, B's half of
+  the phrase), and the client's own on-screen instruction
+  `resources/js/game/minigames/Jig.ts:1151` (`'CRIMP ON THE THIRD CLICK'`). Shipping `clicks: 2`
+  from a level file alone would tell the player to tap a click that does not exist. It is a design
+  change for docs/04's owner, made across all four files at once, never a config edit.
+  `orders.qtyPerTruck.base` and the `machine` group remain the levers for a Pressure problem —
+  F14 exists precisely so that nobody pays for one with their thumbs.
 
 ### Worked examples
 
@@ -702,9 +811,24 @@ stores the whole payload, contracts §5), so a B earned at Pressure 0 is legible
 
 - [ ] Rung 2 on both dials is the identity: `applyDifficulty(level, { dexterity: 2, pressure: 2 })`
       deep-equals its input for all five shipped levels.
-- [ ] `validateLevelConfig` rejects the pre-retune crimp block with three distinct errors (T1, T2,
+- [x] `validateLevelConfig` rejects the pre-retune crimp block with three distinct errors (T1, T2,
       T3) naming `stations.assembly-a.minigame.crimp`.
-- [ ] All five shipped levels return `ok: true` after the retune; `shared/tests/levels.test.ts`
+- [x] `crimpClicks` places the first click a whole `leadSeconds` after the last knot and the rest
+      `clickSeconds` apart, and `enterCrimp` passes both — proved with the two set apart, since at
+      the shipped 0.4 / 0.4 one number doing both jobs is indistinguishable from two.
+- [x] On the retuned numbers a tap on the second click grades `miss` / `early`, a tap within 80 ms
+      of the third grades `perfect`, and one 190 ms out — an OK on the shipped 200 ms window —
+      grades `miss`.
+- [x] The station progress bar empties on the click the tap is judged against: at the shipped
+      numbers it reads 1/3 of the crimp's quarter at the first click and reaches 1.0 only at the
+      third, rather than pinning full for the last 600 ms of the ratchet
+      (`game-server/tests/minigames/jig.test.ts`).
+- [x] `validateLevelConfig` rejects a `carry` block whose `catchOkMs` is wider than
+      `throwFlightSeconds`, and accepts a flight below the 400 ms lead floor whose window still
+      fits inside it.
+- [x] Every shipped level satisfies T1, T2 and T3 restated as arithmetic over the files on disk,
+      not only via the validator that encodes them (`shared/tests/levels.test.ts`).
+- [x] All five shipped levels return `ok: true` after the retune; `shared/tests/levels.test.ts`
       passes unchanged apart from the crimp numbers.
 - [ ] For every shipped level and all 25 `(dexterity, pressure)` pairs,
       `validateLevelConfig(applyDifficulty(level, s)).ok` is true; and for every crew size from
@@ -805,6 +929,9 @@ stores the whole payload, contracts §5), so a B earned at Pressure 0 is legible
 - it rejects a breakpoint whose book runs past the whistle while the top-level book fits
 - it rejects a slammer whose OK window opens before the earliest legal release
 - it rejects a slammer whose minimum charge is not below its maximum
+- it refuses a catch window that opens before the throw
+- it accepts a flight shorter than the lead floor while the window still fits it *(the clause-2-only
+  shape: a lead floor here would reject `applyDifficulty`'s own output)*
 - it reads the mark floor from the §13 default on a level that carries no tempoFloorsMs key
   *(the case that fails today for the ordering reason above, not merely for the missing rule)*
 
@@ -817,6 +944,9 @@ stores the whole payload, contracts §5), so a B earned at Pressure 0 is legible
 - it places the first ratchet click one lead-in after the last knot
 - it scores a tap on the second click as a miss under the retuned numbers
 - it scores a tap on the third click as perfect
+- it fills the crimp bar across the whole ratchet, not the first click *(the across-the-room tell:
+  `progressOf` derives the ramp from `leadSeconds + (clicks − 1) × clickSeconds` rather than the
+  0.6 s constant that was only ever right for the pre-retune tuning)*
 
 **game-server — additions to `game-server/tests/levels.test.ts` and
 `game-server/tests/FactoryRoom.test.ts` (F03; those are the real paths — there is no `tests/config/`
@@ -884,22 +1014,31 @@ enforcement gap and is worth landing whether or not the dials ever ship. Tasks 1
 commit**: between task 2 and task 4 the five shipped levels do not validate and no room boots, so
 the tree is only correct at both ends.
 
-- [ ] 1. Config shape: `TempoFloorsMs`, `LevelConfig.tempoFloorsMs?`, `CrimpConfig.leadSeconds` in
+- [x] 1. Config shape: `TempoFloorsMs`, `LevelConfig.tempoFloorsMs?`, `CrimpConfig.leadSeconds` in
       `types.ts` + `schema.json` + `defaults.ts`, and the `floors` resolution line at the top of
       `semanticErrors`. Test first (`validate.test.ts`'s no-key case, `defaults.test.ts`'s fill
       case). Green.
-- [ ] 2. T1–T4, both T5 clauses and T6 in `validate.ts` — T1–T4 and T6 beside the existing window
-      loop, T5 in `checkDayAndPlayers`, T5b in `checkScaling`. Test first (the rejection cases,
-      using the pre-retune crimp as the fixture). Green — and the five shipped levels now fail,
-      which is the bug reproduced at the gate.
-- [ ] 3. `crimpClicks` gains `leadSeconds`; `enterCrimp` passes it (F08's `shared/src/sim/jig.ts`).
-      Test first (the three jig cases). Green.
-- [ ] 4. The retuned `crimp` block in all five level files, with the reasoning in each file's
+- [x] 2. **T1–T3 only** in `validate.ts` (`marksOf` / `cuesOf` / `checkTempo`), beside the
+      existing window loop. Test first (the rejection cases, using the pre-retune crimp as the
+      fixture). Green — and the five shipped levels now fail, which is the bug reproduced at the
+      gate. T4, T5, T5b and T6 move to EL-190 with the transform that can violate them; see the
+      status block at the top.
+- [x] 3. `crimpClicks` gains `leadSeconds`; `enterCrimp` passes it (F08's `shared/src/sim/jig.ts`).
+      Test first (the crimp cases, in `game-server/tests/minigames/jig.test.ts`). Green.
+- [x] 4. The retuned `crimp` block in all five level files, with the reasoning in each file's
       `notes` (`.ai/rules/config.md`). `shared/tests/levels.test.ts` goes green again.
       **F12 is editing these five files right now** — re-read each one immediately before the edit
       and change only the `crimp` object and the `notes` entry.
-- [ ] A. Stage gate: `cd shared && npm test && npm run typecheck`; `cd game-server && npm test`
-      (its fixtures carry crimp blocks too); `npm run build`. Commit.
+- [x] 5. `progressOf` derives the crimp's ramp from `leadSeconds + (clicks − 1) × clickSeconds`
+      instead of `CRIMP_PROGRESS_SECONDS`, which the retune left describing a ratchet half the
+      length of the real one. Test first, in `game-server/tests/minigames/jig.test.ts`. Green.
+- [x] 6. T3's second clause over the catch (`cuesOf` gains a `carry` cue, `anticipated: false`).
+      Test first, in `shared/tests/validate.test.ts`, plus the property case over the five files.
+      Green.
+- [ ] A. Stage gate: `cd shared && npm test && npm run typecheck` ✓; `cd game-server && npm test`
+      ✓ (its fixtures carry crimp blocks too) and `npx tsc --noEmit` ✓. `npm run typecheck:client`
+      still fails on the one client fixture named in the status block, so the stage is not
+      committable until that workstream lands its three lines.
 
 **Stage B — the transform and the seam (a no-op until Stage C).** Everything defaults to rung 2
 on both dials, which is the identity, so this stage is observably invisible: the same levels, the
@@ -939,10 +1078,47 @@ three times.
 
 ## Risks & open questions
 
-- **The retune slows the Jig by 0.6 s of execution per stick.** Analysed above; Level 3 feels it
-  first. The instinct will be to shorten the ratchet again. Don't — that is the fault this
-  feature exists to remove. Move `orders.qtyPerTruck.base` or the `machine` group and say so in
-  the level's `notes`.
+- **The retune slows the Jig by 0.6 s of execution per stick, and it is the skill ceiling that
+  pays.** Measured above: solo and an ordinary pair are machine-bound and do not move at all, while
+  a pair chaining Perfects loses 12.5 % and the third body at Assembly loses most of its value. No
+  level's *demand* is at risk. The instinct will be to shorten the ratchet or narrow the window
+  again; the window is the fault this feature exists to remove, and the length is docs/04's call
+  across four files, not a config edit (above). Move `orders.qtyPerTruck.base` or the `machine`
+  group and say so in the level's `notes`.
+- **The crimp is now the widest window in A's phrase — ±80/±180 against the knots' ±60/±140 — and
+  this doc did not change that.** Window-over-spacing is 45 % at the crimp against 35 % at the
+  knots and 18 % at the Dock, so the beat that decides `capLoose`, the `crimpOnDented` spark and
+  PRIME is the most forgiving input A makes. Three things argue it is not a defect and one argues
+  it might be, and the call belongs to docs/04's owner rather than to a bug fix: (a) ADR 0009's
+  floors bound windows from *below* and forbid downstream being *harder*, never easier, so nothing
+  is violated; (b) ±80/±200 is authored at `docs/04-minigames.md:182` against the knots' ±60/±140
+  at `:181` — the crimp is the one step whose difficulty is *identifying* the mark rather than
+  hitting it, and a wider OK pays for the counting; (c) it is not the loosest gate on a PRIME run
+  either — `primeKegWindowMultiplier` 1.5 makes the prime keg's pour ±90 Perfect, wider than the
+  crimp's ±80, and the binding gate is three knots at ±60. Against that: ±80 means the climax
+  essentially never fails a run the knots survived. If a playtest wants it tightened, ±60/±140
+  clears every floor (T1 400 ≥ 250, T2 `140 < 200`, ADR 0009 `140 ≥ 100` / `60 ≥ 45`, and at
+  Dexterity 4 98/42 clamp to 100/45) — but it should not be pulled in the same pass as the tempo
+  fix, because the complaint that started EL-186 was that the crimp was *too hard*, and moving both
+  at once makes the playtest unreadable.
+- **The ratchet has no sound, and that is the other half of "find the third click".** A
+  `grep -rniE 'audiocontext|this\.sound|\.wav|\.ogg|\.mp3|oscillator' resources/js/` returns
+  nothing: there is no metronome, no per-click tick, no chunk on completion. `drawCrimp`
+  (`resources/js/game/minigames/Jig.ts:1130-1157`) draws all three click lines statically from the
+  phase's first frame, so a 1.2 s ratchet on a five-mark phrase is played entirely by eye off one
+  overlay bar. The retune made the third click *reachable*; a rising per-click tick with a distinct
+  third-click accent is what makes it *findable*, and it is F08 task 8's ("pops, sounds"), not
+  this doc's. **Do not retune the crimp again to compensate for a missing sound.**
+- **`assembly-a`'s `nominalSeconds` 6.0 is now the flawless worst case rather than an expectation
+  with slack.** The worst honest phrase — dud keg (8 beats), long fuse, every mark flawless — is
+  6.0 s exactly, where before the retune it was 5.4 s. `nominalSeconds` has no runtime effect at
+  the Jig (the station's own `stationStatus` supplies `state` and `progress`, so
+  `stations.ts:727`'s cycle-rule fallback never runs for it) and `bottleneckStation` reads
+  utilization × shelf fullness, so nothing is mistuned — but docs/05:49 calls it "the balancing
+  expectation for the bottleneck estimator and the report", and an expectation the best case
+  already meets is misleading. Either raise it to ~6.8 in all five files and `devLevel.ts`
+  (`floorSeconds` 5.0 still clears validate.ts:333) or leave it; EL-186 left it and recorded the
+  arithmetic in each level's `notes`, because moving a balancing number is F12's call.
 - **Dexterity moves the spark rate without touching `hazards`.** A crimp miss on a dented casing
   rolls `hazards.sparks.crimpOnDented` (contracts §10.5), so an easier rung produces fewer sparks
   and a harder one more — through the player's hands, which is how ADR 0008 wants consequences to

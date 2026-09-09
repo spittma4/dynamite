@@ -103,7 +103,7 @@
                     "primeKegWindowMultiplier": 1.5
                 },
                 "knots": { "long": 3, "short": 2, "secondsPerKnot": 0.4, "perfectMs": 60, "okMs": 140 },
-                "crimp": { "clicks": 3, "clickSeconds": 0.2, "perfectMs": 80, "okMs": 200 },
+                "crimp": { "clicks": 3, "leadSeconds": 0.4, "clickSeconds": 0.4, "perfectMs": 80, "okMs": 180 },
                 "toss": { "arcSeconds": 0.5, "perfectMs": 120, "okMs": 250 },
                 "casings": { "stock": 3, "dentChance": 0.3 }
             }

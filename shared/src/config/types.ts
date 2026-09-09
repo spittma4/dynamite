@@ -81,6 +81,16 @@ export interface WindowFloorsMs {
     perfect: number;
 }
 
+/**
+ * The other half of ADR 0009's flat execution difficulty. `windowFloorsMs`
+ * bounds how forgiving a mark is; this bounds how close the marks may sit and
+ * how much warning the player gets before the first one.
+ */
+export interface TempoFloorsMs {
+    markSpacing: number;
+    leadInMs: number;
+}
+
 export interface DropConfig {
     kegKnockOverOnHit: boolean;
     stickFizzleChance: number;
@@ -150,6 +160,8 @@ export interface KnotsConfig {
 
 export interface CrimpConfig {
     clicks: number;
+    /** The gap between the last knot and the first click, which is not the gap between clicks. */
+    leadSeconds: number;
     clickSeconds: number;
     perfectMs: number;
     okMs: number;
@@ -353,6 +365,7 @@ export interface LevelConfig {
     movement?: MovementConfig;
     bpm: number;
     windowFloorsMs: WindowFloorsMs;
+    tempoFloorsMs?: TempoFloorsMs;
     carry: CarryConfig;
     stations: StationConfig[];
     recipes: Record<string, RecipeConfig>;

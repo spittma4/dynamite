@@ -2,21 +2,21 @@ import type {
     StationType,
     BannerKey,
     FactoryState,
-    LevelConfig,
-    OrderState,
     PlayerState,
     ToastMsg,
+    TruckPhase,
 } from '@shared';
 import type Phaser from 'phaser';
 
 import { HUD_HEIGHT, TOAST_MAX, TOAST_MS } from '../constants';
+import { GROOVE, NOTHING_ON_THE_BOARD, ORDER_BOARD } from '../nouns';
 import type { Connection } from '../net/connection';
-import { productLabel } from '../render/dropTargets';
-import { BANNER_COLOURS, TOAST_COLOURS, UI, lineColour } from '../render/palette';
+import { BANNER_COLOURS, BOARD_COLOURS, TOAST_COLOURS, UI, lineColour } from '../render/palette';
 import { HELP_HINT, helpSections } from './helpContent';
 import type { Factory } from '../scenes/Factory';
 import { mmss } from './format';
 import { grooveBand } from './grooveBand';
+import { BOARD_HINT, type BoardRow, orderBoardRows } from './orderBoard';
 
 /**
  * The top band, the banner and the toasts (F04 §8). Everything it shows is read
@@ -62,34 +62,29 @@ export function clockText(view: ClockView, isHost: boolean): string {
     return mmss(view.shiftSeconds - view.clock);
 }
 
+/**
+ * How much of the day's book is left, in the HUD band. 'BOOK' was a noun no
+ * other surface in the client said and nothing defined — and the panel title
+ * repeated it, so one line read 'ORDER BOARD · BOOK 11/13'.
+ */
 export function bookText(remaining: number, total: number): string {
-    return `BOOK ${remaining}/${total}`;
+    return `ORDERS ${remaining}/${total}`;
 }
 
 /**
- * Order ids are `o-<n>` (contracts §3), so plain string order lists a book of
- * ten as `o-1, o-10, o-2`. The board is read top to bottom in book order.
+ * Whether the band shows the count at all. `bookTotal` is 0 until the whistle
+ * and 0 all day in Sandbox (contracts §3), so before the shift starts the band
+ * was counting nothing — and 'ORDERS 0/0' sits hard against the left edge of a
+ * lobby line that, at one player, runs the full width of the band. One rule,
+ * the same one `boardTitle` uses: no book, no count.
  */
-export function compareOrderIds(a: string, b: string): number {
-    const left = Number(a.slice(2));
-    const right = Number(b.slice(2));
-
-    if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
-
-    return a.localeCompare(b);
+export function showsBook(total: number): boolean {
+    return total > 0;
 }
 
-/**
- * One row of the `Tab` board. `OrderState.product` is a recipe key, and printed
- * raw the board read 'o-1  red_stick  0/7  open' — snake_case dev-speak, and a
- * name for the finished stick that appears on no other surface.
- */
-export function boardRow(
-    id: string,
-    order: Pick<OrderState, 'product' | 'shipped' | 'qty' | 'status'>,
-    recipes: LevelConfig['recipes'],
-): string {
-    return `${id}  ${productLabel(order.product, recipes)}  ${order.shipped}/${order.qty}  ${order.status}`;
+/** Sandbox has no book, so a count there would only ever read 0/0. */
+export function boardTitle(remaining: number, total: number): string {
+    return total > 0 ? `${ORDER_BOARD} · ${remaining}/${total} LEFT` : ORDER_BOARD;
 }
 
 function css(colour: number): string {
@@ -117,6 +112,8 @@ export class Hud {
     private local: string | null = null;
     private localColour = 0xf2d33b;
     private boardPanel: Phaser.GameObjects.Container | null = null;
+    private boardOpen = false;
+    private boardSignature = '';
     private helpPanel: Phaser.GameObjects.Container | null = null;
 
     constructor(
@@ -129,8 +126,8 @@ export class Hud {
         scene.add
             .text(10, HUD_HEIGHT + scene.floorHeight - 16, HELP_HINT, {
                 fontFamily: 'monospace',
-                fontSize: '11px',
-                color: '#7a7d82',
+                fontSize: '12px',
+                color: css(UI.text),
             })
             .setDepth(5);
 
@@ -163,7 +160,7 @@ export class Hud {
             .setOrigin(0.5, 0);
 
         this.grooveLabel = scene.add
-            .text(width - 8, 4, 'GROOVE', {
+            .text(width - 8, 4, GROOVE, {
                 fontFamily: 'monospace',
                 fontSize: '11px',
                 color: css(UI.text),
@@ -224,53 +221,105 @@ export class Hud {
         this.scene.time.delayedCall(TOAST_MS, () => this.dropToast(panel));
     }
 
-    /** The `Tab` order board (F04 §8) — one row per order, sorted by id. */
+    /**
+     * The `Tab` board (F04 §8). Held rather than toggled, so it is repainted
+     * from `update` while it is up — a truck's countdown that froze the moment
+     * the key went down would be lying about the only number on the panel that
+     * moves.
+     */
     board(open: boolean): void {
-        this.boardPanel?.destroy(true);
-        this.boardPanel = null;
+        this.boardOpen = open;
 
-        if (!open) return;
+        if (!open) {
+            this.boardPanel?.destroy(true);
+            this.boardPanel = null;
+            this.boardSignature = '';
 
+            return;
+        }
+
+        this.paintBoard(this.conn.clock.now());
+    }
+
+    /** Rebuilt only when a row's words or its colour change: once a second at most. */
+    private paintBoard(serverNow: number): void {
         const state = this.conn.state;
-        const width = Math.min(420, this.scene.floorWidth - 64);
-        const recipes = this.scene.levelConfig.recipes;
-        const rows = [...state.orders.entries()]
-            .sort(([a], [b]) => compareOrderIds(a, b))
-            .map(([id, order]) => boardRow(id, order, recipes));
-        const height = 56 + rows.length * 16;
-        const panel = this.scene.add.container(
-            (this.scene.floorWidth - width) / 2,
-            (this.scene.floorHeight - height) / 2,
-        );
-        const background = this.scene.add.graphics();
+        const level = this.scene.levelConfig;
+        const rows = orderBoardRows([...state.orders.values()], {
+            now: serverNow,
+            orders: level.orders,
+            recipes: level.recipes,
+            truck: { id: state.truck.id, phase: state.truck.phase as TruckPhase },
+        });
+        const signature = rows.map((row) => `${row.tone} ${row.text}`).join('\n');
 
+        if (this.boardPanel !== null && signature === this.boardSignature) return;
+
+        this.boardSignature = signature;
+        this.boardPanel?.destroy(true);
+        this.boardPanel = this.buildBoard(rows, state);
+    }
+
+    private buildBoard(rows: BoardRow[], state: FactoryState): Phaser.GameObjects.Container {
+        const width = Math.min(480, this.scene.floorWidth - 64);
+        const panel = this.scene.add.container(0, 0);
+        const background = this.scene.add.graphics();
+        const parts: Phaser.GameObjects.GameObject[] = [
+            background,
+            this.scene.add.text(16, 12, boardTitle(state.bookRemaining, state.bookTotal), {
+                fontFamily: 'monospace',
+                fontSize: '14px',
+                color: css(UI.text),
+                fontStyle: 'bold',
+            }),
+        ];
+
+        let y = 40;
+
+        if (rows.length === 0) {
+            parts.push(
+                this.scene.add.text(16, y, NOTHING_ON_THE_BOARD, {
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    color: css(BOARD_COLOURS.waiting),
+                }),
+            );
+            y += 16;
+        }
+
+        for (const row of rows) {
+            parts.push(
+                this.scene.add.text(16, y, row.text, {
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    color: css(BOARD_COLOURS[row.tone]),
+                }),
+            );
+            y += 16;
+        }
+
+        const hint = this.scene.add.text(16, y + 10, BOARD_HINT, {
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: css(BOARD_COLOURS.done),
+            wordWrap: { width: width - 32 },
+        });
+        const height = y + 10 + hint.height + 12;
+
+        parts.push(hint);
         background.fillStyle(UI.panel, 0.9);
         background.fillRoundedRect(0, 0, width, height, 8);
         background.lineStyle(2, lineColour('a'), 1);
         background.strokeRoundedRect(0, 0, width, height, 8);
 
-        panel.add([
-            background,
-            this.scene.add.text(
-                16,
-                12,
-                `ORDER BOARD · ${bookText(state.bookRemaining, state.bookTotal)}`,
-                {
-                    fontFamily: 'monospace',
-                    fontSize: '14px',
-                    color: css(UI.text),
-                    fontStyle: 'bold',
-                },
-            ),
-            this.scene.add.text(16, 40, rows.length > 0 ? rows.join('\n') : 'no orders yet', {
-                fontFamily: 'monospace',
-                fontSize: '12px',
-                color: '#bbbbbb',
-            }),
-        ]);
-
+        panel.setPosition(
+            (this.scene.floorWidth - width) / 2,
+            Math.max(8, (this.scene.floorHeight - height) / 2),
+        );
+        panel.add(parts);
         this.scene.layers.overlay.add(panel);
-        this.boardPanel = panel;
+
+        return panel;
     }
 
     /**
@@ -283,7 +332,7 @@ export class Hud {
 
         if (!open) return;
 
-        const sections = helpSections(station);
+        const sections = helpSections(station, this.scene.levelConfig.carry.throwTiles);
         const width = Math.min(560, this.scene.floorWidth - 48);
         // Height is finalised after the rows are laid out, since wrapping decides it.
         const lines = sections.reduce((n, s) => n + s.rows.length + 2, 0);
@@ -361,6 +410,8 @@ export class Hud {
     }
 
     update(state: FactoryState, me: PlayerState | undefined, serverNow: number): void {
+        if (this.boardOpen) this.paintBoard(serverNow);
+
         this.updateChip(me);
         this.updateBook(state);
         this.updateClock(state);
@@ -385,13 +436,12 @@ export class Hud {
     }
 
     private updateBook(state: FactoryState): void {
-        // Sandbox has no book at all, so the glyphs would only ever read 0/0.
-        const sandbox = state.shiftSeconds === 0;
+        const hasBook = showsBook(state.bookTotal);
 
-        this.book.setVisible(!sandbox);
-        this.glyphs.setVisible(!sandbox);
+        this.book.setVisible(hasBook);
+        this.glyphs.setVisible(hasBook);
 
-        if (sandbox) return;
+        if (!hasBook) return;
 
         const line = bookText(state.bookRemaining, state.bookTotal);
 
@@ -433,7 +483,7 @@ export class Hud {
         const band = grooveBand(state.groove, this.conn.config.level.groove.thresholds);
         const left = this.scene.floorWidth - 8 - BAR_WIDTH;
 
-        this.grooveLabel.setText(band.label === '' ? 'GROOVE' : band.label);
+        this.grooveLabel.setText(band.label === '' ? GROOVE : band.label);
         this.grooveLabel.setColor(css(band.colour));
 
         this.grooveBar.clear();

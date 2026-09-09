@@ -1,11 +1,7 @@
 import type { ItemType, JigMg, StationConfig, Tile } from '@shared';
 
-import {
-    FUSE_SET,
-    NEED_KEG,
-    SHELF_FULL,
-    SHELF_FULL_HANDS,
-} from '../minigames/Jig';
+import { NEED_KEG, SHELF_FULL, SHELF_FULL_HANDS } from '../minigames/Jig';
+import { FUSE_SET } from '../nouns';
 import { SELF_STOCKED, haulableInputs, pluralOf } from './dropTargets';
 
 /**

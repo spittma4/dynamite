@@ -18,7 +18,8 @@ Electrolyte project `dynamite` mirrors this table (one epic + one ticket per fea
   `00-contracts.md` and says so in its doc's *Contract change requested* section.
 - **Ownership.** A feature edits only the paths it owns (listed in its doc) plus its own
   `shared/src/sim/<module>.ts` + test. No reformatting of files you don't own.
-- **No commits by agents.** The repo owner commits between waves.
+- **Agents never commit.** The lead session commits at green wave boundaries, authorised by
+  the repo owner for the run up to MVP.
 - Project rules from the Laravel installer (`CLAUDE.md` at the root, Boost) apply: Pest via
   `php artisan make:test --pest`, Pint before finishing, `make:` commands for new classes.
   The new base folders (`shared/`, `game-server/`, `config/game/`) and the JS dependencies
@@ -37,13 +38,30 @@ Epic: **EL-173**.
 | F04 | EL-177 | Client core: Phaser boot, connection, floor, avatars, prediction, HUD, debug | 2 | `F04-client-core.md` | ✅ 2026-09-09 — 114 tests, tsc clean, play page renders |
 | F05 | EL-178 | Stations & staffing: work tiles, clipboard, curve, interrupts, output-to-hands | 3 | `F05-stations-staffing.md` | ✅ 2026-09-09 |
 | F06 | EL-179 | Items, carry, throw, drop table, hauling, jam/unjam, spills | 3 | `F06-items-carry-throw.md` | ✅ 2026-09-09 |
-| F07 | EL-180 | The Slammer | 4 | `F07-slammer.md` | ⏳ |
-| F08 | EL-181 | The Jig | 4 | `F08-jig.md` | ⏳ |
-| F09 | EL-182 | The Dock, orders, truck | 4 | `F09-dock.md` | ⏳ |
-| F10 | EL-183 | Hazards: fuel, sparks, fuses, chains, explosion, beacon, hot potato | 5 | `F10-hazards.md` | ☐ |
-| F11 | EL-184 | Day loop, metrics, report card + P&L, run storage, Report scene | 5 | `F11-day-report-grade.md` | ⏳ tally, metrics, Groove, `buildReport`/`reportSystem` and the Report scene all landed — 58 server + 18 client vitest cases green, both typechecks clean; only the in-app pass (report card in a browser, NEXT DAY into day 2) is outstanding |
-| F12 | EL-185 | Levels 1–4 + Sandbox, layout, copy, validation, level select, PLAYTEST.md | **1** (copy) / 5 (levels) | `F12-levels-sandbox.md` | ⏳ copy slice ✅ 2026-09-05 — `copy.json` + `copy.ts` + barrel line, 17 vitest cases green, `shared` typecheck clean; levels + layout + Laravel + PLAYTEST.md remain in wave 5 |
+| F07 | EL-180 | The Slammer | 4 | `F07-slammer.md` | ✅ 2026-09-09 — `981a09f` |
+| F08 | EL-181 | The Jig | 4 | `F08-jig.md` | ✅ 2026-09-09 — `981a09f` |
+| F09 | EL-182 | The Dock, orders, truck | 4 | `F09-dock.md` | ✅ 2026-09-09 — `981a09f` |
+| F10 | EL-183 | Hazards: fuel, sparks, fuses, chains, explosion, beacon, hot potato | 5 | `F10-hazards.md` | ✅ 2026-09-09 — `a38f6d3`. Doc still describes the pre-v2.2 single destroy counter (EL-188) |
+| F11 | EL-184 | Day loop, metrics, report card + P&L, run storage, Report scene | 5 | `F11-day-report-grade.md` | ✅ 2026-09-09 — `a38f6d3`. Review caught a non-integer `pnl.profit` that Laravel rejected (losing the crew's whole day) and the last truck's order dropped from the cycle time that feeds the grade. Report scene not yet seen in a browser |
+| F12 | EL-185 | Levels 1–4 + Sandbox, layout, copy, validation, level select, PLAYTEST.md | **1** (copy) / 5 (levels) | `F12-levels-sandbox.md` | ✅ 2026-09-09 — `a38f6d3`. Review caught that levels 2–4 shipped an order book nobody could finish in the shift (100 sticks against a ten-minute clock); every level validated, none was winnable. Retuned |
+| — | EL-186 | **Crimp retune + tempo floors** — the crimp was unplayable and `clickSeconds` was validated nowhere | 6 | `F14-difficulty-tuning.md` | ✅ 2026-09-09 — `leadSeconds` 0.4 / spacing 0.4 / okMs 180; a tap on click 2 is now 400 ms out against a ±180 ms window, so it misses. T1/T2/T3 added to `validateLevelConfig`, every judged timing in the game audited |
+| — | EL-194 | **No audio anywhere in the client**, and three mini-games are rhythm games | 6 | — | ☐ MVP-blocking |
+| — | EL-188 | Housekeeping: one noun per object, `mvp-small` → `one-line`, order board, clipped Blast Bin label | 6 | — | ◐ client half ✅ 2026-09-09 — order board rebuilt as a job list leading with the fuse length, `nouns.ts` + a vocabulary test that fails on a second name for one object, waits no longer painted red, prop labels clamp inside the world. Server half (`copy.json`, `shared/src/copy.ts`, the `mvp-small` rename in contracts/F01/F08/F12) remains |
 | — | EL-173 | Integration playtest, tuning, MVP checklist | 6 | plan | ☐ |
+
+## M2 — designed, not built
+
+Epic: **EL-187**. Five feature docs and two ADRs written 2026-09-09; no code yet.
+Build order: contracts v2.2 → F15 (the floor moves, and F16's distances are measured
+against it) → F14 → F17 → F16 → F13.
+
+| # | Ticket | Feature | Doc |
+|---|--------|---------|-----|
+| F13 | EL-189 | Menu, settings, crew management | `F13-menu-settings-crew.md` |
+| F14 | EL-190 | Two difficulty dials, tempo floors, admin surface | `F14-difficulty-tuning.md` · ADR 0014 |
+| F15 | EL-191 | Hoppers, the fuse rack, the re-laid floor | `F15-legible-flow.md` · ADR 0015 |
+| F16 | EL-192 | Sprint and the fumble meter | `F16-sprint-and-fumble.md` |
+| F17 | EL-193 | Hats: published intent and the empty-peg staffing board | `F17-hats-and-roles.md` |
 
 Legend: ☐ not started · ⏳ in progress · ✅ done (all four header boxes ticked in the doc).
 
@@ -58,13 +76,21 @@ because F02's `ConfigMsg` type-imports `Copy`.
 - ~~`/factories/{factory}/play` returns 500 until F04 creates `main.ts`~~ — **resolved
   2026-09-09**: F04 shipped `main.ts`, the Vite manifest carries the game entry, and the page
   renders a Phaser canvas in a real browser.
-- The lobby needs **3 players** to start a day (`level.players.min`), so a two-browser test
-  can reach the floor but not start the shift. Playtests need a third client (or a Sandbox
-  level with `players.min: 1`, which F12 ships in wave 5).
+- ~~The lobby needs **3 players** to start a day~~ — **resolved**: ADR 0013 makes Level 1 and
+  Sandbox `players.min: 1` with a small-crew scaling breakpoint, so one browser can start a
+  shift. Three or more is still the real game, and the lobby says so.
+- The floor still violates **ADR 0015** (forward is rightward): the layout named `one-line`
+  zigzags. F15/EL-191 re-lays it.
 
 ## Progress
 
-Wave 3 complete 2026-09-09: **855 tests green** (game-server 269, shared 249, client 166, Laravel 171), all four typechecks clean.
+Wave 5 complete 2026-09-09 (`a38f6d3`): **1869 tests green** — game-server 611, shared 418,
+client 655, Laravel 185 — all four typechecks clean, server boots on :2567, and the play page
+was exercised in a real browser: the shift starts, the clock runs, the order book draws down
+and a truck arrives.
+
+Earlier: wave 3 complete 2026-09-09, 855 tests (game-server 269, shared 249, client 166,
+Laravel 171).
 
 ## Gates
 

@@ -36,6 +36,7 @@ const {
     stationBubble,
     stripeSegments,
 } = await import('../render/Stations');
+const { JIG_COLOURS } = await import('../minigames/Jig');
 
 /**
  * The station layer's decisions (F05 §Client). Every one of them is a function
@@ -147,11 +148,35 @@ describe('drawItemGlyph', () => {
     });
 });
 
+/**
+ * A restock is not a fault. `stationStatus` sets `state = 'starved'` whenever
+ * somebody is seated and the shelf has no casing, so 'STARVED' was painted in
+ * the alert red directly above the bubble 'CASINGS COMING' — the Jig prints its
+ * own casings and the answer is to stand still. The Jig panel already splits
+ * `act` from `wait` (`blockColour`); the floor is where the label is read from,
+ * and it never got the same treatment.
+ */
 describe('stateLabel', () => {
     it('names only the states a player has to do something about', () => {
         expect(stateLabel('starved')).toEqual({ text: 'STARVED', colour: STATION_COLOURS.alert });
         expect(stateLabel('jammed')).toEqual({ text: 'JAMMED', colour: STATION_COLOURS.alert });
         expect(stateLabel('damaged')).toEqual({ text: 'DAMAGED', colour: STATION_COLOURS.damaged });
+    });
+
+    it('drops the alarm when the shortage is one nobody can act on', () => {
+        const wait = { sentence: 'CASINGS COMING', haul: false, act: false };
+        const errand = { sentence: 'NEED A KEG', haul: true, act: true };
+
+        expect(stateLabel('starved', wait)?.colour).toBe(JIG_COLOURS.wait);
+        expect(stateLabel('starved', errand)?.colour).toBe(STATION_COLOURS.alert);
+        expect(stateLabel('starved', wait)?.text).toBe('STARVED');
+    });
+
+    it('keeps the alarm for a jam and the grey for damage, whatever is short', () => {
+        const wait = { sentence: 'CASINGS COMING', haul: false, act: false };
+
+        expect(stateLabel('jammed', wait)?.colour).toBe(STATION_COLOURS.alert);
+        expect(stateLabel('damaged', wait)?.colour).toBe(STATION_COLOURS.damaged);
     });
 
     it('says nothing while the station is idle or working', () => {
@@ -417,6 +442,8 @@ describe('occupiedWorkTiles', () => {
 interface TextStyle {
     fontSize?: string;
     fontStyle?: string;
+    wordWrap?: { width: number };
+    align?: string;
 }
 
 class FakeText {
@@ -642,6 +669,29 @@ function row(over: Record<string, unknown>): Record<string, unknown> {
     };
 }
 
+/**
+ * The longest thing a bubble can be handed is `SHELF_FULL_HANDS`, 44 characters
+ * — roughly 265 px at 10 px monospace, over eight tiles, centred on the machine
+ * and drawn across whatever is beside it. It fires at the exact moment a player
+ * is stuck holding a keg at a full shelf, which is the worst moment to paint
+ * over the shelf they are looking at.
+ */
+describe('the station bubble', () => {
+    it('wraps rather than running across the floor beside the machine', () => {
+        const h = harness(row({ state: 'starved' }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const bubble = h.texts.find((t) => t.text === STATION_COPY.needParts);
+        const wrap = bubble?.style.wordWrap?.width ?? 0;
+
+        expect(wrap).toBeGreaterThan(0);
+        expect(wrap).toBeLessThanOrEqual(TILE_PX * 6);
+        expect(bubble?.style.align).toBe('center');
+    });
+});
+
 describe('createStationsLayer', () => {
     it('draws the furniture and the machine label from the config alone', () => {
         const h = harness(null);
@@ -811,6 +861,38 @@ describe('the intake apron', () => {
 
         expect(h.texts.some((t) => t.text === 'NEED A KEG' && t.visible)).toBe(true);
         expect(h.texts.some((t) => t.text === STATION_COPY.needParts && t.visible)).toBe(false);
+    });
+
+    /**
+     * The read the whole split exists for: a Jig that has run out of the casings
+     * it prints for itself. The bubble says CASINGS COMING and the word above it
+     * used to be red — a fault light over a machine restocking itself, at the
+     * one moment the answer is to stand still.
+     */
+    it('paints a restock as a wait, not as a fault', () => {
+        const h = harness(null, assembly({ state: 'starved', inputShelf: ['k-1'], mg: SEAT }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const said = h.texts.find((t) => t.text === 'STARVED' && t.visible);
+
+        expect(h.texts.some((t) => t.text === 'CASINGS COMING' && t.visible)).toBe(true);
+        expect(said?.colour).toBe(`#${JIG_COLOURS.wait.toString(16).padStart(6, '0')}`);
+    });
+
+    it('keeps the alarm on the word when somebody has to walk a keg over', () => {
+        const h = harness(
+            null,
+            assembly({ state: 'starved', inputShelf: ['c-1', 'c-2', 'c-3'], mg: SEAT }),
+        );
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const said = h.texts.find((t) => t.text === 'STARVED' && t.visible);
+
+        expect(said?.colour).toBe(`#${STATION_COLOURS.alert.toString(16).padStart(6, '0')}`);
     });
 
     it('still says the copy line when the shortage is nothing a player hauls', () => {

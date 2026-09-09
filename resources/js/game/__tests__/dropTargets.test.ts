@@ -10,6 +10,7 @@ import {
     pluralOf,
     producedBy,
     productLabel,
+    productPlural,
     shelfLabel,
 } from '../render/dropTargets';
 
@@ -280,5 +281,16 @@ describe('productLabel', () => {
 
     it('never lets a snake_case key reach a panel, even one no recipe knows', () => {
         expect(productLabel('gold_stick', LEVEL.recipes)).toBe('GOLD STICK');
+    });
+});
+
+describe('productPlural', () => {
+    /** '4/8 STICK' is not English, and 'STICKS' is already written on the floor. */
+    it('counts an order in the plural the signs already use', () => {
+        expect(productPlural('red_stick', LEVEL.recipes)).toBe(pluralOf('stick'));
+    });
+
+    it('still pluralises a product no recipe on this level knows', () => {
+        expect(productPlural('gold_stick', LEVEL.recipes)).toBe('GOLD STICKS');
     });
 });

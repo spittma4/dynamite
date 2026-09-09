@@ -1,7 +1,7 @@
 {
     "key": "level-01-basic-flow",
     "name": "Basic Flow",
-    "notes": "Basic Flow, the tutorial level: 'Oh, I bring the keg over here.' The only thing it has to teach is the route, so the book is 8 rather than the baseline 10 - eight trucks leave two truck-slots of slack, and a crew that learns the haul finishes early and sees the early-finish bonus. players.min is 1 under ADR 0013: the maxPlayers 2 breakpoint tunes the taster (book 4, trucks every 90 s, 2 sticks a truck) so one pair of hands can actually finish a day, and the maxPlayers 3 breakpoint does the same for a crew of three - one spare pair of hands rather than three, so 44 sticks and not 60. The lobby still says 'Best with 3+'. explosionEndsRound is false because here the pile is a lesson rather than a trap with teeth - the blast damages every station and the day continues (docs/16).",
+    "notes": "Basic Flow, the tutorial level: 'Oh, I bring the keg over here.' The only thing it has to teach is the route, so the book is 8 rather than the baseline 10 - eight trucks leave two truck-slots of slack, and a crew that learns the haul finishes early and sees the early-finish bonus. players.min is 1 under ADR 0013: the maxPlayers 2 breakpoint tunes the taster (book 4, trucks every 90 s, 2 sticks a truck) so one pair of hands can actually finish a day, and the maxPlayers 3 breakpoint does the same for a crew of three - one spare pair of hands rather than three, so 44 sticks and not 60. The lobby still says 'Best with 3+'. explosionEndsRound is false because here the pile is a lesson rather than a trap with teeth - the blast damages every station and the day continues (docs/16). F14 retunes the crimp to a 0.4 s lead-in, 0.4 s clicks and a 180 ms OK window: at 0.2 s the first click landed 200 ms after the knot the player was still resolving, the whole ratchet was over in 600 ms, and the +/-200 ms window around the third click opened exactly on the second, so tapping the wrong click scored OK. The new numbers clear the tempoFloorsMs mark floor (400 >= 250), the coupling rule (180 < 200) and the lead floor (400 >= 400), and put every marker in A's phrase on the same 400 ms beat as the knots. The 0.4 s ratchet takes A's phrase from 4.2 s to 4.8 s, so assembly-a's nominalSeconds 6.0 is now exactly the flawless worst case - dud keg, long fuse, every mark clean - rather than an expectation with slack. Nothing is mistuned by it: the Jig supplies its own state and progress, so the cycle-rule fallback that reads nominalSeconds never runs here, and a pair stays machine-bound at 5.0 s. Raise it to ~6.8 only as a deliberate F12 balance pass.",
     "day": {
         "shiftSeconds": 600,
         "orderBook": 8,
@@ -115,7 +115,7 @@
                     "primeKegWindowMultiplier": 1.5
                 },
                 "knots": { "long": 3, "short": 2, "secondsPerKnot": 0.4, "perfectMs": 60, "okMs": 140 },
-                "crimp": { "clicks": 3, "clickSeconds": 0.2, "perfectMs": 80, "okMs": 200 },
+                "crimp": { "clicks": 3, "leadSeconds": 0.4, "clickSeconds": 0.4, "perfectMs": 80, "okMs": 180 },
                 "toss": { "arcSeconds": 0.5, "perfectMs": 120, "okMs": 250 },
                 "casings": { "stock": 3, "dentChance": 0.3 }
             }

@@ -2,7 +2,7 @@ import Ajv from 'ajv';
 import type { ErrorObject, ValidateFunction } from 'ajv';
 
 import schema from './schema.json';
-import { applyDefaults } from './defaults';
+import { LEVEL_DEFAULTS, applyDefaults } from './defaults';
 import { STATION_SHORT } from '../sim/constants';
 import { inBounds, packTile, tileKey } from '../sim/tiles';
 import type {
@@ -14,6 +14,7 @@ import type {
     Rect,
     ScalingBreakpoint,
     StationConfig,
+    TempoFloorsMs,
     Tile,
 } from './types';
 
@@ -109,6 +110,215 @@ function windowsOf(level: LevelConfig): Window[] {
     }
 
     return windows;
+}
+
+/**
+ * Seconds are what a designer writes and milliseconds what these rules compare,
+ * and `0.4 * 1000` is not 400 — a floor sitting exactly on an authored value
+ * would otherwise reject or accept it on a rounding bit.
+ */
+function ms(value: number): number {
+    return Math.round(value * 1000) / 1000;
+}
+
+/** A judged marker series: how far its marks sit apart, and how wide the OK window on them is. */
+interface Marks {
+    /** The window T2 reports on. */
+    path: string;
+    /** The field that sets the gap, which for the pour is the level's own beat. */
+    spacingPath: string;
+    spacingMs: number;
+    okMs: number;
+}
+
+/** A judged window and the warning the player gets before the mark it belongs to. */
+interface Cue {
+    /** The phase T3's lead floor reports on. */
+    path: string;
+    /** The window T3's second clause reports on; the Slammer has two on one charge. */
+    windowPath: string;
+    leadMs: number;
+    okMs: number;
+    /**
+     * Whether the cue is something the player has to see coming. The Slammer's
+     * charge is the player's own hold, so no reaction-time floor applies to it —
+     * only the promise that its window cannot open before the hold began.
+     */
+    anticipated: boolean;
+}
+
+function marksOf(level: LevelConfig): Marks[] {
+    const beatMs = ms(60000 / level.bpm);
+    const marks: Marks[] = [];
+
+    for (const station of level.stations) {
+        const at = `stations.${station.id}.minigame`;
+
+        if (station.type === 'assembly') {
+            const mg = station.minigame as AssemblyMinigame;
+
+            marks.push(
+                // The pour is one judged mark on a running beat grid, so the
+                // grid is what the player counts and `bpm` is what an author
+                // would have to change.
+                { path: `${at}.pour`, spacingPath: 'bpm', spacingMs: beatMs, okMs: mg.pour.okMs },
+                {
+                    path: `${at}.knots`,
+                    spacingPath: `${at}.knots`,
+                    spacingMs: ms(mg.knots.secondsPerKnot * 1000),
+                    okMs: mg.knots.okMs,
+                },
+                {
+                    path: `${at}.crimp`,
+                    spacingPath: `${at}.crimp`,
+                    spacingMs: ms(mg.crimp.clickSeconds * 1000),
+                    okMs: mg.crimp.okMs,
+                },
+            );
+            continue;
+        }
+
+        if (station.type === 'dock') {
+            const mg = station.minigame as DockMinigame;
+
+            marks.push({
+                path: at,
+                spacingPath: at,
+                spacingMs: ms(1000 / mg.beepHz),
+                okMs: mg.okMs,
+            });
+        }
+    }
+
+    return marks;
+}
+
+function cuesOf(level: LevelConfig): Cue[] {
+    const beatMs = ms(60000 / level.bpm);
+    // The catch's cue is the throw: `arrivesAt` is the flight away, so a window
+    // wider than the flight is open before the item leaves the thrower. The
+    // flight itself carries no lead floor — Dexterity scales it with nothing to
+    // clamp to, and a floor here would reject the transform's own output.
+    const cues: Cue[] = [
+        {
+            path: 'carry',
+            windowPath: 'carry.catchOkMs',
+            leadMs: ms(level.carry.throwFlightSeconds * 1000),
+            okMs: level.carry.catchOkMs,
+            anticipated: false,
+        },
+    ];
+
+    for (const station of level.stations) {
+        const at = `stations.${station.id}.minigame`;
+
+        if (station.type === 'boom_powder') {
+            const { heat } = station.minigame as BoomPowderMinigame;
+
+            // `okWindowMs` interpolates between the two across the charge
+            // (slammer.ts), so the opening is linear in the hold and testing the
+            // ends tests the whole of it. The widest window against the shortest
+            // hold would be one line and would reject levels that are fine.
+            cues.push(
+                {
+                    path: `${at}.heat`,
+                    windowPath: `${at}.heat.okMsAtMinCharge`,
+                    leadMs: ms(heat.minChargeSeconds * 1000),
+                    okMs: heat.okMsAtMinCharge,
+                    anticipated: false,
+                },
+                {
+                    path: `${at}.heat`,
+                    windowPath: `${at}.heat.okMsAtMaxCharge`,
+                    leadMs: ms(heat.maxChargeSeconds * 1000),
+                    okMs: heat.okMsAtMaxCharge,
+                    anticipated: false,
+                },
+            );
+            continue;
+        }
+
+        if (station.type === 'assembly') {
+            const mg = station.minigame as AssemblyMinigame;
+            // The shortest pour a keg can ask for is the least warning the phase
+            // ever gives, so the cheapest keg sets the bound.
+            const beats = Math.min(...Object.values(mg.pour.beatsByQuality));
+
+            cues.push(
+                {
+                    path: `${at}.pour`,
+                    windowPath: `${at}.pour.okMs`,
+                    leadMs: ms(beats * beatMs),
+                    okMs: mg.pour.okMs,
+                    anticipated: true,
+                },
+                {
+                    path: `${at}.crimp`,
+                    windowPath: `${at}.crimp.okMs`,
+                    leadMs: ms(mg.crimp.leadSeconds * 1000),
+                    okMs: mg.crimp.okMs,
+                    anticipated: true,
+                },
+                {
+                    path: `${at}.toss`,
+                    windowPath: `${at}.toss.okMs`,
+                    leadMs: ms(mg.toss.arcSeconds * 1000),
+                    okMs: mg.toss.okMs,
+                    anticipated: true,
+                },
+            );
+        }
+    }
+
+    return cues;
+}
+
+/**
+ * ADR 0009 keeps execution difficulty flat with millisecond floors, and
+ * `windowFloorsMs` only ever bounded how forgiving a mark is. These are the
+ * three rules that bound the beat the marks sit on, without which a level can
+ * ship a series no hand can play and still validate.
+ */
+function checkTempo(level: LevelConfig, floors: TempoFloorsMs, errors: string[]): void {
+    const series = marksOf(level);
+    // Two assembly stations share one `bpm`, and one error about it is enough.
+    const reported = new Set<string>();
+
+    for (const marks of series) {
+        if (marks.spacingMs >= floors.markSpacing || reported.has(marks.spacingPath)) continue;
+
+        reported.add(marks.spacingPath);
+        errors.push(
+            `${marks.spacingPath}: ${marks.spacingMs} ms apart is tighter than ` +
+                `the ${floors.markSpacing} ms mark floor`,
+        );
+    }
+
+    // Half the gap, so a tap is never nearer a mark than the one being judged
+    // and two neighbouring windows never touch.
+    for (const marks of series) {
+        if (marks.okMs < marks.spacingMs / 2) continue;
+
+        errors.push(
+            `${marks.path}.okMs: ${marks.okMs} ms is wider than half ` +
+                `the ${marks.spacingMs} ms between marks`,
+        );
+    }
+
+    for (const cue of cuesOf(level)) {
+        if (cue.anticipated && cue.leadMs < floors.leadInMs) {
+            errors.push(
+                `${cue.path}: ${cue.leadMs} ms of lead-in is tighter than ` +
+                    `the ${floors.leadInMs} ms lead floor`,
+            );
+        }
+
+        if (cue.okMs > cue.leadMs) {
+            errors.push(
+                `${cue.windowPath}: ${cue.okMs} ms opens before its own ${cue.leadMs} ms lead-in`,
+            );
+        }
+    }
 }
 
 const WORKER_COUNT = /^[1-9][0-9]*$/;
@@ -221,6 +431,10 @@ function checkDayAndPlayers(level: LevelConfig, errors: string[]): void {
 /** Every semantic rule runs, so one save reports every fault rather than the first. */
 function semanticErrors(level: LevelConfig): string[] {
     const errors: string[] = [];
+    // Every rule here reads the level as parsed, and `applyDefaults` only runs
+    // once this has returned, so the tempo rules resolve their own floors rather
+    // than reading a key no shipped level file carries.
+    const floors = level.tempoFloorsMs ?? LEVEL_DEFAULTS.tempoFloorsMs;
 
     for (const w of windowsOf(level)) {
         if (w.value < w.floor) {
@@ -228,6 +442,7 @@ function semanticErrors(level: LevelConfig): string[] {
         }
     }
 
+    checkTempo(level, floors, errors);
     checkStations(level, errors);
     checkRecipesAndOrders(level, errors);
     checkScaling(level, errors);

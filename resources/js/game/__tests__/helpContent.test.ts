@@ -12,11 +12,15 @@ import { describe, expect, it } from 'vitest';
 
 import { type KeyEvents, Keys } from '../input/Keys';
 import { dockKeyAction } from '../minigames/Dock';
-import { FUSE_SET, bKeyOp, jigOverlay } from '../minigames/Jig';
-import { chuteFor, keyPlan, outcomeLabel } from '../minigames/Slammer';
+import { bKeyOp, jigOverlay } from '../minigames/Jig';
+import { FUSE_SET, PRIME_KEG } from '../nouns';
+import { LEGEND, chuteFor, keyPlan, outcomeLabel } from '../minigames/Slammer';
 import type { OverlayContext, OverlayKey } from '../minigames/types';
 import { type ArrowKey, emoteForArrow } from '../input/intent';
 import { HELP_HINT, type HelpRow, type HelpSection, helpSections } from '../ui/helpContent';
+
+/** Every shipped level's `carry.throwTiles` (`config/game/levels/*.json`). */
+const THROW_TILES = 2;
 
 function rowsOf(sections: ReturnType<typeof helpSections>): string[] {
     return sections.flatMap((s) => s.rows.map(([key, what]) => `${key} ${what}`));
@@ -24,7 +28,7 @@ function rowsOf(sections: ReturnType<typeof helpSections>): string[] {
 
 describe('helpSections', () => {
     it('always explains how to walk and how to close the help', () => {
-        const rows = rowsOf(helpSections(null)).join(' | ');
+        const rows = rowsOf(helpSections(null, THROW_TILES)).join(' | ');
 
         expect(rows).toMatch(/WASD/i);
         expect(rows).toMatch(/walk/i);
@@ -32,29 +36,29 @@ describe('helpSections', () => {
     });
 
     it('leads with the station you are standing at, because that is what is unobvious', () => {
-        const [first] = helpSections('boom_powder');
+        const [first] = helpSections('boom_powder', THROW_TILES);
 
         expect(first?.title).toMatch(/slammer|powder/i);
     });
 
     it('teaches the Slammer as mash, charge, release', () => {
-        const rows = rowsOf(helpSections('boom_powder')).join(' | ');
+        const rows = rowsOf(helpSections('boom_powder', THROW_TILES)).join(' | ');
 
         expect(rows).toMatch(/mash/i);
         expect(rows).toMatch(/hold .*space/i);
         expect(rows).toMatch(/release/i);
-        expect(rows).toMatch(/band|green/i);
+        expect(rows).toMatch(/band/i);
     });
 
     it('warns that a late release sparks and a fourth mash spills', () => {
-        const rows = rowsOf(helpSections('boom_powder')).join(' | ');
+        const rows = rowsOf(helpSections('boom_powder', THROW_TILES)).join(' | ');
 
         expect(rows).toMatch(/spark/i);
         expect(rows).toMatch(/spill|overflow/i);
     });
 
     it('teaches the Jig as seat, pour, knots, crimp', () => {
-        const rows = rowsOf(helpSections('assembly')).join(' | ');
+        const rows = rowsOf(helpSections('assembly', THROW_TILES)).join(' | ');
 
         expect(rows).toMatch(/seat/i);
         expect(rows).toMatch(/pour|fill/i);
@@ -63,7 +67,7 @@ describe('helpSections', () => {
     });
 
     it('teaches the Dock as set a stick then shove on the beep', () => {
-        const rows = rowsOf(helpSections('dock')).join(' | ');
+        const rows = rowsOf(helpSections('dock', THROW_TILES)).join(' | ');
 
         expect(rows).toMatch(/lane|set/i);
         expect(rows).toMatch(/beep/i);
@@ -71,7 +75,7 @@ describe('helpSections', () => {
     });
 
     it('still lists the floor controls while you are at a station', () => {
-        const titles = helpSections('dock').map((s) => s.title.toLowerCase());
+        const titles = helpSections('dock', THROW_TILES).map((s) => s.title.toLowerCase());
 
         expect(titles.some((t) => /floor|anywhere/.test(t))).toBe(true);
     });
@@ -90,7 +94,7 @@ describe('helpSections', () => {
 
 describe('the flow section', () => {
     it('spells out powder to assembly to the dock, which the floor never says', () => {
-        const flow = helpSections(null).find((s) => /the line/i.test(s.title));
+        const flow = helpSections(null, THROW_TILES).find((s) => /the line/i.test(s.title));
         const rows = flow?.rows.map(([k, v]) => `${k} ${v}`).join(' | ') ?? '';
 
         expect(rows).toMatch(/powder/i);
@@ -103,7 +107,7 @@ describe('the flow section', () => {
     // (`feed()` in shared/src/sim/jig.ts), so a player who goes looking for them
     // is looking for something that does not exist anywhere on the floor.
     it('says the casings are automatic, so nobody goes hunting for them', () => {
-        const flow = helpSections(null).find((s) => /the line/i.test(s.title));
+        const flow = helpSections(null, THROW_TILES).find((s) => /the line/i.test(s.title));
         const rows = flow?.rows.map(([k, v]) => `${k} ${v}`).join(' | ') ?? '';
 
         expect(rows).toMatch(/casing/i);
@@ -113,7 +117,7 @@ describe('the flow section', () => {
 
 describe('the promise the flow section makes about the lighting', () => {
     function inYourHands(): string {
-        const flow = helpSections(null).find((section) => /the line/i.test(section.title));
+        const flow = helpSections(null, THROW_TILES).find((section) => /the line/i.test(section.title));
         const row = flow?.rows.find(([key]) => /in your hands/i.test(key));
 
         return row ? row.join(' ') : '';
@@ -139,7 +143,7 @@ describe('the Boom Powder section', () => {
      * answered it with "E puts it down".
      */
     it('sends a full shelf keg to Assembly rather than onto the floor', () => {
-        const row = helpSections('boom_powder')[0]?.rows.find(([key]) => /shelf full/i.test(key));
+        const row = helpSections('boom_powder', THROW_TILES)[0]?.rows.find(([key]) => /shelf full/i.test(key));
 
         expect(row?.[1]).toMatch(/assembly/i);
         expect(row?.[1]).toMatch(/floor|fire|groove/i);
@@ -148,7 +152,7 @@ describe('the Boom Powder section', () => {
 
 describe('the Assembly section', () => {
     it('does not send you off to find a casing the machine stocks for itself', () => {
-        const rows = rowsOf(helpSections('assembly')).join(' | ');
+        const rows = rowsOf(helpSections('assembly', THROW_TILES)).join(' | ');
 
         expect(rows).toMatch(/seat/i);
         expect(rows).toMatch(/itself|its own|already there|stocked/i);
@@ -161,7 +165,7 @@ describe('the shout row', () => {
     const WORD = { help: 'HELP', stop: 'STOP', go: 'GO', what: '?' } as const;
 
     function shoutRow(): string {
-        return rowsOf(helpSections(null)).find((row) => /Shout/.test(row)) ?? '';
+        return rowsOf(helpSections(null, THROW_TILES)).find((row) => /Shout/.test(row)) ?? '';
     }
 
     // The help panel shipped a mapping that disagreed with `intent.ts` on three
@@ -206,7 +210,7 @@ function keysNamedIn(row: HelpRow): OverlayKey[] {
 }
 
 function sectionFor(station: StationType): HelpSection {
-    const section = helpSections(station)[0];
+    const section = helpSections(station, THROW_TILES)[0];
 
     if (!section) throw new Error(`no help section for ${station}`);
 
@@ -423,7 +427,7 @@ describe('the keys the Dock section names', () => {
 
 describe('the first thing a new player reads', () => {
     function flow(): HelpSection {
-        const section = helpSections(null).find((s) => /the line/i.test(s.title));
+        const section = helpSections(null, THROW_TILES).find((s) => /the line/i.test(s.title));
 
         if (!section) throw new Error('the help has no flow section');
 
@@ -472,7 +476,7 @@ describe('the nouns the help teaches', () => {
         const row = rowSaying('dock', /missed/i);
 
         expect(row.join(' ')).toMatch(/stick/i);
-        expect(rowsOf(helpSections('dock')).join(' ')).not.toMatch(/crate/i);
+        expect(rowsOf(helpSections('dock', THROW_TILES)).join(' ')).not.toMatch(/crate/i);
     });
 
     it('calls the thing B fetches a fuse set, the word the panel uses', () => {
@@ -483,15 +487,30 @@ describe('the nouns the help teaches', () => {
 
     /**
      * The Slammer congratulates a gold release with a word the help never
-     * taught: the row said 'a perfect keg' and the verdict says PRIME.
+     * taught: the row said 'a perfect keg' and the verdict says PRIME KEG.
+     * `dead_center` is the gold — the release `kegFor` gives `prime: true`.
      */
     it('teaches the word the verdict will actually use for a gold release', () => {
         const row = rowSaying('boom_powder', /release/i).join(' ');
-        const verdict = outcomeLabel('prime', 0);
 
-        expect(verdict).toBe('PRIME KEG');
+        expect(outcomeLabel('dead_center', 0)).toBe(PRIME_KEG);
         expect(row).toContain('PRIME');
         expect(row).not.toMatch(/perfect keg/i);
+    });
+
+    /**
+     * The first instruction a first-time player reads, at the first station in
+     * the line, named a colour the gauge has never painted. `drawGauge` fills
+     * red, orange and gold; green is the plunger bar and the verdict word. The
+     * always-on legend three lines away already said 'release on the gold'.
+     */
+    it('names the bands the gauge is actually painted in', () => {
+        const row = rowSaying('boom_powder', /release/i).join(' ');
+
+        expect(row).toMatch(/gold/i);
+        expect(row).toMatch(/orange/i);
+        expect(row).not.toMatch(/green/i);
+        expect(LEGEND).toMatch(/gold/i);
     });
 });
 
@@ -554,7 +573,7 @@ describe('the keys the floor sections name', () => {
 
     /** Both floor sections: the flow describes floor presses too. */
     function floorRows(): HelpRow[] {
-        return helpSections(null).flatMap((section) => section.rows);
+        return helpSections(null, THROW_TILES).flatMap((section) => section.rows);
     }
 
     it('binds every key the floor rows name to the action the row promises', () => {
@@ -577,7 +596,7 @@ describe('the keys the floor sections name', () => {
     });
 
     it('gives every one of those five keys a row of its own', () => {
-        const keys = helpSections(null)
+        const keys = helpSections(null, THROW_TILES)
             .flatMap((section) => section.rows)
             .map(([key]) => key);
 

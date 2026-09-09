@@ -1,6 +1,7 @@
 import { TILE_PX, type LayoutConfig, type StationState, type Tile, unpackTile } from '@shared';
 import type Phaser from 'phaser';
 
+import { ORDER_BOARD } from '../nouns';
 import { UI } from './palette';
 import type { Factory } from '../scenes/Factory';
 
@@ -22,6 +23,57 @@ const BLINK_SECONDS = 0.5;
 
 function hex(colour: number): string {
     return `#${colour.toString(16).padStart(6, '0')}`;
+}
+
+/**
+ * One look for every name written on the floor, and no caller gets to choose.
+ *
+ * A floor label is centred on the thing it names and is always wider than it:
+ * 'BLAST BIN' is 43 px of 8 px monospace on a 32 px tile, which leaves about
+ * 1.2 characters hanging off each end onto bare floor. The caption was painted
+ * in `UI.outline` (#222222), and #222222 on `UI.floor` (#3a3a44) is 1.4:1 — so
+ * exactly the seven characters that landed on the gold of the bin survived and
+ * a live browser read 'LAST BI'. Nothing was clipped; the ends went dark.
+ *
+ * White over a dark stroke is the only rule that survives a new prop: the fill
+ * carries grey, brown and green, the stroke carries the gold, and neither
+ * depends on knowing what is painted underneath.
+ */
+export const FLOOR_LABEL = {
+    color: hex(UI.text),
+    stroke: hex(UI.outline),
+    strokeThickness: 3,
+} as const;
+
+/**
+ * The centre a label is actually drawn at, given how big it turned out.
+ *
+ * No shipped layout reaches this: `one-line.json`'s only blast bin is tile
+ * [1, 8], whose 43 px caption starts at x = 26 inside an 896 px world. It is
+ * here for the layout a designer writes tomorrow with a prop in column 0 or
+ * row 0 — the map is resized to exactly `width × TILE_PX`
+ * (`Factory.applyConfig`), so there is no margin to overhang into and the
+ * overhang is simply not drawn. A name slid a few pixels off centre is still
+ * the name; a name cut in half is a different word.
+ */
+export function clampLabel(
+    centre: { x: number; y: number },
+    size: { width: number; height: number },
+    world: { width: number; height: number },
+): { x: number; y: number } {
+    return {
+        x: inside(centre.x, size.width, world.width),
+        y: inside(centre.y, size.height, world.height),
+    };
+}
+
+/** A name with no room to fit is centred, rather than cut at an end we picked. */
+function inside(centre: number, extent: number, bound: number): number {
+    const half = extent / 2;
+
+    if (extent >= bound) return bound / 2;
+
+    return Math.min(Math.max(centre, half), bound - half);
 }
 
 function centreOf(tile: Tile): { x: number; y: number } {
@@ -46,6 +98,7 @@ export function beaconColour(beacon: string, serverNow: number): number {
 }
 
 export class FloorView {
+    private world = { width: 0, height: 0 };
     private map: Phaser.GameObjects.Graphics | null = null;
     private tiles: Phaser.GameObjects.Graphics | null = null;
     private beacons: Phaser.GameObjects.Graphics | null = null;
@@ -61,6 +114,8 @@ export class FloorView {
 
     draw(layout: LayoutConfig): void {
         this.clear();
+
+        this.world = { width: layout.width * TILE_PX, height: layout.height * TILE_PX };
 
         const map = this.scene.add.graphics();
 
@@ -196,27 +251,21 @@ export class FloorView {
 
         map.fillStyle(UI.breakRoom, 0.5);
         map.fillRect(bx * TILE_PX, by * TILE_PX, bw * TILE_PX, bh * TILE_PX);
-        this.label(
-            'BREAK ROOM',
-            (bx + bw / 2) * TILE_PX,
-            (by + bh / 2) * TILE_PX,
-            10,
-            UI.text,
-        );
+        this.label('BREAK ROOM', (bx + bw / 2) * TILE_PX, (by + bh / 2) * TILE_PX, 10);
 
         for (const bin of layout.blastBins) {
             const centre = centreOf(bin);
 
             map.fillStyle(UI.blastBin, 0.8);
             map.fillRect(bin[0] * TILE_PX, bin[1] * TILE_PX, TILE_PX, TILE_PX);
-            this.label('BLAST BIN', centre.x, centre.y, 8, UI.outline);
+            this.label('BLAST BIN', centre.x, centre.y, 8);
         }
 
         const [dx, dy, dw] = layout.dockDoor;
 
         map.fillStyle(UI.dockDoor, 1);
         map.fillRect(dx * TILE_PX, dy * TILE_PX, dw * TILE_PX, TILE_PX);
-        this.label('DOCK', (dx + dw / 2) * TILE_PX, (dy + 0.5) * TILE_PX, 10, UI.text);
+        this.label('DOCK', (dx + dw / 2) * TILE_PX, (dy + 0.5) * TILE_PX, 10);
 
         const board = centreOf(layout.orderBoard);
 
@@ -227,7 +276,7 @@ export class FloorView {
             TILE_PX,
             TILE_PX,
         );
-        this.label('ORDERS', board.x, board.y, 8, UI.text);
+        this.label(ORDER_BOARD, board.x, board.y, 8);
     }
 
     /** Each ramp tile carries a chevron pointing at the dock door. */
@@ -259,7 +308,10 @@ export class FloorView {
     private props(map: Phaser.GameObjects.Graphics, layout: LayoutConfig): void {
         const props: [Tile, number, string][] = [
             [layout.props.toolCart, UI.ramp, 'TOOLS'],
-            [layout.props.countdownSign, UI.orderBoard, 'SIGN'],
+            // 'SIGN' named no object, in the order board's own brown a few tiles
+            // from the order board — a new player read it as a second board with
+            // nothing on it. The prop is `countdownSign`, so it says what it counts.
+            [layout.props.countdownSign, UI.orderBoard, 'DAYS SINCE'],
             [layout.props.returnsPile, UI.dockDoor, 'RETURNS'],
             [layout.props.broomHook, UI.ramp, 'BROOM'],
         ];
@@ -269,18 +321,24 @@ export class FloorView {
 
             map.fillStyle(colour, 1);
             map.fillRect(centre.x - PROP_PX / 2, centre.y - PROP_PX / 2, PROP_PX, PROP_PX);
-            this.label(text, centre.x, centre.y, 8, UI.text);
+            this.label(text, centre.x, centre.y, 8);
         }
     }
 
-    private label(text: string, x: number, y: number, size: number, colour: number): void {
+    private label(text: string, x: number, y: number, size: number): void {
         const label = this.scene.add.text(x, y, text, {
             fontFamily: 'monospace',
             fontSize: `${size}px`,
-            color: hex(colour),
+            ...FLOOR_LABEL,
         });
 
         label.setOrigin(0.5, 0.5);
+
+        // Measured, not guessed: the width is whatever the browser's monospace
+        // face and the stroke actually came to.
+        const at = clampLabel({ x, y }, { width: label.width, height: label.height }, this.world);
+
+        label.setPosition(at.x, at.y);
         this.layer.add(label);
         this.labels.push(label);
     }

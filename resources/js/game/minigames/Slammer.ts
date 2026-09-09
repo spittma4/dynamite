@@ -6,6 +6,7 @@ import {
     type SlammerMg,
     type SlammerOutcome,
     type SlammerPhase,
+    STATION_LABEL,
     type StationState,
     TILE_PX,
     chargeSeconds,
@@ -16,7 +17,10 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import { GROOVE, HANDS_FULL, INTAKE_ZONE, PRIME_KEG } from '../nouns';
+import { KEGS_IN, KEGS_OUT } from '../render/dropTargets';
 import { UI } from '../render/palette';
+import { throwDistance } from '../ui/format';
 import type { Factory } from '../scenes/Factory';
 import type {
     MinigameOverlay,
@@ -82,7 +86,7 @@ export const SLAMMER_SHOW = {
     rippleMs: 300,
 } as const;
 
-const COLOUR = {
+export const SLAMMER_COLOURS = {
     band: 0xf2a03c,
     dead: 0xf5c542,
     late: 0xd9463d,
@@ -119,6 +123,9 @@ const TITLE = 'BOOM POWDER — THE SLAMMER';
  */
 export const LEGEND = '← ↑ → mash each once · hold SPACE · release on the gold · ESC bail';
 
+/** An OK release: inside the orange, outside the gold. A keg, not a prime keg. */
+export const IN_THE_BAND = 'IN THE BAND';
+
 /**
  * Functional labels rather than joke copy, so they stay here instead of in
  * `copy.json` (contracts §14).
@@ -128,12 +135,14 @@ export const LEGEND = '← ↑ → mash each once · hold SPACE · release on th
  * because it is the answer `ui/helpContent.ts` gives, and it names the paint
  * the player will be standing on rather than only the stripes.
  */
-export const HANDS_LINES: readonly string[] = [
-    'WASD   walk it to Assembly — the striped zone',
-    'E      face the KEGS IN shelf there — E puts it down',
-    'Space  throw it two tiles — E catches',
-    'Esc    drop the groove, combo and all',
-];
+export function handsLinesKeg(throwTiles: number): readonly string[] {
+    return [
+        `WASD   walk it to ${STATION_LABEL.assembly} — ${INTAKE_ZONE}`,
+        `E      face the ${KEGS_IN} shelf there — E puts it down`,
+        `Space  throw it ${throwDistance(throwTiles)} — E catches`,
+        `Esc    drop the ${GROOVE.toLowerCase()}, combo and all`,
+    ];
+}
 
 /**
  * The same four rows for a pair of hands holding something that is not a keg.
@@ -142,16 +151,18 @@ export const HANDS_LINES: readonly string[] = [
  * will hand a joined operator a stick. Telling them to walk that to Assembly
  * sends them to the wrong end of the factory.
  */
-export const HANDS_LINES_ANY: readonly string[] = [
-    'WASD   walk it to the station that takes it',
-    'E      put it down where the floor lights up',
-    'Space  throw it two tiles — E catches',
-    'Esc    drop the groove, combo and all',
-];
+export function handsLinesAny(throwTiles: number): readonly string[] {
+    return [
+        'WASD   walk it to the station that takes it',
+        'E      put it down where the floor lights up',
+        `Space  throw it ${throwDistance(throwTiles)} — E catches`,
+        `Esc    drop the ${GROOVE.toLowerCase()}, combo and all`,
+    ];
+}
 
 /** Which set of rows a full pair of hands gets, from what is actually in them. */
-export function handsLines(itemType: string): readonly string[] {
-    return itemType === 'keg' ? HANDS_LINES : HANDS_LINES_ANY;
+export function handsLines(itemType: string, throwTiles: number): readonly string[] {
+    return itemType === 'keg' ? handsLinesKeg(throwTiles) : handsLinesAny(throwTiles);
 }
 
 /**
@@ -162,7 +173,11 @@ export function handsLines(itemType: string): readonly string[] {
 export function trayFooter(onTray: number): string {
     if (onTray <= 0) return '';
 
-    return `${onTray} on the tray · carry one to ASSEMBLY (E at KEGS OUT)`;
+    // 'the tray' was painted on nothing: `shelfLabel('out', …)` writes KEGS OUT
+    // on that shelf, which is the sign the player walks to. The destination
+    // comes off `STATION_LABEL`, the same table the floor nameplate reads, so
+    // this line and the machine it points at cannot be spelled two ways.
+    return `${onTray} on ${KEGS_OUT} · carry one to ${STATION_LABEL.assembly} (E)`;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -216,28 +231,40 @@ export function keyPlan(
     return { kind: 'consume' };
 }
 
+/**
+ * The verdict, in the words the rest of the factory uses for the same keg.
+ *
+ * The enum reads backwards from the player's view: `judgeRelease` returns
+ * 'dead_center' for the gold and 'prime' for the orange band, and `kegFor`
+ * gives `prime: true` to 'dead_center' alone. So the badge reading PRIME KEG
+ * was over the release that makes an ordinary one, while the keg the Jig chips
+ * '· PRIME KEG' on came out of the Slammer announced as DEAD CENTER. The enum
+ * member keeps its name — it is the server's — and the noun moves to the keg
+ * that earns it.
+ *
+ * A miss says what it made, not only how far off it was: `kegFor` turns late
+ * into damp and early into dud, and a bare '+214' taught nobody that.
+ */
 export function outcomeLabel(outcome: SlammerOutcome, errorMs: number): string {
     if (outcome === '') return '';
 
-    if (outcome === 'dead_center') return 'DEAD CENTER';
+    if (outcome === 'dead_center') return PRIME_KEG;
 
-    // The Slammer used to congratulate a gold release with a word no other
-    // surface says: the Jig calls the same keg PRIME and the help teaches PRIME.
-    if (outcome === 'prime') return 'PRIME KEG';
+    if (outcome === 'prime') return IN_THE_BAND;
 
     const off = Math.abs(Math.round(errorMs));
 
-    return outcome === 'late' ? `LATE +${off}` : `EARLY −${off}`;
+    return outcome === 'late' ? `LATE +${off} — DAMP KEG` : `EARLY −${off} — DUD KEG`;
 }
 
 export function outcomeColour(outcome: SlammerOutcome): number {
-    if (outcome === 'dead_center') return COLOUR.dead;
+    if (outcome === 'dead_center') return SLAMMER_COLOURS.dead;
 
-    if (outcome === 'prime') return COLOUR.good;
+    if (outcome === 'prime') return SLAMMER_COLOURS.good;
 
-    if (outcome === 'late') return COLOUR.late;
+    if (outcome === 'late') return SLAMMER_COLOURS.late;
 
-    if (outcome === 'early') return COLOUR.early;
+    if (outcome === 'early') return SLAMMER_COLOURS.early;
 
     return UI.text;
 }
@@ -381,8 +408,8 @@ export function heatAlpha(heat: number): number {
 export function heatTint(heat: number): number {
     const u = clamp((heat - HEAT_GLOW_FLOOR) / (1 - HEAT_GLOW_FLOOR), 0, 1);
     const mix = (shift: number): number => {
-        const from = (COLOUR.glowLazy >> shift) & 0xff;
-        const to = (COLOUR.glowHot >> shift) & 0xff;
+        const from = (SLAMMER_COLOURS.glowLazy >> shift) & 0xff;
+        const to = (SLAMMER_COLOURS.glowHot >> shift) & 0xff;
 
         return Math.round(from + (to - from) * u);
     };
@@ -438,6 +465,8 @@ class SlammerOverlay implements MinigameOverlay {
     private paintedVerdict = '';
     private paintedFooter = '';
     private carriedType = '';
+    /** `level.carry.throwTiles`, so the hands rows quote the level, not a guess. */
+    private throwTiles = 0;
 
     private gauge: Phaser.GameObjects.Graphics | null = null;
     private needle: Phaser.GameObjects.Graphics | null = null;
@@ -454,6 +483,8 @@ class SlammerOverlay implements MinigameOverlay {
     mount(ctx: OverlayContext): void {
         this.ctx = ctx;
         this.reset();
+
+        this.throwTiles = ctx.scene.levelConfig.carry.throwTiles;
 
         const scene = ctx.scene;
         const add = (o: Phaser.GameObjects.GameObject): void => {
@@ -502,7 +533,7 @@ class SlammerOverlay implements MinigameOverlay {
         add(this.gauge);
 
         this.needle = scene.add.graphics();
-        this.needle.fillStyle(COLOUR.needle, 1);
+        this.needle.fillStyle(SLAMMER_COLOURS.needle, 1);
         this.needle.fillRect(-PANEL.needleW / 2, GAUGE_Y, PANEL.needleW, PANEL.gaugeH);
         this.needle.setVisible(false);
         add(this.needle);
@@ -527,7 +558,7 @@ class SlammerOverlay implements MinigameOverlay {
             this.gaugeX + this.gaugeW + PANEL.readoutGap,
             GAUGE_Y + PANEL.gaugeH - 13,
             comboText(0),
-            { fontFamily: 'monospace', fontSize: '15px', color: hex(COLOUR.dead) },
+            { fontFamily: 'monospace', fontSize: '15px', color: hex(SLAMMER_COLOURS.dead) },
         );
         add(this.combo);
 
@@ -547,7 +578,7 @@ class SlammerOverlay implements MinigameOverlay {
         this.footer = scene.add.text(this.gaugeX, GAUGE_Y + PANEL.gaugeH + PANEL.footerGap, '', {
             fontFamily: 'monospace',
             fontSize: '12px',
-            color: hex(COLOUR.dead),
+            color: hex(SLAMMER_COLOURS.dead),
         });
         this.footer.setVisible(false);
         add(this.footer);
@@ -766,9 +797,9 @@ class SlammerOverlay implements MinigameOverlay {
             const x = PANEL.titleX + i * (PANEL.chutePx + PANEL.chuteGap);
             const lit = lights[chute];
 
-            g.fillStyle(lit ? COLOUR.chuteLit : COLOUR.chuteOff, rearming ? 0.4 : 1);
+            g.fillStyle(lit ? SLAMMER_COLOURS.chuteLit : SLAMMER_COLOURS.chuteOff, rearming ? 0.4 : 1);
             g.fillRoundedRect(x, PANEL.chuteY, PANEL.chutePx, PANEL.chutePx, 5);
-            g.lineStyle(2, COLOUR.chuteEdge, rearming ? 0.4 : 1);
+            g.lineStyle(2, SLAMMER_COLOURS.chuteEdge, rearming ? 0.4 : 1);
             g.strokeRoundedRect(x, PANEL.chuteY, PANEL.chutePx, PANEL.chutePx, 5);
         });
 
@@ -783,12 +814,12 @@ class SlammerOverlay implements MinigameOverlay {
         const width = 3 * PANEL.chutePx + 2 * PANEL.chuteGap;
         const y = PANEL.chuteY + PANEL.chutePx + PANEL.plungerGap;
 
-        g.fillStyle(COLOUR.track, 1);
+        g.fillStyle(SLAMMER_COLOURS.track, 1);
         g.fillRect(PANEL.titleX, y, width, PANEL.plungerH);
 
         if (rearming) return;
 
-        g.fillStyle(COLOUR.plunger, 1);
+        g.fillStyle(SLAMMER_COLOURS.plunger, 1);
         g.fillRect(PANEL.titleX, y, width, PANEL.plungerH);
     }
 
@@ -804,20 +835,20 @@ class SlammerOverlay implements MinigameOverlay {
 
         g.clear();
         g.setPosition(this.gaugeX, 0);
-        g.fillStyle(COLOUR.track, 1);
+        g.fillStyle(SLAMMER_COLOURS.track, 1);
         g.fillRect(0, GAUGE_Y, this.gaugeW, PANEL.gaugeH);
-        g.lineStyle(1, COLOUR.trackEdge, 1);
+        g.lineStyle(1, SLAMMER_COLOURS.trackEdge, 1);
         g.strokeRect(0, GAUGE_Y, this.gaugeW, PANEL.gaugeH);
 
         if (!geo) return;
 
-        g.fillStyle(COLOUR.late, 0.28);
+        g.fillStyle(SLAMMER_COLOURS.late, 0.28);
         g.fillRect(geo.lateX, GAUGE_Y, geo.lateW, PANEL.gaugeH);
-        g.fillStyle(COLOUR.band, 0.55);
+        g.fillStyle(SLAMMER_COLOURS.band, 0.55);
         g.fillRect(geo.bandX, GAUGE_Y, geo.bandW, PANEL.gaugeH);
-        g.fillStyle(COLOUR.dead, 0.35);
+        g.fillStyle(SLAMMER_COLOURS.dead, 0.35);
         g.fillRect(geo.deadX, GAUGE_Y, geo.deadW, PANEL.gaugeH);
-        g.fillStyle(COLOUR.dead, 1);
+        g.fillStyle(SLAMMER_COLOURS.dead, 1);
         g.fillRect(geo.targetX - 1, GAUGE_Y, 2, PANEL.gaugeH);
     }
 
@@ -862,7 +893,7 @@ class SlammerOverlay implements MinigameOverlay {
     private drawHandsRows(full: boolean): void {
         if (!full) return;
 
-        const rows = handsLines(this.carriedType);
+        const rows = handsLines(this.carriedType, this.throwTiles);
 
         this.handsRows.forEach((row, i) => row.setText(rows[i] ?? ''));
     }
@@ -880,14 +911,14 @@ class SlammerOverlay implements MinigameOverlay {
 
     private buildHandsPanel(ctx: OverlayContext): Phaser.GameObjects.Container {
         const scene = ctx.scene;
-        const title = scene.add.text(0, 0, 'HANDS FULL', {
+        const title = scene.add.text(0, 0, HANDS_FULL, {
             fontFamily: 'monospace',
             fontSize: '20px',
-            color: hex(COLOUR.dead),
+            color: hex(SLAMMER_COLOURS.dead),
             fontStyle: 'bold',
         });
 
-        this.handsRows = HANDS_LINES.map((line, i) =>
+        this.handsRows = handsLinesKeg(this.throwTiles).map((line, i) =>
             scene.add.text(0, 30 + i * 18, line, {
                 fontFamily: 'monospace',
                 fontSize: '13px',
@@ -945,7 +976,7 @@ class SlammerWorldView implements StationView {
         this.counter = scene.add.text(0, -SLAMMER_SHOW.comboLiftPx, '', {
             fontFamily: 'monospace',
             fontSize: '14px',
-            color: hex(COLOUR.dead),
+            color: hex(SLAMMER_COLOURS.dead),
             fontStyle: 'bold',
         });
         this.counter.setOrigin(0.5, 0.5);
@@ -1032,9 +1063,9 @@ class SlammerWorldView implements StationView {
         if (!hit) return;
 
         scene.cameras.main.shake(SLAMMER_SHOW.shakeMs[big], SLAMMER_SHOW.shakeIntensity[big]);
-        this.burst(SLAMMER_SHOW.confetti[big], [...COLOUR.confetti], [60, 160], 500, 0);
+        this.burst(SLAMMER_SHOW.confetti[big], [...SLAMMER_COLOURS.confetti], [60, 160], 500, 0);
 
-        if (show.steam) this.burst(6, COLOUR.steam, [20, 45], SLAMMER_SHOW.steamMs, -90);
+        if (show.steam) this.burst(6, SLAMMER_COLOURS.steam, [20, 45], SLAMMER_SHOW.steamMs, -90);
 
         if (show.ripple) this.ripple(scene);
     }
@@ -1083,7 +1114,7 @@ class SlammerWorldView implements StationView {
 
         const ring = scene.add.graphics();
 
-        ring.lineStyle(2, COLOUR.ripple, 0.8);
+        ring.lineStyle(2, SLAMMER_COLOURS.ripple, 0.8);
         ring.strokeCircle(0, 0, TILE_PX / 2);
         root.add(ring);
         scene.tweens.add({
@@ -1140,7 +1171,7 @@ class SlammerWorldView implements StationView {
 
         pole.lineStyle(2, 0x9a9aa4, 1);
         pole.lineBetween(0, 0, 0, -SLAMMER_SHOW.flagLiftPx);
-        pole.fillStyle(COLOUR.dead, 1);
+        pole.fillStyle(SLAMMER_COLOURS.dead, 1);
         pole.fillTriangle(
             0,
             -SLAMMER_SHOW.flagLiftPx,

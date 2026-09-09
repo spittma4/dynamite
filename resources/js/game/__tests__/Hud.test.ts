@@ -1,7 +1,8 @@
-import type { LevelConfig, OrderState } from '@shared';
 import { describe, expect, it } from 'vitest';
 
-import { bookText, boardRow, clockText, compareOrderIds } from '../ui/Hud';
+import { boardTitle, bookText, clockText, showsBook } from '../ui/Hud';
+import { HELP_HINT } from '../ui/helpContent';
+import { ORDER_BOARD } from '../nouns';
 
 const RUNNING = { phase: 'running', clock: 65, shiftSeconds: 600, players: 3, minPlayers: 3 };
 
@@ -35,22 +36,62 @@ describe('clockText', () => {
     });
 });
 
+/**
+ * 'BOOK' was a second player-facing name for the order list, defined nowhere
+ * and said by nothing else in the client — and `boardTitle` printed it inside
+ * the panel that already carries the name, so one line read
+ * 'ORDER BOARD · BOOK 11/13'.
+ */
 describe('bookText', () => {
-    it('reads remaining over total', () => {
-        expect(bookText(3, 8)).toBe('BOOK 3/8');
+    it('counts what is left in the words the board uses', () => {
+        expect(bookText(3, 8)).toBe('ORDERS 3/8');
+    });
+
+    it('never invents a second noun for the order list', () => {
+        expect(bookText(3, 8)).not.toMatch(/\bbook\b/i);
     });
 });
 
-describe('compareOrderIds', () => {
-    it('reads the book in number order, not string order', () => {
-        const ids = ['o-10', 'o-2', 'o-1', 'o-11', 'o-3'];
-
-        expect([...ids].sort(compareOrderIds)).toEqual(['o-1', 'o-2', 'o-3', 'o-10', 'o-11']);
+describe('boardTitle', () => {
+    it('heads the board with how much of the book is left, and names it once', () => {
+        expect(boardTitle(3, 8)).toBe(`${ORDER_BOARD} · 3/8 LEFT`);
+        expect(boardTitle(3, 8)).not.toMatch(/\bbook\b/i);
     });
 
-    it('falls back to string order for an id that carries no number', () => {
-        expect(compareOrderIds('order-a', 'order-b')).toBeLessThan(0);
-        expect(compareOrderIds('o-4', 'o-4')).toBe(0);
+    it('counts nothing in Sandbox, where there is no book to count', () => {
+        expect(boardTitle(0, 0)).toBe(ORDER_BOARD);
+    });
+});
+
+/**
+ * `bookTotal` is 0 until the whistle and 0 all day in Sandbox (contracts §3),
+ * so before the shift starts the band read 'ORDERS 0/0' — a count of nothing,
+ * sitting hard against the left edge of the lobby line, which at 1/1 players
+ * runs the full width of the band.
+ */
+describe('showsBook', () => {
+    it('counts a book only once there is one', () => {
+        expect(showsBook(13)).toBe(true);
+        expect(showsBook(0)).toBe(false);
+    });
+
+    it('agrees with the panel title about when there is nothing to count', () => {
+        expect(showsBook(0)).toBe(false);
+        expect(boardTitle(0, 0)).toBe(ORDER_BOARD);
+        expect(showsBook(8)).toBe(true);
+        expect(boardTitle(3, 8)).not.toBe(ORDER_BOARD);
+    });
+});
+
+/**
+ * The one string that rescues a lost first-timer. It was 11 px of #7a7d82 over
+ * `UI.floor` — about 2.5:1 — and it named only `H`, so the order board was
+ * reachable only by opening help first and reading down to the fifth row.
+ */
+describe('HELP_HINT', () => {
+    it('carries both keys a stuck player needs', () => {
+        expect(HELP_HINT).toMatch(/\bH\b/);
+        expect(HELP_HINT).toMatch(/\bTAB\b/i);
     });
 });
 
@@ -67,31 +108,5 @@ describe('clockText — small crews', () => {
 
     it('still counts players toward the gate when the crew is short of the minimum', () => {
         expect(clockText({ ...lobby, players: 2, minPlayers: 3 }, false)).toContain('2/3');
-    });
-});
-
-/**
- * The `Tab` board printed `OrderState.product` raw, so it read
- * 'o-1  red_stick  0/7  open' — the recipe key, in snake_case, on a panel, and
- * a fourth name for the object every other surface calls a stick.
- */
-describe('boardRow', () => {
-    const RECIPES = {
-        keg: { station: 'boom_powder', inputs: {}, output: { type: 'keg', pours: 2 } },
-        red_stick: {
-            station: 'assembly',
-            inputs: { casing: 1 },
-            output: { type: 'stick', product: 'red_stick' },
-        },
-    } as unknown as LevelConfig['recipes'];
-
-    const ORDER = { product: 'red_stick', shipped: 0, qty: 7, status: 'open' } as OrderState;
-
-    it('names the product the way the floor signs name it', () => {
-        expect(boardRow('o-1', ORDER, RECIPES)).toBe('o-1  STICK  0/7  open');
-    });
-
-    it('never lets the recipe key itself reach the panel', () => {
-        expect(boardRow('o-1', ORDER, RECIPES)).not.toContain('red_stick');
     });
 });

@@ -182,9 +182,10 @@ const DEV_LEVEL: LevelConfig = {
                 },
                 crimp: {
                     clicks: 3,
-                    clickSeconds: 0.2,
+                    leadSeconds: 0.4,
+                    clickSeconds: 0.4,
                     perfectMs: 80,
-                    okMs: 200,
+                    okMs: 180,
                 },
                 toss: {
                     arcSeconds: 0.5,

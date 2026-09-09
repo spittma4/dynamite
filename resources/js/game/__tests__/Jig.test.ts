@@ -9,22 +9,25 @@ import {
 } from '@shared';
 import { describe, expect, it } from 'vitest';
 
+import { FUSE_SET, HANDS_FULL } from '../nouns';
+
 import {
     AISLE_BODY,
     CASINGS_COMING,
     CRADLE_FULL,
     CRADLE_LABEL,
-    FUSE_SET,
     JIG_COLOURS,
     type JigSpan,
     KEG_STRIP,
     NEED_KEG,
     ORDER_STRIP_LABEL,
     RACK_STAKE,
+    RE_ARMING,
     SHELF_FULL,
     SHELF_FULL_HANDS,
     bKeyOp,
     bandsAround,
+    blockColour,
     beatMarks,
     casingDings,
     closeAt,
@@ -72,7 +75,7 @@ const TOSS: TossConfig = { arcSeconds: 0.5, perfectMs: 120, okMs: 250 };
 const CFG: AssemblyMinigame = {
     pour: POUR,
     knots: { long: 3, short: 2, secondsPerKnot: 0.4, perfectMs: 60, okMs: 140 },
-    crimp: { clicks: 3, clickSeconds: 0.2, perfectMs: 80, okMs: 200 },
+    crimp: { clicks: 3, leadSeconds: 0.4, clickSeconds: 0.4, perfectMs: 80, okMs: 180 },
     toss: TOSS,
 };
 
@@ -189,6 +192,11 @@ describe('moveCursor', () => {
     });
 });
 
+/** The panel writes CSS colours; the tests compare against the palette. */
+function hex(colour: number): string {
+    return `#${colour.toString(16).padStart(6, '0')}`;
+}
+
 describe('pickerBlock', () => {
     const clear = {
         now: 10,
@@ -234,6 +242,91 @@ describe('pickerBlock', () => {
     it('names the keg, and leaves the machine to the route line', () => {
         expect(NEED_KEG).toBe('NEED A KEG');
         expect(NEED_KEG).toContain('KEG');
+    });
+});
+
+/**
+ * Red is this floor's word for a fault: it is the miss grade, the overfill, the
+ * red beacon and the blast. Two of the five things that grey the picker out are
+ * not faults and are nobody's errand — the jig is re-arming itself, or printing
+ * its own casings — and painting those red told a player who had done nothing
+ * wrong that they had, at the one moment the game most needed them to stand
+ * still. Waits get their own colour; a shortage somebody has to move for keeps
+ * the red.
+ */
+describe('blockColour', () => {
+    it('paints the two stops nobody can hurry as waits', () => {
+        expect(blockColour(RE_ARMING)).toBe(JIG_COLOURS.wait);
+        expect(blockColour(CASINGS_COMING)).toBe(JIG_COLOURS.wait);
+    });
+
+    it('keeps the alarm for the three that need somebody to move', () => {
+        expect(blockColour(NEED_KEG)).toBe(JIG_COLOURS.miss);
+        expect(blockColour(SHELF_FULL)).toBe(JIG_COLOURS.miss);
+        expect(blockColour(HANDS_FULL)).toBe(JIG_COLOURS.miss);
+    });
+
+    it('is a colour of its own, not the alarm and not the panel grey', () => {
+        expect(JIG_COLOURS.wait).not.toBe(JIG_COLOURS.miss);
+        expect(JIG_COLOURS.wait).not.toBe(JIG_COLOURS.dim);
+        expect(JIG_COLOURS.wait).not.toBe(JIG_COLOURS.label);
+        expect(JIG_COLOURS.wait).not.toBe(JIG_COLOURS.ok);
+    });
+
+    /**
+     * The hole the first wait colour fell through. Teal 0x2bb5a0 against the OK
+     * green 0x4cb944 is 1.01:1 — the same brightness — and the two are drawn
+     * touching: `drawPicker` writes RE-ARMING in `wait` and fills the re-arm
+     * progress bar in `ok` directly beneath it. To a deuteranope both went
+     * neutral olive, so the colour chosen to read as 'neither the alarm nor the
+     * OK green' read as the OK green. Separation has to be in luminance, which
+     * survives every kind of colour blindness; the identity check above cannot
+     * see it, which is why this exists as well.
+     */
+    it('separates by brightness from the green under it and the red it replaces', () => {
+        expect(contrastOf(JIG_COLOURS.wait, JIG_COLOURS.ok)).toBeGreaterThanOrEqual(1.4);
+        expect(contrastOf(JIG_COLOURS.wait, JIG_COLOURS.miss)).toBeGreaterThanOrEqual(1.4);
+    });
+});
+
+/** sRGB relative luminance (WCAG 2.1) of a packed 0xrrggbb. */
+function luminanceOf(colour: number): number {
+    const linear = [16, 8, 0]
+        .map((shift) => ((colour >> shift) & 0xff) / 255)
+        .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+
+    return 0.2126 * (linear[0] ?? 0) + 0.7152 * (linear[1] ?? 0) + 0.0722 * (linear[2] ?? 0);
+}
+
+function contrastOf(a: number, b: number): number {
+    const [high, low] = [luminanceOf(a), luminanceOf(b)].sort((x, y) => y - x);
+
+    return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+}
+
+/** The colour on the glass, not just the branch that picks it. */
+describe('the colour a stopped picker is painted in', () => {
+    const keg = { id: 'k-1', type: 'keg' };
+    const casing = { id: 'c-1', type: 'casing' };
+
+    function blockLabel(state: JigMg, shelf: readonly { id: string; type: string }[]) {
+        return panelLabels(state, shelf).find((label) =>
+            [RE_ARMING, CASINGS_COMING, NEED_KEG, SHELF_FULL, HANDS_FULL].includes(label.text),
+        );
+    }
+
+    it('draws a re-arming jig in the wait colour', () => {
+        const label = blockLabel(mg({ rearmFrom: 8, rearmAt: 12 }), [keg, casing]);
+
+        expect(label?.text).toBe(RE_ARMING);
+        expect(label?.colour).toBe(hex(JIG_COLOURS.wait));
+    });
+
+    it('draws a jig short of powder in the alarm colour', () => {
+        const label = blockLabel(mg(), [casing]);
+
+        expect(label?.text).toBe(NEED_KEG);
+        expect(label?.colour).toBe(hex(JIG_COLOURS.miss));
     });
 });
 
@@ -334,6 +427,9 @@ describe('phaseSpan', () => {
         expect(span).toEqual({ from: 100, to: 102.4 });
     });
 
+    // The tails are literals matching CFG's okMs — 140 ms and 180 ms — rather
+    // than `CFG.knots.okMs / 1000`, which only restates the input: a change to
+    // which config field `phaseSpan` reads would be absorbed instead of caught.
     it('runs the knots and the crimp on to the beat the server auto-misses at', () => {
         const knots = phaseSpan(
             mg({ phase: 'knots', beatStartAt: 102.4, knotAt: [102.8, 103.2, 103.6] }),
@@ -347,7 +443,7 @@ describe('phaseSpan', () => {
         expect(knots?.from).toBe(102.4);
         expect(knots?.to).toBeCloseTo(103.6 + 0.14 + MAX_INPUT_BACKDATE_S, 6);
         expect(crimp?.from).toBe(103.6);
-        expect(crimp?.to).toBeCloseTo(104.2 + 0.2 + MAX_INPUT_BACKDATE_S, 6);
+        expect(crimp?.to).toBeCloseTo(104.2 + 0.18 + MAX_INPUT_BACKDATE_S, 6);
     });
 
     it('spans the surface tax while a set squares up and nothing while the cradle is empty', () => {
@@ -567,6 +663,7 @@ interface WrittenLabel {
     visible: boolean;
     x: number;
     y: number;
+    colour: string;
 }
 
 /** A Phaser object that answers every call it is not asked about with itself. */
@@ -579,7 +676,7 @@ function stub(target: Record<string, unknown>): Record<string, unknown> {
 }
 
 function textStub(written: WrittenLabel[]): Record<string, unknown> {
-    const label: WrittenLabel = { text: '', visible: false, x: 0, y: 0 };
+    const label: WrittenLabel = { text: '', visible: false, x: 0, y: 0, colour: '' };
 
     written.push(label);
 
@@ -593,6 +690,9 @@ function textStub(written: WrittenLabel[]): Record<string, unknown> {
         setPosition: (x: number, y: number) => {
             label.x = x;
             label.y = y;
+        },
+        setColor: (value: string) => {
+            label.colour = value;
         },
     });
 }

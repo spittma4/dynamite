@@ -1,7 +1,7 @@
 {
     "key": "level-03-the-bottleneck",
     "name": "The Bottleneck",
-    "notes": "The Bottleneck: 'Come help Assembly.' Same floor and the same curves as the baseline; what changes is demand. Trucks every 45 s and a book of 13 ask for 75 sticks in 580 s - 0.129 a second, which sits between what one jig operator can emit (0.12) and what a pair can (0.20), so the book is only reachable once somebody leaves Powder and becomes B. qtyPerTruck drops to 5 on the same 0.25 ramp so the pressure is truck cadence, not truck size. Truck 13 arrives at 560 s and leaves at 580 s, inside the 600 s shift. players.min is 4, as docs/09 and the F12 design table have it rather than the 3 in ADR 0013's table: at three players the haul and not the jig is the constraint, and the crew ships more with one on the jig than with two - the exact opposite of the lesson. docs/09 wants six and PLAYTEST says bring six; requiring six would lock a four-person group out of level 4.",
+    "notes": "The Bottleneck: 'Come help Assembly.' Same floor and the same curves as the baseline; what changes is demand. Trucks every 45 s and a book of 13 ask for 75 sticks in 580 s - 0.129 a second, which sits between what one jig operator can emit (0.12) and what a pair can (0.20), so the book is only reachable once somebody leaves Powder and becomes B. qtyPerTruck drops to 5 on the same 0.25 ramp so the pressure is truck cadence, not truck size. Truck 13 arrives at 560 s and leaves at 580 s, inside the 600 s shift. players.min is 4, as docs/09 and the F12 design table have it rather than the 3 in ADR 0013's table: at three players the haul and not the jig is the constraint, and the crew ships more with one on the jig than with two - the exact opposite of the lesson. docs/09 wants six and PLAYTEST says bring six; requiring six would lock a four-person group out of level 4. F14 retunes the crimp to a 0.4 s lead-in, 0.4 s clicks and a 180 ms OK window: at 0.2 s the first click landed 200 ms after the knot the player was still resolving, the whole ratchet was over in 600 ms, and the +/-200 ms window around the third click opened exactly on the second, so tapping the wrong click scored OK. The new numbers clear the tempoFloorsMs mark floor (400 >= 250), the coupling rule (180 < 200) and the lead floor (400 >= 400), and put every marker in A's phrase on the same 400 ms beat as the knots. The 0.4 s ratchet takes A's phrase from 4.2 s to 4.8 s, so assembly-a's nominalSeconds 6.0 is now exactly the flawless worst case - dud keg, long fuse, every mark clean - rather than an expectation with slack. Nothing is mistuned by it: the Jig supplies its own state and progress, so the cycle-rule fallback that reads nominalSeconds never runs here, and a pair stays machine-bound at 5.0 s. Raise it to ~6.8 only as a deliberate F12 balance pass.",
     "day": {
         "shiftSeconds": 600,
         "orderBook": 13,
@@ -115,7 +115,7 @@
                     "primeKegWindowMultiplier": 1.5
                 },
                 "knots": { "long": 3, "short": 2, "secondsPerKnot": 0.4, "perfectMs": 60, "okMs": 140 },
-                "crimp": { "clicks": 3, "clickSeconds": 0.2, "perfectMs": 80, "okMs": 200 },
+                "crimp": { "clicks": 3, "leadSeconds": 0.4, "clickSeconds": 0.4, "perfectMs": 80, "okMs": 180 },
                 "toss": { "arcSeconds": 0.5, "perfectMs": 120, "okMs": 250 },
                 "casings": { "stock": 3, "dentChance": 0.3 }
             }

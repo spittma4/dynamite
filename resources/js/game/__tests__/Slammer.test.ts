@@ -1,17 +1,21 @@
 import {
     type PlayerState,
+    STATION_LABEL,
     type SlammerHeatConfig,
     type SlammerMg,
     type StationState,
     encodeMg,
     gaugeTopMs,
+    kegFor,
 } from '@shared';
 import { describe, expect, it } from 'vitest';
 
+import { PRIME_KEG } from '../nouns';
+import { KEGS_OUT } from '../render/dropTargets';
 import {
-    HANDS_LINES,
-    HANDS_LINES_ANY,
     LEGEND,
+    SLAMMER_COLOURS,
+    outcomeColour,
     chuteFor,
     chuteLights,
     comboText,
@@ -29,6 +33,8 @@ import {
     predictCharge,
     readoutText,
     handsLines,
+    handsLinesAny,
+    handsLinesKeg,
     slammerOverlay,
     tierShow,
     trayFooter,
@@ -41,6 +47,9 @@ import type { OverlayContext } from '../minigames/types';
  * which op a key becomes, where the band the *server* judged with lands on a
  * fixed scale, and how a verdict reads. The drawing is left to Phaser.
  */
+
+/** Every shipped level's `carry.throwTiles` (`config/game/levels/*.json`). */
+const THROW_TILES = 2;
 
 const CFG: SlammerHeatConfig = {
     minChargeSeconds: 0.7,
@@ -118,21 +127,38 @@ describe('keyPlan', () => {
     });
 });
 
+/**
+ * The noun has to sit on the keg that earns it. `judgeRelease` returns
+ * 'dead_center' inside the gold and 'prime' inside the orange band, and
+ * `kegFor` sets `prime: true` for 'dead_center' alone — so the badge that said
+ * PRIME KEG was printed over the release that makes an ordinary keg, while the
+ * one keg the Jig chips '· PRIME KEG' on was announced as DEAD CENTER. Two
+ * players, at two stations, read opposite things about the same keg.
+ */
 describe('outcomeLabel', () => {
     it('says nothing before the first release', () => {
         expect(outcomeLabel('', 0)).toBe('');
     });
 
-    it('names the two hits without a number', () => {
-        expect(outcomeLabel('dead_center', 12)).toBe('DEAD CENTER');
-        // Was 'PRIME BOOM': a third name for the best keg, beside the Jig's
-        // 'PRIME KEG' and the help's 'a perfect keg'.
-        expect(outcomeLabel('prime', -80)).toBe('PRIME KEG');
+    it('gives the name to the release that actually makes a prime keg', () => {
+        expect(kegFor('dead_center').prime).toBe(true);
+        expect(outcomeLabel('dead_center', 12)).toBe(PRIME_KEG);
     });
 
-    it('signs the miss with the server-rounded error', () => {
-        expect(outcomeLabel('late', 214)).toBe('LATE +214');
-        expect(outcomeLabel('early', -137)).toBe('EARLY −137');
+    it('calls the ordinary good release what it is: inside the band', () => {
+        expect(kegFor('prime').prime).toBe(false);
+        expect(outcomeLabel('prime', -80)).toBe('IN THE BAND');
+    });
+
+    it('paints the prime keg in the gold the gauge marks the target with', () => {
+        expect(outcomeColour('dead_center')).toBe(SLAMMER_COLOURS.dead);
+        expect(outcomeColour('prime')).toBe(SLAMMER_COLOURS.good);
+    });
+
+    it('signs the miss with the error and the keg it just made', () => {
+        expect(kegFor('late').quality).toBeLessThan(kegFor('prime').quality);
+        expect(outcomeLabel('late', 214)).toBe('LATE +214 — DAMP KEG');
+        expect(outcomeLabel('early', -137)).toBe('EARLY −137 — DUD KEG');
     });
 });
 
@@ -383,25 +409,25 @@ describe('the readouts', () => {
     });
 
     it('gives the operator one key per row and one action per row', () => {
-        expect(HANDS_LINES).toHaveLength(4);
-        expect(HANDS_LINES.join(' ')).toContain('Space');
-        expect(HANDS_LINES.join(' ')).toContain('Esc');
+        expect(handsLinesKeg(THROW_TILES)).toHaveLength(4);
+        expect(handsLinesKeg(THROW_TILES).join(' ')).toContain('Space');
+        expect(handsLinesKeg(THROW_TILES).join(' ')).toContain('Esc');
 
-        for (const line of HANDS_LINES) expect(line.length).toBeLessThanOrEqual(60);
+        for (const line of handsLinesKeg(THROW_TILES)) expect(line.length).toBeLessThanOrEqual(60);
     });
 
-    it('leads with walking the keg to Assembly, the way the help does', () => {
-        expect(HANDS_LINES[0]).toContain('Assembly');
-        expect(HANDS_LINES[0]).toContain('striped');
+    it('leads with walking the keg to Assembly, in the name on its nameplate', () => {
+        expect(handsLinesKeg(THROW_TILES)[0]).toContain(STATION_LABEL.assembly);
+        expect(handsLinesKeg(THROW_TILES)[0]).toContain('striped');
     });
 
     it('matches the walk to the paint the player will be standing on', () => {
-        expect(HANDS_LINES.join(' ')).toContain('KEGS IN');
+        expect(handsLinesKeg(THROW_TILES).join(' ')).toContain('KEGS IN');
     });
 
     it('never offers the floor, which is the one drop that feeds a fire', () => {
-        expect(HANDS_LINES.join(' ')).not.toContain('floor');
-        expect(HANDS_LINES.join(' ')).not.toContain('fuel');
+        expect(handsLinesKeg(THROW_TILES).join(' ')).not.toContain('floor');
+        expect(handsLinesKeg(THROW_TILES).join(' ')).not.toContain('fuel');
     });
 
     it('keeps the always-on legend free of the floor drop too', () => {
@@ -417,16 +443,16 @@ describe('the readouts', () => {
  */
 describe('handsLines', () => {
     it('names the keg walk when the thing in your hands is a keg', () => {
-        expect(handsLines('keg')).toBe(HANDS_LINES);
+        expect(handsLines('keg', THROW_TILES)).toEqual(handsLinesKeg(THROW_TILES));
     });
 
     it('falls back to item-agnostic advice for anything else', () => {
-        expect(handsLines('stick')).toBe(HANDS_LINES_ANY);
-        expect(handsLines('')).toBe(HANDS_LINES_ANY);
+        expect(handsLines('stick', THROW_TILES)).toEqual(handsLinesAny(THROW_TILES));
+        expect(handsLines('', THROW_TILES)).toEqual(handsLinesAny(THROW_TILES));
     });
 
     it('never sends a stick to Assembly or calls it fuel', () => {
-        const lines = HANDS_LINES_ANY.join(' ');
+        const lines = handsLinesAny(THROW_TILES).join(' ');
 
         expect(lines).not.toContain('Assembly');
         expect(lines).not.toContain('KEGS IN');
@@ -434,9 +460,9 @@ describe('handsLines', () => {
     });
 
     it('keeps the ways out of a full pair of hands on both versions', () => {
-        expect(HANDS_LINES_ANY).toHaveLength(HANDS_LINES.length);
-        expect(HANDS_LINES_ANY.join(' ')).toContain('Space');
-        expect(HANDS_LINES_ANY.join(' ')).toContain('Esc');
+        expect(handsLinesAny(THROW_TILES)).toHaveLength(handsLinesKeg(THROW_TILES).length);
+        expect(handsLinesAny(THROW_TILES).join(' ')).toContain('Space');
+        expect(handsLinesAny(THROW_TILES).join(' ')).toContain('Esc');
     });
 });
 
@@ -450,8 +476,11 @@ describe('trayFooter', () => {
     });
 
     it('counts what is waiting and names where it goes', () => {
-        expect(trayFooter(4)).toBe('4 on the tray · carry one to ASSEMBLY (E at KEGS OUT)');
-        expect(trayFooter(1)).toContain('1 on the tray');
+        // Was '4 on the tray': 'the tray' is painted on nothing. The shelf the
+        // player walks to says KEGS OUT, so the sentence says KEGS OUT.
+        expect(trayFooter(4)).toBe(`4 on ${KEGS_OUT} · carry one to ${STATION_LABEL.assembly} (E)`);
+        expect(trayFooter(1)).toContain(`1 on ${KEGS_OUT}`);
+        expect(trayFooter(4)).not.toMatch(/tray/i);
     });
 });
 
@@ -517,6 +546,7 @@ function mountPanel(over: {
     } as unknown as StationState;
     const ctx = stub({
         scene: stub({
+            levelConfig: { carry: { throwTiles: THROW_TILES } },
             add: stub({
                 text: (_x: number, _y: number, value: unknown) => {
                     const entry: PaintedText = {
@@ -597,7 +627,7 @@ describe('the panel a full pair of hands gets', () => {
 
         expect(panel.shown).toBe(true);
 
-        for (const line of HANDS_LINES) expect(panel.lines).toContain(line);
+        for (const line of handsLinesKeg(THROW_TILES)) expect(panel.lines).toContain(line);
     });
 
     it('keeps them off the panel while the plunger is still taking input', () => {
@@ -610,7 +640,7 @@ describe('the panel a full pair of hands gets', () => {
         expect(panel.shown).toBe(true);
         expect(panel.lines.join(' ')).not.toContain('Assembly');
 
-        for (const line of HANDS_LINES_ANY) expect(panel.lines).toContain(line);
+        for (const line of handsLinesAny(THROW_TILES)) expect(panel.lines).toContain(line);
     });
 });
 
@@ -622,7 +652,7 @@ describe('the panel a full pair of hands gets', () => {
 describe('the footer under the gauge', () => {
     const footerOf = (tray: number): PaintedText | undefined =>
         mountPanel({ phase: 'mash', tray }).texts.find((entry) =>
-            entry.text.includes('on the tray'),
+            entry.text.includes(`on ${KEGS_OUT}`),
         );
 
     it('names the haul as soon as one keg is waiting, cap or no cap', () => {
@@ -633,7 +663,7 @@ describe('the footer under the gauge', () => {
     });
 
     it('counts the four kegs the playtester never knew they had made', () => {
-        expect(footerOf(4)?.text).toContain('4 on the tray');
+        expect(footerOf(4)?.text).toContain(`4 on ${KEGS_OUT}`);
     });
 
     it('stays out of the way while the tray is empty', () => {
