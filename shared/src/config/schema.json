@@ -1,0 +1,727 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DYNAMITE level config (M1)",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "key",
+        "name",
+        "day",
+        "players",
+        "layout",
+        "groove",
+        "clipboardSeconds",
+        "bpm",
+        "windowFloorsMs",
+        "carry",
+        "stations",
+        "recipes",
+        "orders",
+        "hazards",
+        "grading",
+        "economy",
+        "scaling"
+    ],
+    "properties": {
+        "key": { "$ref": "#/definitions/ConfigKey" },
+        "name": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" },
+        "day": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "shiftSeconds",
+                "orderBook",
+                "endsOn",
+                "earlyFinishBonusPerMinute",
+                "earlyFinishCap"
+            ],
+            "properties": {
+                "shiftSeconds": { "type": "number", "minimum": 0 },
+                "orderBook": { "type": "integer", "minimum": 0 },
+                "endsOn": { "enum": ["either", "book", "clock", "never"] },
+                "earlyFinishBonusPerMinute": { "type": "number", "minimum": 0 },
+                "earlyFinishCap": { "type": "number", "minimum": 0 }
+            }
+        },
+        "players": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["min", "max"],
+            "properties": {
+                "min": { "type": "integer", "minimum": 1 },
+                "max": { "type": "integer", "minimum": 1, "maximum": 10 }
+            }
+        },
+        "layout": { "$ref": "#/definitions/ConfigKey" },
+        "groove": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "weights", "thresholds", "cleanSweep"],
+            "properties": {
+                "start": { "type": "number", "minimum": 0, "maximum": 100 },
+                "weights": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "onTimeShip",
+                        "shelfFullness",
+                        "floorItem",
+                        "rework",
+                        "starved",
+                        "jammed",
+                        "litFuse",
+                        "fizzle",
+                        "niceSave",
+                        "blastKeg",
+                        "primeStick"
+                    ],
+                    "properties": {
+                        "onTimeShip": { "type": "number" },
+                        "shelfFullness": { "type": "number" },
+                        "floorItem": { "type": "number" },
+                        "rework": { "type": "number" },
+                        "starved": { "type": "number" },
+                        "jammed": { "type": "number" },
+                        "litFuse": { "type": "number" },
+                        "fizzle": { "type": "number" },
+                        "niceSave": { "type": "number" },
+                        "blastKeg": { "type": "number" },
+                        "primeStick": { "type": "number" },
+                        "truckComplete": { "type": "number" }
+                    }
+                },
+                "thresholds": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["onFire", "groove", "churn", "meltdown"],
+                    "properties": {
+                        "onFire": { "type": "number" },
+                        "groove": { "type": "number" },
+                        "churn": { "type": "number", "exclusiveMinimum": 0 },
+                        "meltdown": { "type": "number" }
+                    }
+                },
+                "cleanSweep": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["holdSeconds", "snapTo", "cooldownSeconds"],
+                    "properties": {
+                        "holdSeconds": { "type": "number", "minimum": 0 },
+                        "snapTo": { "type": "number", "minimum": 0, "maximum": 100 },
+                        "cooldownSeconds": { "type": "number", "minimum": 0 }
+                    }
+                }
+            }
+        },
+        "clipboardSeconds": { "type": "number", "minimum": 0 },
+        "clipboardMemorySeconds": { "type": "number", "minimum": 0 },
+        "interrupts": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "everySeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "pauseSeconds": { "type": "number", "minimum": 0 }
+            }
+        },
+        "movement": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "tilesPerSecond": { "type": "number", "exclusiveMinimum": 0 },
+                "playerRadius": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.5 },
+                "bumpStaggerSeconds": { "type": "number", "minimum": 0 },
+                "floorItemSpeed": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                "spillSpeed": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+        },
+        "bpm": { "type": "number", "exclusiveMinimum": 0 },
+        "windowFloorsMs": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ok", "perfect"],
+            "properties": {
+                "ok": { "type": "number", "exclusiveMinimum": 0 },
+                "perfect": { "type": "number", "exclusiveMinimum": 0 }
+            }
+        },
+        "carry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "slowdown",
+                "throwTiles",
+                "throwFlightSeconds",
+                "catchOkMs",
+                "catchPerfectMs",
+                "drop",
+                "truckRideSeconds",
+                "footprints"
+            ],
+            "properties": {
+                "slowdown": { "type": "number", "minimum": 0, "maximum": 1 },
+                "throwTiles": { "type": "number", "exclusiveMinimum": 0 },
+                "throwFlightSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "catchOkMs": { "type": "number", "exclusiveMinimum": 0 },
+                "catchPerfectMs": { "type": "number", "exclusiveMinimum": 0 },
+                "drop": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["kegKnockOverOnHit", "stickFizzleChance", "crateRattlyOnDrop"],
+                    "properties": {
+                        "kegKnockOverOnHit": { "type": "boolean" },
+                        "stickFizzleChance": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "crateRattlyOnDrop": { "type": "boolean" }
+                    }
+                },
+                "truckRideSeconds": { "type": "number", "minimum": 0 },
+                "footprints": { "type": "boolean" },
+                "putDownSeconds": { "type": "number", "minimum": 0 },
+                "hitStaggerSeconds": { "type": "number", "minimum": 0 }
+            }
+        },
+        "stations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": { "$ref": "#/definitions/StationConfig" }
+        },
+        "recipes": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": { "$ref": "#/definitions/RecipeConfig" }
+        },
+        "orders": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["firstAt", "everySeconds", "truckWaitSeconds", "mix", "qtyPerTruck"],
+            "properties": {
+                "firstAt": { "type": "number", "minimum": 0 },
+                "everySeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "truckWaitSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "mix": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["type", "weight"],
+                        "properties": {
+                            "type": { "type": "string", "minLength": 1 },
+                            "weight": { "type": "number", "exclusiveMinimum": 0 }
+                        }
+                    }
+                },
+                "qtyPerTruck": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["base", "rampPerMinute"],
+                    "properties": {
+                        "base": { "type": "number", "exclusiveMinimum": 0 },
+                        "rampPerMinute": { "type": "number", "minimum": 0 }
+                    }
+                }
+            }
+        },
+        "hazards": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "fuseSeconds",
+                "chainFuseSeconds",
+                "blastRadius",
+                "chainWindowSeconds",
+                "sparks",
+                "fuel",
+                "incidentThreshold",
+                "factoryExplosionThreshold",
+                "explosionEndsRound",
+                "dangerWarningAt",
+                "stompSeconds",
+                "stunSeconds",
+                "knockbackTiles",
+                "litKegCarry"
+            ],
+            "properties": {
+                "fuseSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "chainFuseSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "blastRadius": { "type": "integer", "minimum": 0 },
+                "chainWindowSeconds": { "type": "number", "minimum": 0 },
+                "sparks": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["slammerRedline", "jammedPer10s", "crimpOnDented"],
+                    "properties": {
+                        "slammerRedline": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "jammedPer10s": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "crimpOnDented": { "type": "number", "minimum": 0, "maximum": 1 }
+                    }
+                },
+                "fuel": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["floorKeg", "spillTile", "shelfKeg"],
+                    "properties": {
+                        "floorKeg": { "type": "number", "minimum": 0 },
+                        "spillTile": { "type": "number", "minimum": 0 },
+                        "shelfKeg": { "type": "number", "minimum": 0 }
+                    }
+                },
+                "incidentThreshold": { "type": "integer", "minimum": 1 },
+                "factoryExplosionThreshold": { "type": "integer", "minimum": 1 },
+                "explosionEndsRound": { "type": "boolean" },
+                "dangerWarningAt": { "type": "number", "minimum": 0, "maximum": 1 },
+                "stompSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "stunSeconds": { "type": "number", "minimum": 0 },
+                "knockbackTiles": { "type": "number", "minimum": 0 },
+                "litKegCarry": { "type": "boolean" },
+                "unjamSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "sweepSecondsPerTile": { "type": "number", "exclusiveMinimum": 0 },
+                "repairSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "bannerSeconds": { "type": "number", "exclusiveMinimum": 0 }
+            }
+        },
+        "grading": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["weights", "thresholds", "targets", "multiplier", "verdict"],
+            "properties": {
+                "weights": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["onTime", "wip", "quality", "cycle", "incident", "heroCap"],
+                    "properties": {
+                        "onTime": { "type": "number" },
+                        "wip": { "type": "number" },
+                        "quality": { "type": "number" },
+                        "cycle": { "type": "number" },
+                        "incident": { "type": "number" },
+                        "heroCap": { "type": "number", "minimum": 0 }
+                    }
+                },
+                "thresholds": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["A", "B", "C", "D"],
+                    "properties": {
+                        "A": { "type": "number" },
+                        "B": { "type": "number" },
+                        "C": { "type": "number" },
+                        "D": { "type": "number" }
+                    }
+                },
+                "targets": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["wip", "cycleSeconds"],
+                    "properties": {
+                        "wip": { "type": "number", "exclusiveMinimum": 0 },
+                        "cycleSeconds": { "type": "number", "exclusiveMinimum": 0 }
+                    }
+                },
+                "multiplier": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["A", "B", "C", "D", "F"],
+                    "properties": {
+                        "A": { "type": "number", "minimum": 0 },
+                        "B": { "type": "number", "minimum": 0 },
+                        "C": { "type": "number", "minimum": 0 },
+                        "D": { "type": "number", "minimum": 0 },
+                        "F": { "type": "number", "minimum": 0 }
+                    }
+                },
+                "verdict": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["flow", "smooth", "fine", "rough"],
+                    "properties": {
+                        "flow": { "type": "number" },
+                        "smooth": { "type": "number" },
+                        "fine": { "type": "number" },
+                        "rough": { "type": "number" }
+                    }
+                },
+                "advanceOn": { "enum": ["A", "B", "C", "D"] }
+            }
+        },
+        "scoring": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "perOrder": { "type": "number", "minimum": 0 } }
+        },
+        "economy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["price", "wasteCost"],
+            "properties": {
+                "price": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["red_stick"],
+                    "properties": { "red_stick": { "type": "number", "minimum": 0 } }
+                },
+                "wasteCost": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "keg": { "type": "number", "minimum": 0 },
+                        "casing": { "type": "number", "minimum": 0 },
+                        "stick": { "type": "number", "minimum": 0 },
+                        "crate": { "type": "number", "minimum": 0 },
+                        "parts": { "type": "number", "minimum": 0 }
+                    }
+                }
+            }
+        },
+        "scaling": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["breakpoints"],
+            "properties": {
+                "breakpoints": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["maxPlayers", "lines", "truckEverySeconds", "orderBook"],
+                        "properties": {
+                            "maxPlayers": { "type": "integer", "minimum": 1, "maximum": 10 },
+                            "lines": { "enum": [1, 2] },
+                            "truckEverySeconds": { "type": "number", "exclusiveMinimum": 0 },
+                            "orderBook": { "type": "integer", "minimum": 0 },
+                            "layout": { "$ref": "#/definitions/ConfigKey" }
+                        }
+                    }
+                }
+            }
+        },
+        "copy": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["clipboard"],
+            "properties": {
+                "clipboard": { "type": "array", "items": { "type": "string" } }
+            }
+        }
+    },
+    "definitions": {
+        "ConfigKey": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "Tile": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "integer", "minimum": 0 }
+        },
+        "Rect": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": { "type": "integer", "minimum": 0 }
+        },
+        "ItemType": { "enum": ["keg", "casing", "stick", "crate", "parts"] },
+        "StationType": { "enum": ["boom_powder", "assembly", "dock"] },
+        "StationConfig": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "type",
+                "line",
+                "joinMode",
+                "anchor",
+                "workTiles",
+                "rackTiles",
+                "floorRing",
+                "nominalSeconds",
+                "floorSeconds",
+                "staffing",
+                "churnSensitive",
+                "minigame"
+            ],
+            "properties": {
+                "id": { "type": "string", "pattern": "^(powder|assembly|dock)-[ab]$" },
+                "type": { "$ref": "#/definitions/StationType" },
+                "line": { "enum": ["a", "b"] },
+                "joinMode": { "enum": ["press", "stand"] },
+                "anchor": { "$ref": "#/definitions/Tile" },
+                "workTiles": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/definitions/Tile" }
+                },
+                "rackTiles": { "type": "array", "items": { "$ref": "#/definitions/Tile" } },
+                "inputShelf": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["tile", "capacity", "accepts"],
+                            "properties": {
+                                "tile": { "$ref": "#/definitions/Tile" },
+                                "capacity": { "type": "integer", "minimum": 1 },
+                                "accepts": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": { "$ref": "#/definitions/ItemType" }
+                                }
+                            }
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "outputShelf": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["tile", "capacity"],
+                            "properties": {
+                                "tile": { "$ref": "#/definitions/Tile" },
+                                "capacity": { "type": "integer", "minimum": 1 }
+                            }
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "floorRing": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["tiles"],
+                    "properties": {
+                        "tiles": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "$ref": "#/definitions/Tile" }
+                        }
+                    }
+                },
+                "nominalSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "floorSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "staffing": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": { "type": "number", "minimum": 0 }
+                },
+                "churnSensitive": { "type": "boolean" },
+                "minigame": { "type": "object" }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "required": ["type"],
+                        "properties": { "type": { "const": "boom_powder" } }
+                    },
+                    "then": {
+                        "properties": { "minigame": { "$ref": "#/definitions/BoomPowderMinigame" } }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["type"],
+                        "properties": { "type": { "const": "assembly" } }
+                    },
+                    "then": {
+                        "properties": { "minigame": { "$ref": "#/definitions/AssemblyMinigame" } }
+                    }
+                },
+                {
+                    "if": { "required": ["type"], "properties": { "type": { "const": "dock" } } },
+                    "then": { "properties": { "minigame": { "$ref": "#/definitions/DockMinigame" } } }
+                }
+            ]
+        },
+        "BoomPowderMinigame": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["heat", "comboTiers", "overflowSpills"],
+            "properties": {
+                "heat": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "minChargeSeconds",
+                        "maxChargeSeconds",
+                        "okMsAtMaxCharge",
+                        "okMsAtMinCharge",
+                        "deadCenterMs",
+                        "churnBandDrift"
+                    ],
+                    "properties": {
+                        "minChargeSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                        "maxChargeSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                        "okMsAtMaxCharge": { "type": "number", "exclusiveMinimum": 0 },
+                        "okMsAtMinCharge": { "type": "number", "exclusiveMinimum": 0 },
+                        "deadCenterMs": { "type": "number", "exclusiveMinimum": 0 },
+                        "churnBandDrift": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "overholdMs": { "type": "number", "exclusiveMinimum": 0 }
+                    }
+                },
+                "comboTiers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "integer", "minimum": 1 }
+                },
+                "overflowSpills": { "type": "boolean" },
+                "comboBannerSeconds": { "type": "number", "exclusiveMinimum": 0 }
+            }
+        },
+        "AssemblyMinigame": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pour", "knots", "crimp", "toss"],
+            "properties": {
+                "pour": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["beatsByQuality", "perfectMs", "okMs", "primeKegWindowMultiplier"],
+                    "properties": {
+                        "beatsByQuality": {
+                            "type": "object",
+                            "minProperties": 1,
+                            "additionalProperties": { "type": "integer", "minimum": 1 }
+                        },
+                        "perfectMs": { "type": "number", "exclusiveMinimum": 0 },
+                        "okMs": { "type": "number", "exclusiveMinimum": 0 },
+                        "primeKegWindowMultiplier": { "type": "number", "exclusiveMinimum": 0 }
+                    }
+                },
+                "knots": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["long", "short", "secondsPerKnot", "perfectMs", "okMs"],
+                    "properties": {
+                        "long": { "type": "integer", "minimum": 1 },
+                        "short": { "type": "integer", "minimum": 1 },
+                        "secondsPerKnot": { "type": "number", "exclusiveMinimum": 0 },
+                        "perfectMs": { "type": "number", "exclusiveMinimum": 0 },
+                        "okMs": { "type": "number", "exclusiveMinimum": 0 }
+                    }
+                },
+                "crimp": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["clicks", "clickSeconds", "perfectMs", "okMs"],
+                    "properties": {
+                        "clicks": { "type": "integer", "minimum": 1 },
+                        "clickSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                        "perfectMs": { "type": "number", "exclusiveMinimum": 0 },
+                        "okMs": { "type": "number", "exclusiveMinimum": 0 }
+                    }
+                },
+                "toss": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["arcSeconds", "perfectMs", "okMs"],
+                    "properties": {
+                        "arcSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                        "perfectMs": { "type": "number", "exclusiveMinimum": 0 },
+                        "okMs": { "type": "number", "exclusiveMinimum": 0 }
+                    }
+                },
+                "casings": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["stock", "dentChance"],
+                    "properties": {
+                        "stock": { "type": "integer", "minimum": 0 },
+                        "dentChance": { "type": "number", "minimum": 0, "maximum": 1 }
+                    }
+                }
+            }
+        },
+        "DockMinigame": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["beepHz", "perfectMs", "okMs", "tailgateWindowSeconds"],
+            "properties": {
+                "beepHz": { "type": "number", "exclusiveMinimum": 0 },
+                "perfectMs": { "type": "number", "exclusiveMinimum": 0 },
+                "okMs": { "type": "number", "exclusiveMinimum": 0 },
+                "tailgateWindowSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "tailgateHoldSeconds": { "type": "number", "exclusiveMinimum": 0 },
+                "leaveSeconds": { "type": "number", "exclusiveMinimum": 0 }
+            }
+        },
+        "RecipeConfig": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["station", "inputs", "output"],
+            "properties": {
+                "station": { "$ref": "#/definitions/StationType" },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": { "type": "integer", "minimum": 1 }
+                },
+                "output": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type"],
+                    "properties": {
+                        "type": { "$ref": "#/definitions/ItemType" },
+                        "product": { "enum": ["red_stick"] },
+                        "pours": { "type": "integer", "minimum": 1 }
+                    }
+                },
+                "cycleMultiplier": { "type": "number", "exclusiveMinimum": 0 }
+            }
+        },
+        "LayoutConfig": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "key",
+                "width",
+                "height",
+                "walls",
+                "spawn",
+                "breakRoom",
+                "blastBins",
+                "dockDoor",
+                "truckBay",
+                "ramp",
+                "beaconPoles",
+                "orderBoard",
+                "props"
+            ],
+            "properties": {
+                "key": { "$ref": "#/definitions/ConfigKey" },
+                "width": { "type": "integer", "minimum": 8 },
+                "height": { "type": "integer", "minimum": 8 },
+                "walls": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+                "spawn": { "$ref": "#/definitions/Tile" },
+                "breakRoom": { "$ref": "#/definitions/Rect" },
+                "blastBins": { "type": "array", "items": { "$ref": "#/definitions/Tile" } },
+                "dockDoor": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": { "type": "integer", "minimum": 0 }
+                },
+                "truckBay": { "$ref": "#/definitions/Rect" },
+                "ramp": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/definitions/Tile" }
+                },
+                "beaconPoles": {
+                    "type": "object",
+                    "additionalProperties": { "$ref": "#/definitions/Tile" }
+                },
+                "orderBoard": { "$ref": "#/definitions/Tile" },
+                "props": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["toolCart", "countdownSign", "returnsPile", "broomHook"],
+                    "properties": {
+                        "toolCart": { "$ref": "#/definitions/Tile" },
+                        "countdownSign": { "$ref": "#/definitions/Tile" },
+                        "returnsPile": { "$ref": "#/definitions/Tile" },
+                        "broomHook": { "$ref": "#/definitions/Tile" }
+                    }
+                }
+            }
+        }
+    }
+}

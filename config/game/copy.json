@@ -1,0 +1,74 @@
+{
+    "clipboard": [
+        "Onboarding… locating the good stapler…",
+        "Reading the wiki page. The wiki page is wrong.",
+        "Asking Dave. Dave is at lunch.",
+        "Waiting for VPN."
+    ],
+    "chores": {
+        "unjam": "WAITING FOR VENDOR SUPPORT",
+        "sweep": "SWEEPING",
+        "stomp": "STOMPING",
+        "repair": "FILING INCIDENT REPORT"
+    },
+    "bubbles": {
+        "whatCanIDo": "what can I do?",
+        "whoThrewThat": "WHO THREW THAT",
+        "sawTheHighway": "I SAW THE HIGHWAY"
+    },
+    "stations": {
+        "needHands": "NEED HANDS",
+        "needParts": "NEED PARTS"
+    },
+    "emotes": {
+        "stop": "STOP",
+        "help": "HELP",
+        "go": "GO",
+        "what": "?"
+    },
+    "banners": {
+        "WHOOPS": "WHOOPS",
+        "INCIDENT": "INCIDENT",
+        "EXPLODED": "THE FACTORY EXPLODED",
+        "NICE SAVE": "NICE SAVE",
+        "CLEAN SWEEP": "CLEAN SWEEP",
+        "HOT STREAK": "HOT STREAK",
+        "TAILGATE": "TAILGATE"
+    },
+    "hazards": {
+        "sparks": {
+            "slammerRedline": "REDLINED THE SLAMMER",
+            "jammed": "LEFT IT JAMMED",
+            "fizzle": "DROPPED A STICK ON THE PILE",
+            "crimpOnDented": "CRIMPED A DENTED CASING"
+        }
+    },
+    "report": {
+        "individualHeading": "INDIVIDUAL PERFORMANCE",
+        "factoryHeading": "FACTORY PERFORMANCE",
+        "topPerformer": "Top performer: {name} ({station})",
+        "materials": "Materials purchased: {purchased} kegs. Materials shipped: {shipped}.",
+        "certificate": "CERTIFICATE OF EXCELLENCE",
+        "repeatDay": "MANAGEMENT WOULD LIKE TO SEE IMPROVEMENT",
+        "fireMarshal": "DELIVERED BY THE FIRE MARSHAL",
+        "loss": "LOSS",
+        "sandbox": "SANDBOX — NOT GRADED"
+    },
+    "events": {
+        "rushOrder": "CEO NEEDS GOLD DYNAMITE FOR A DEMO",
+        "changeOfMind": "CUSTOMER CHANGED THEIR MIND. THANKS ANYWAY.",
+        "standup": "QUICK SYNC",
+        "executiveTour": "JUST PRETEND I'M NOT HERE",
+        "newProcess": "EFFECTIVE IMMEDIATELY",
+        "printerOffline": "HAVE YOU TRIED TURNING IT OFF AND ON",
+        "vendorUpdate": "WE'VE IMPROVED YOUR EXPERIENCE",
+        "hotfix": "CUSTOMER SAYS IT WENT 'PFFT'",
+        "allHands": "EXCITING NEWS ABOUT OUR VALUES",
+        "primeStick": "THAT ONE'S GOING ON THE WALL"
+    },
+    "standupBubbles": [
+        "no blockers",
+        "same as yesterday",
+        "I'll take that offline"
+    ]
+}

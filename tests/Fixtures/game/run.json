@@ -1,0 +1,63 @@
+{
+  "factoryId": "1",
+  "seed": 987654321,
+  "startedAt": "2026-09-04T20:15:00.000Z",
+  "endedAt": "2026-09-04T20:23:00.000Z",
+  "status": "ended",
+  "day": 1,
+  "levelKey": "level-01-basic-flow",
+  "grade": "C",
+  "score": 74.5,
+  "verdict": "FINE",
+  "ordersCompleted": 6,
+  "ordersTotal": 8,
+  "throughput": 4.5,
+  "avgCycleSeconds": 31.2,
+  "peakWip": 7,
+  "wipTimeline": [0, 1, 2, 3, 4, 5, 6, 7, 6, 5],
+  "kegsMade": 22,
+  "kegsUsed": 18,
+  "defects": 3,
+  "rework": 0,
+  "kegsExploded": 1,
+  "fusesStomped": 2,
+  "fizzles": 1,
+  "niceSaves": 2,
+  "truckRides": 1,
+  "bottleneck": { "stationId": "assembly-a", "starvedSeconds": 42.5, "blockedSeconds": 11 },
+  "stations": [
+    { "id": "powder-a", "utilization": 0.81 },
+    { "id": "assembly-a", "utilization": 0.94 },
+    { "id": "dock-a", "utilization": 0.42 }
+  ],
+  "players": [
+    {
+      "userId": "1",
+      "name": "Sam",
+      "utilization": 0.92,
+      "label": "EXCELLENT",
+      "topStation": "assembly-a",
+      "bubbles": 3,
+      "drops": 1,
+      "sooted": 0,
+      "fusesStomped": 2,
+      "niceSaves": 2,
+      "truckRides": 1
+    },
+    {
+      "userId": "2",
+      "name": "Priya",
+      "utilization": 0.68,
+      "label": "GOOD",
+      "topStation": "powder-a",
+      "bubbles": 5,
+      "drops": 2,
+      "sooted": 1,
+      "fusesStomped": 0,
+      "niceSaves": 0,
+      "truckRides": 0
+    }
+  ],
+  "pnl": { "revenue": 240, "waste": 48, "profit": 192, "multiplier": 1, "coin": 19 },
+  "materials": { "purchased": 22, "shipped": 18 }
+}

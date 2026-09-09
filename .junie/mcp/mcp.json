@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "/Users/sampittman/Library/Application Support/Herd/bin/php84",
+            "args": [
+                "/private/tmp/dynamite-scaffold/artisan",
+                "boost:mcp"
+            ]
+        }
+    }
+}

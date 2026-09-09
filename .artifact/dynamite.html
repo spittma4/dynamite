@@ -1,0 +1,1074 @@
+<title>DYNAMITE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#ECEDE9; --surface:#F7F7F4; --surface2:#E3E4DF; --ink:#1B1D1F; --muted:#5C6066; --line:#C9CBC4;
+  --red:#C8301F; --red-ink:#FFFFFF; --yellow:#E9B100; --yellow-ink:#1B1D1F; --teal:#1E7A8A; --green:#2F8F4E; --soot:#33363A;
+  --tierS:#C8301F; --tierA:#B8540F; --tierB:#1E7A8A; --tierC:#2F8F4E; --tierD:#7A7D82;
+  --shadow:0 1px 0 rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ground:#15171A; --surface:#1F2226; --surface2:#2A2E33; --ink:#ECEAE2; --muted:#A2A69E; --line:#34383D;
+  --red:#FF5D4D; --red-ink:#1B1D1F; --yellow:#FFC63A; --yellow-ink:#1B1D1F; --teal:#55BFCF; --green:#5CC27C; --soot:#0E0F11;
+  --tierS:#FF5D4D; --tierA:#F0904A; --tierB:#55BFCF; --tierC:#5CC27C; --tierD:#8C9096; --shadow:none;
+}}
+:root[data-theme="dark"]{
+  --ground:#15171A; --surface:#1F2226; --surface2:#2A2E33; --ink:#ECEAE2; --muted:#A2A69E; --line:#34383D;
+  --red:#FF5D4D; --red-ink:#1B1D1F; --yellow:#FFC63A; --yellow-ink:#1B1D1F; --teal:#55BFCF; --green:#5CC27C; --soot:#0E0F11;
+  --tierS:#FF5D4D; --tierA:#F0904A; --tierB:#55BFCF; --tierC:#5CC27C; --tierD:#8C9096; --shadow:none;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.55 "Work Sans",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;text-transform:uppercase;letter-spacing:.01em;margin:0;text-wrap:balance;line-height:1}
+h1{font-size:clamp(64px,12vw,140px);font-weight:900;color:var(--red)}
+h2{font-size:clamp(34px,5vw,52px);font-weight:900}
+h3{font-size:22px;font-weight:800;letter-spacing:.02em}
+h4{font-size:17px;font-weight:800;letter-spacing:.03em}
+p{margin:0}
+a{color:var(--teal)}
+code,kbd,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em}
+kbd{display:inline-block;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;background:var(--surface);padding:0 .38em;line-height:1.5;font-size:.78em;font-weight:600}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.col{max-width:76ch}
+.nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--ground) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.nav .brand{font-family:"Big Shoulders Display",Impact,sans-serif;font-weight:900;font-size:22px;color:var(--red);text-decoration:none;letter-spacing:.02em}
+.nav a.l{color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+.nav a.l:hover{color:var(--ink)}
+.nav .v{margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap}
+.stripe{height:8px;background:repeating-linear-gradient(135deg,var(--yellow) 0 14px,var(--soot) 14px 28px);border-radius:2px}
+.hero{padding:56px 0 36px}
+.hero .tag{font-family:"Big Shoulders Display",Impact,sans-serif;font-weight:800;font-size:clamp(22px,3.2vw,34px);text-transform:uppercase;letter-spacing:.02em;margin-top:6px}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{font-size:18px;color:var(--muted);max-width:70ch;margin-top:8px}
+.sec{padding:44px 0 8px;scroll-margin-top:64px}
+.sec > .wrap > h2{margin-bottom:6px}
+.num{color:var(--red);margin-right:.15em}
+.grid{display:grid;gap:16px;margin-top:18px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.grid > *{min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px 20px;box-shadow:var(--shadow)}
+.card h3,.card h4{margin-bottom:8px}
+.card p + p{margin-top:8px}
+.card.accent{border-left:5px solid var(--red)}
+.card.warn{border-left:5px solid var(--yellow)}
+.card.teal{border-left:5px solid var(--teal)}
+.plate{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px;margin-top:18px;overflow-x:auto}
+.plate figcaption,.cap{font-size:13px;color:var(--muted);margin-top:8px}
+.plate svg{display:block;width:100%;height:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tbody tr:last-child td{border-bottom:0}
+.tbl{overflow-x:auto;margin-top:12px}
+.badge{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:600;letter-spacing:.04em;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);vertical-align:middle}
+.badge.red{background:var(--red);color:var(--red-ink);border-color:var(--red)}
+.badge.yellow{background:var(--yellow);color:var(--yellow-ink);border-color:var(--yellow)}
+.badge.teal{color:var(--teal);border-color:var(--teal)}
+.badge.green{color:var(--green);border-color:var(--green)}
+.tier{display:inline-block;width:26px;height:26px;border-radius:5px;font-family:"Big Shoulders Display",Impact,sans-serif;font-weight:900;font-size:17px;text-align:center;line-height:26px;color:#fff}
+.tS{background:var(--tierS)}.tA{background:var(--tierA)}.tB{background:var(--tierB)}.tC{background:var(--tierC)}.tD{background:var(--tierD)}
+.code{background:var(--soot);color:#E8E6DD;border-radius:6px;padding:12px 14px;font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre;margin-top:10px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.ul{margin:8px 0 0;padding-left:18px}
+.ul li{margin:4px 0}
+.ul li::marker{color:var(--red)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px;margin-top:8px}
+.kv dt{color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:12px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+.kv dd{margin:0}
+.cert{border:3px double var(--yellow);font-family:Georgia,"Times New Roman",serif;padding:14px 16px;border-radius:4px}
+.station{border-left:6px solid var(--tc)}
+.station h3 .sub{font-family:"Work Sans",sans-serif;text-transform:none;letter-spacing:0;font-weight:500;color:var(--muted);font-size:15px}
+.screen{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px;margin-top:12px}
+.screen svg{display:block;width:100%;height:auto;border-radius:4px}
+.opt{display:grid;gap:10px;margin-top:10px}
+.opt label{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:6px;background:var(--surface2);cursor:pointer}
+.opt label:has(input:checked){border-color:var(--red);box-shadow:inset 0 0 0 1px var(--red)}
+.opt input{margin-top:4px;accent-color:var(--red)}
+.opt .t{font-weight:600}
+.opt .d{font-size:13px;color:var(--muted);margin-top:2px}
+.btn{font:600 14px "Work Sans",sans-serif;background:var(--red);color:var(--red-ink);border:0;border-radius:6px;padding:9px 16px;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,.opt label:focus-within,.nav a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.saved{font-size:13px;color:var(--green);font-weight:600}
+.pickrow{display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.step{background:var(--surface2);border-radius:6px;padding:10px 12px;font-size:14px;border-top:4px solid var(--line)}
+.step b{display:block;font-family:"Big Shoulders Display",Impact,sans-serif;font-weight:800;font-size:18px;text-transform:uppercase;letter-spacing:.02em}
+.step.ok{border-top-color:var(--green)}.step.warn{border-top-color:var(--yellow)}.step.bad{border-top-color:var(--red)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid var(--line)}
+.stack{display:grid;gap:10px;margin-top:12px}
+.done{font-size:13px;padding:6px 10px;border-radius:6px;background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green);font-weight:600;display:inline-block}
+.foot{padding:40px 0 60px;color:var(--muted);font-size:13px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<nav class="nav"><div class="wrap">
+  <a class="brand" href="#top">DYNAMITE</a>
+  <a class="l" href="#pitch">Pitch</a><a class="l" href="#doctrine">Doctrine</a><a class="l" href="#floor">Floor</a><a class="l" href="#interact">Interact</a><a class="l" href="#boom">Boom</a><a class="l" href="#stations">Stations</a><a class="l" href="#rules">Rules</a><a class="l" href="#chaos">Chaos</a><a class="l" href="#payday">Report &amp; Payday</a><a class="l" href="#scale">Scale</a><a class="l" href="#build">Build</a><a class="l" href="#roadmap">Roadmap</a><a class="l" href="#decide">Decide</a>
+  <span class="v mono">v0.3 · 2026-09-04</span>
+</div></nav>
+
+<main id="top">
+<header class="hero"><div class="wrap">
+  <div class="stripe"></div>
+  <p class="eyebrow" style="margin-top:22px">A cooperative factory game · 3–10 players · web · 10-minute days</p>
+  <h1>Dynamite</h1>
+  <p class="tag">Busy is not the same as done.</p>
+  <div class="grid g2" style="margin-top:22px">
+    <div class="card col" style="grid-column:span 1">
+      <p style="font-size:18px">You and two to nine friends run a cartoon dynamite factory. <strong>Every station is fun.</strong> The most fun station is the one that will ruin everything if you don't stop.</p>
+      <p>Powder is a slot machine. Casing is a rhythm game. Assembly is a two-person jig. Shipping is a truck with a horn. Nobody is in charge.</p>
+      <p>By minute three the floor is covered in kegs nobody asked for. By minute five, four of you are crowded around one jig asking each other <em>"what can I do?"</em> At minute nine the truck honks and everyone abandons their station.</p>
+      <p>The report card tells the Powder player they were <span class="cert" style="padding:1px 8px;color:var(--yellow);white-space:nowrap">98% — EXCELLENT ★</span> and the factory it got a <strong style="color:var(--red)">D</strong>.</p>
+      <p>And if nobody stops — the pile is powder, the Slammer throws a spark, a fuse hisses for six seconds, and <strong>the factory explodes.</strong> That's how you lose.</p>
+      <p>Then somebody says <em>"next round, nobody touch the powder until I say"</em> — and now it's a game.</p>
+    </div>
+    <div class="card">
+      <h3>Where we are</h3>
+      <p class="small">The plan is settled enough to build. This page is the record plus the first visual pass at the <a href="#floor">floor</a>, <a href="#interact">how players interact</a>, and <a href="#stations">what the mini-games look like</a> — with a few <a href="#decide">picks</a> at the end that save back to me.</p>
+      <div class="stack">
+        <span class="done">✓ Stack: Laravel + Node/Colyseus · Phaser 4 · Livewire/Flux · Postgres</span>
+        <span class="done">✓ Fun Gradient · depth-not-difficulty (mini-games v2.2)</span>
+        <span class="done">✓ Explosion is the only loss · output-to-hands · 3–10 players</span>
+        <span class="done">✓ Days, A–F report card, P&amp;L, Payday by vote</span>
+      </div>
+      <p class="small muted" style="margin-top:12px">Source of truth: <code>docs/</code> in the repo — 20 design docs + 12 ADRs. When this page and the markdown disagree, the markdown wins.</p>
+    </div>
+  </div>
+</div></header>
+
+<!-- ============ 1 PITCH ============ -->
+<section id="pitch" class="sec"><div class="wrap">
+  <h2><span class="num">1</span>The pitch</h2>
+  <p class="lede">Overcooked's chaos, RV There Yet's shared consequences, Factorio's flow — pointed at a joke about software teams that the game never says out loud.</p>
+  <div class="grid g2">
+    <div class="card accent">
+      <h3>The core joke is the core mechanic</h3>
+      <p style="font-size:18px;font-weight:600">Local productivity ≠ system throughput.</p>
+      <p class="muted">Every player can be flat-out busy — combos climbing, machines thunking — while the factory ships almost nothing. The game never explains this. It <em>arranges</em> for it to happen, then shows you the numbers.</p>
+      <p class="muted">The allegory (WIP limits, bottlenecks, Brooks's Law) is real and never spoken. Players who know it laugh. Players who don't learn it by saying "stop making powder" to a friend.</p>
+    </div>
+    <div class="card">
+      <h3>Theme &amp; tone</h3>
+      <p class="muted">Cartoon explosives, zero realism. <span class="badge red">Boom Powder</span> <span class="badge red">Blast Beans</span> <span class="badge red">Fuse Goo</span> <span class="badge red">Danger Dust</span> <span class="badge yellow">Gold Executive Dynamite</span></p>
+      <p class="muted">Failure is smoke, soot, shaking, confetti and unreasonable paperwork. Nobody is ever hurt. A Hotfix return goes <em>POOF</em> on the dock and leaves a spill to sweep.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Comparable</th><th>What we take</th></tr></thead>
+        <tbody>
+          <tr><td>Overcooked</td><td>Station coop, the "plate it NOW" panic, chaos that's your fault</td></tr>
+          <tr><td>RV There Yet?</td><td>One person's mess is everyone's</td></tr>
+          <tr><td>Factorio / shapez</td><td>Buffers; the bottleneck that moves when fixed</td></tr>
+          <tr><td>Papers, Please</td><td>Judgment as a mini-game (QA)</td></tr>
+          <tr><td>Rhythm Heaven</td><td>Short, juicy, keyboard-readable inputs</td></tr>
+        </tbody></table></div>
+    </div>
+  </div>
+  <p class="small muted" style="margin-top:14px"><strong>Not</strong> an agile training sim, <strong>not</strong> a management sim, <strong>not</strong> competitive. No tooltips explaining Brooks's Law. The only leaderboard is the fake one on the report card that praises whoever hurt the factory most.</p>
+</div></section>
+
+<!-- ============ 2 DOCTRINE ============ -->
+<section id="doctrine" class="sec"><div class="wrap">
+  <h2><span class="num">2</span>Design doctrine</h2>
+  <p class="lede">Your steer — <em>"the games that produce a lot or are easy should be the most fun"</em> — is the first law. Everything else follows from it.</p>
+
+  <figure class="plate">
+    <h3>The Fun Gradient — juice is inversely proportional to how much the system needs you to show restraint</h3>
+    <svg viewBox="0 0 760 270" role="img" aria-label="Bar chart: juice and output per station, highest at Boom Powder, zero at chores">
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <line x1="60" y1="210" x2="740" y2="210" stroke="currentColor" stroke-opacity=".3"/>
+      <text x="14" y="120" font-size="11" fill="currentColor" opacity=".6" transform="rotate(-90 14 120)">juice / output</text>
+      <g font-size="12" fill="currentColor" font-family="JetBrains Mono, monospace">
+        <rect x="70" y="30" width="38" height="180" rx="3" fill="var(--tierS)"/><rect x="112" y="40" width="14" height="170" rx="2" fill="currentColor" opacity=".3"/><text x="93" y="232" text-anchor="middle">Powder</text><text x="93" y="248" text-anchor="middle" font-size="10" opacity=".6">S</text>
+        <rect x="165" y="40" width="38" height="170" rx="3" fill="var(--tierS)"/><rect x="207" y="55" width="14" height="155" rx="2" fill="currentColor" opacity=".3"/><text x="188" y="232" text-anchor="middle">Casing</text><text x="188" y="248" text-anchor="middle" font-size="10" opacity=".6">S</text>
+        <rect x="260" y="75" width="38" height="135" rx="3" fill="var(--tierA)"/><rect x="302" y="130" width="14" height="80" rx="2" fill="currentColor" opacity=".3"/><text x="283" y="232" text-anchor="middle">Assembly</text><text x="283" y="248" text-anchor="middle" font-size="10" opacity=".6">A</text>
+        <rect x="355" y="130" width="38" height="80" rx="3" fill="var(--tierB)"/><rect x="397" y="140" width="14" height="70" rx="2" fill="currentColor" opacity=".3"/><text x="378" y="232" text-anchor="middle">QA</text><text x="378" y="248" text-anchor="middle" font-size="10" opacity=".6">B</text>
+        <rect x="450" y="115" width="38" height="95" rx="3" fill="var(--tierC)"/><rect x="492" y="140" width="14" height="70" rx="2" fill="currentColor" opacity=".3"/><text x="473" y="232" text-anchor="middle">Packing</text><text x="473" y="248" text-anchor="middle" font-size="10" opacity=".6">C</text>
+        <rect x="545" y="105" width="38" height="105" rx="3" fill="var(--tierC)"/><rect x="587" y="120" width="14" height="90" rx="2" fill="currentColor" opacity=".3"/><text x="568" y="232" text-anchor="middle">Dock</text><text x="568" y="248" text-anchor="middle" font-size="10" opacity=".6">C</text>
+        <rect x="640" y="206" width="38" height="4" rx="2" fill="var(--tierD)"/><rect x="682" y="206" width="14" height="4" rx="2" fill="currentColor" opacity=".3"/><text x="663" y="232" text-anchor="middle">Chores</text><text x="663" y="248" text-anchor="middle" font-size="10" opacity=".6">D</text>
+        <text x="93" y="20" text-anchor="middle" font-weight="700">THE TRAP</text><text x="663" y="190" text-anchor="middle" font-weight="700">THE PUNISHMENT</text>
+        <path d="M120 60 C 200 10, 560 10, 660 190" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+        <text x="400" y="42" text-anchor="middle" font-size="11" opacity=".6">a badly-run factory slides everyone down this curve</text>
+        <rect x="600" y="10" width="12" height="12" rx="2" fill="var(--tierS)"/><text x="618" y="20" font-size="11">juice</text><rect x="660" y="10" width="12" height="12" rx="2" fill="currentColor" opacity=".3"/><text x="678" y="20" font-size="11">output/min</text>
+      </g>
+    </svg>
+    <div class="tbl"><table>
+      <thead><tr><th>Tier</th><th>Verb</th><th>Stations</th><th>Feel</th><th>Juice</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tier tS">S</span></td><td>Start</td><td>Boom Powder, Casing Prep</td><td>Slot machine. Loud. 3-second loop. Combo counter.</td><td>Max — confetti, shake, rising pitch</td></tr>
+        <tr><td><span class="tier tA">A</span></td><td>Make</td><td>Assembly</td><td>Rhythm + a real two-person handoff</td><td>High, earned</td></tr>
+        <tr><td><span class="tier tB">B</span></td><td>Judge</td><td>QA</td><td>Spot-the-difference. Cerebral.</td><td>One satisfying stamp</td></tr>
+        <tr><td><span class="tier tC">C</span></td><td>Move</td><td>Packing, Dock</td><td>Crate Tetris and a truck with a countdown</td><td>The SNUG lid slam, the horn</td></tr>
+        <tr><td><span class="tier tD">D</span></td><td>Fix</td><td>Rework, Sweep, Unjam, Haul</td><td>Chores.</td><td><strong>None. Deliberately.</strong></td></tr>
+      </tbody></table></div>
+  </figure>
+
+  <div class="grid g2">
+    <div class="card accent">
+      <h3>Three axes — depth, not difficulty <span class="badge">ADR 0009</span></h3>
+      <p class="muted small">"Harder" conflates three things. Slower stations get <em>deeper</em>, never harder to execute. Fast stations get a <em>greed ceiling</em>.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Axis</th><th>Rule</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Execution difficulty</strong></td><td><strong>Flat.</strong> Two floors, always in ms: no OK under ±100, no Perfect under ±45. Downstream never harder to execute than upstream.</td></tr>
+          <tr><td><strong>Decision depth</strong></td><td><strong>Rises downstream.</strong> QA reads tolerances. Packing plans a drop. Assembly chooses to seat a dented casing. One in-loop decision per station; the rest lives at the meta layer.</td></tr>
+          <tr><td><strong>Skill ceiling</strong></td><td><strong>Everywhere.</strong> At Tier S it's a <strong>greed ceiling</strong>, chosen per rep (the Slammer's Heat), never success-driven — a combo-scaled ceiling makes the spark a function of skill and is farmable.</td></tr>
+        </tbody></table></div>
+      <p class="small muted" style="margin-top:10px"><strong>One gesture per station</strong> — one <em>idea</em>, not one key; arrows wherever direction is the verb, always the same hands you walk with. <strong>A named tell</strong> from across the room. <strong>A real Perfect</strong> everywhere. Combos, shake, confetti, factory-wide stings are Tier S only.</p>
+    </div>
+    <div class="card">
+      <h3>The Groove &amp; the Churn</h3>
+      <p class="muted small">One shared 0–100 meter. Up when the factory flows, down with WIP, clutter, rework, starvation, lit fuses. <strong>Asymmetric:</strong> Groove makes the game <em>more rewarding</em>, never easier. Churn makes it <em>more frictional</em>, never impossible.</p>
+      <div style="height:18px;border-radius:9px;margin-top:10px;background:linear-gradient(90deg,var(--red) 0 30%,var(--muted) 50%,var(--green) 70%,var(--yellow) 100%)"></div>
+      <div class="mono small muted" style="display:flex;justify-content:space-between;margin-top:4px"><span>0 MELTDOWN</span><span>30 CHURN</span><span>70 GROOVE</span><span>85 ON FIRE</span></div>
+      <ul class="ul small">
+        <li><strong>≥70:</strong> music layers, conveyors glow, score ×1.25, PERFECTs chain across stations. <strong>≥85:</strong> ×1.5 and sparkles.</li>
+        <li><strong>≤30:</strong> klaxon, red wash, Casing needle jitters, spills ×2, Standup can fire.</li>
+        <li><strong>Comeback — Clean Sweep:</strong> floor at zero + shelves under half for 3 s snaps Groove to 60.</li>
+      </ul>
+      <h4 style="margin-top:14px">Mechanics over messages</h4>
+      <div class="tbl"><table><tbody>
+        <tr><td style="color:var(--green)">A full shelf leaves you standing there holding a keg</td><td style="color:var(--red)">A popup saying WIP is bad</td></tr>
+        <tr><td style="color:var(--green)">A fifth helper physically blocks the parts rack</td><td style="color:var(--red)">A −20% "overcrowded" icon</td></tr>
+        <tr><td style="color:var(--green)">The report praises Powder and grades the factory D</td><td style="color:var(--red)">A tooltip about utilization</td></tr>
+      </tbody></table></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 3 FLOOR ============ -->
+<section id="floor" class="sec"><div class="wrap">
+  <h2><span class="num">3</span>The factory floor</h2>
+  <p class="lede">Top-down, 32 px tiles, server-authoritative movement. WIP is a thing on the floor, not a number. This is the first visual pass at the MVP map — squares with faces are the M1 art budget, on purpose.</p>
+
+  <figure class="plate">
+    <h3>Plate A — the MVP floor, 28 × 18 tiles, one line (M1)</h3>
+    <div id="map-mvp"></div>
+    <div class="legend">
+      <span><i style="background:var(--soot)"></i>machine</span>
+      <span><i style="border:2px solid var(--yellow);background:transparent"></i>work tile — stand here to operate; count = max useful workers</span>
+      <span><i style="background:var(--teal);opacity:.6"></i>shelf (input / output)</span>
+      <span><i style="border:1.5px dashed var(--muted);background:transparent"></i>floor ring — where the pile goes</span>
+      <span><i style="background:var(--red);border-radius:50%"></i>keg (prime · steaming · grey)</span>
+      <span><i style="background:var(--soot);border-radius:50%;opacity:.5"></i>spill tile</span>
+      <span><i style="background:#C9A400"></i>blast bin (sand)</span>
+    </div>
+    <figcaption>Sam is on the Powder work tile holding a keg — the shelf is full (6/6), the ring is filling, one keg on the far side has a lit fuse. Jo is hauling a keg to Assembly's input shelf. Priya and Marco are the pair on the jig; Alex is in the aisle asking what they can do. The truck leaves in 14 seconds. Deliberately small: Powder is six tiles from Assembly and the dock is far enough that the horn causes a run.</figcaption>
+  </figure>
+
+  <div class="grid g2">
+    <figure class="plate" style="margin-top:0">
+      <h3>Plate B — full one-line factory (M2+)</h3>
+      <svg viewBox="0 0 560 330" role="img" aria-label="Full factory schematic: Powder and Casing feed Assembly, which feeds QA, Packing, Dock; Rework and Returns loop back">
+        <defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g font-size="11" fill="currentColor" text-anchor="middle" font-family="JetBrains Mono, monospace">
+          <rect x="20" y="20" width="130" height="58" rx="5" fill="var(--tierS)" fill-opacity=".18" stroke="var(--tierS)" stroke-width="2"/><text x="85" y="44" font-weight="700">BOOM POWDER</text><text x="85" y="60" font-size="9" opacity=".7">1 tile · shelf 6 · ~2.8 s</text>
+          <rect x="180" y="20" width="130" height="58" rx="5" fill="var(--tierS)" fill-opacity=".18" stroke="var(--tierS)" stroke-width="2"/><text x="245" y="44" font-weight="700">CASING PREP</text><text x="245" y="60" font-size="9" opacity=".7">2 presses · shelf 8 · 3 s</text>
+          <rect x="450" y="20" width="90" height="40" rx="5" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-opacity=".4"/><text x="495" y="44" font-size="10">☎ PHONE (M3)</text>
+          <rect x="90" y="122" width="210" height="58" rx="5" fill="var(--tierA)" fill-opacity=".18" stroke="var(--tierA)" stroke-width="2"/><text x="195" y="146" font-weight="700">ASSEMBLY — THE JIG</text><text x="195" y="162" font-size="9" opacity=".7">2 tiles + rack · in 8 / out 4 · 6 s pair</text>
+          <rect x="350" y="128" width="120" height="46" rx="5" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-opacity=".4"/><text x="410" y="148" font-weight="700" opacity=".8">REWORK</text><text x="410" y="163" font-size="9" opacity=".6">Tier D · 6–9 s</text>
+          <rect x="90" y="232" width="90" height="46" rx="5" fill="var(--tierB)" fill-opacity=".18" stroke="var(--tierB)" stroke-width="2"/><text x="135" y="252" font-weight="700">QA</text><text x="135" y="267" font-size="9" opacity=".7">1 lamp · 4 s</text>
+          <rect x="215" y="232" width="110" height="46" rx="5" fill="var(--tierC)" fill-opacity=".18" stroke="var(--tierC)" stroke-width="2"/><text x="270" y="252" font-weight="700">PACKING</text><text x="270" y="267" font-size="9" opacity=".7">2 benches · 5 s</text>
+          <rect x="360" y="232" width="110" height="46" rx="5" fill="var(--tierC)" fill-opacity=".18" stroke="var(--tierC)" stroke-width="2"/><text x="415" y="252" font-weight="700">DOCK</text><text x="415" y="267" font-size="9" opacity=".7">truck / 60 s · waits 20</text>
+          <g transform="translate(480 240)"><rect x="0" y="4" width="46" height="24" rx="3" fill="currentColor" fill-opacity=".2" stroke="currentColor"/><rect x="46" y="10" width="16" height="18" rx="2" fill="currentColor" fill-opacity=".2" stroke="currentColor"/><circle cx="10" cy="31" r="4" fill="currentColor"/><circle cx="52" cy="31" r="4" fill="currentColor"/></g>
+          <rect x="360" y="292" width="110" height="24" rx="4" fill="var(--red)" fill-opacity=".15" stroke="var(--red)" stroke-dasharray="3 3"/><text x="415" y="308" font-size="9">RETURNS · Hotfixes land here</text>
+          <rect x="20" y="292" width="100" height="24" rx="4" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-opacity=".3"/><text x="70" y="308" font-size="9" opacity=".7">break room</text>
+          <rect x="20" y="122" width="40" height="30" rx="4" fill="#C9A400" fill-opacity=".5" stroke="#C9A400"/><text x="40" y="141" font-size="8">BIN</text>
+        </g>
+        <g fill="none" stroke="currentColor" stroke-width="2" marker-end="url(#fa)">
+          <path d="M85 78 L85 105 L150 105 L150 120"/><path d="M245 78 L245 105 L240 105 L240 120"/><path d="M135 180 L135 230"/><path d="M180 255 L213 255"/><path d="M325 255 L358 255"/><path d="M470 255 L478 255"/>
+        </g>
+        <g fill="none" stroke="var(--red)" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fa)"><path d="M180 245 L350 245 L350 176"/><path d="M350 150 L302 150"/><path d="M415 292 L415 280"/></g>
+        <text x="265" y="240" font-size="9" fill="var(--red)" text-anchor="middle" font-family="JetBrains Mono, monospace">QA reject</text>
+      </svg>
+      <figcaption>Layouts are per-level config; the tilemap is data. Two-line (7–10 players) stacks a second Powder → Casing → Assembly line and shares everything from QA down — see <a href="#scale">§10</a>.</figcaption>
+    </figure>
+    <div>
+      <div class="card">
+        <h3>Station anatomy</h3>
+        <div class="code" style="margin-top:6px">   . . . . . . . .
+   . I . W W . R .      I  input shelf (pull from here)
+   . . [MACHINE] . .    W  work tiles — the physical staffing cap
+   . O . W W . T .      O  output shelf   R  rack   T  tool cart
+   f f f f f f f f      f  floor ring — the pile</div>
+        <p class="small muted" style="margin-top:8px">If all work tiles are occupied you <em>cannot</em> join. You stand in the aisle. Shelves are finite. The floor ring is where the pile goes, and it slows that tile to 40%.</p>
+      </div>
+      <div class="card warn" style="margin-top:16px">
+        <h3>The overflow ladder <span class="badge">ADR 0012</span></h3>
+        <div class="steps">
+          <div class="step ok"><b>Shelf</b>tidy, capped; output auto-shelves, no input</div>
+          <div class="step warn"><b>Hands</b>shelf full? it's in your hands; the machine waits; the combo ticks</div>
+          <div class="step bad"><b>Floor</b>where <em>you</em> put it — E at your feet, or Space to throw</div>
+          <div class="step bad"><b>Boom</b>the pile is fuel; one spark and it chains — <a href="#boom">§5</a></div>
+        </div>
+        <p class="small muted" style="margin-top:10px">The game never says stop and the machine never spills for you. The pile is made of kegs someone chose to put down, one at a time, to keep a combo going. <strong>Jam</strong> isn't a rung any more — it's an oops: an item thrown or knocked onto a machine's work tile jams it (hold the lever 4 s, <em>WAITING FOR VENDOR SUPPORT</em>).</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>Congestion, made visible</h3>
+      <p class="small muted">The staffing curve is the <em>authoritative</em> throughput calc — simple and tunable. The physical layer makes the curve look like a <strong>cause</strong>, not a debuff.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Workers vs. optimal</th><th>What you see</th></tr></thead>
+        <tbody>
+          <tr><td>Below</td><td>Empty work tiles. "NEED HANDS" bubble.</td></tr>
+          <tr><td>At optimal</td><td>Everyone on a work tile. Smooth.</td></tr>
+          <tr><td>1–2 over</td><td>Extras on the rack tile. "waiting for crimper…" spinner. Small gain or none.</td></tr>
+          <tr><td>3+ over</td><td>Extras in the aisle; carriers can't reach the input shelf → starved of <em>parts</em> while surrounded by <em>people</em>. Every ~6 s an extra emits <strong>"what can I do?"</strong> and the active mini-game pauses 0.5 s.</td></tr>
+        </tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>The Clipboard</h3>
+      <p class="small muted">Join a station you haven't worked in 60 s → 3 seconds reading a clipboard. Never longer; helping must stay worthwhile. Cross Training upgrade halves it.</p>
+      <div class="code" style="margin-top:8px">▸ Locating the good stapler…
+▸ Reading the wiki. The wiki is wrong.
+▸ Asking Dave. Dave is at lunch.
+▸ Waiting for VPN.</div>
+      <h4 style="margin-top:14px">Movement</h4>
+      <p class="small muted">WASD / arrows, 8-direction, ~4 tiles/s. Soft-collide: players push, not block — an "excuse me!" bump costs 0.3 s. Carrying slows you 20%. Camera: the whole floor, fixed (a <a href="#decide">pick</a> at the end).</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 4 INTERACT ============ -->
+<section id="interact" class="sec"><div class="wrap">
+  <h2><span class="num">4</span>How players interact</h2>
+  <p class="lede">Two hands, the same at every station: one on WASD/arrows, one on Space/E. Seven verbs on the floor. Every oops is player-caused, physical, visible to everyone, and lands on someone.</p>
+
+  <div class="card">
+    <h3>The verbs</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Key</th><th>On the floor</th><th>At a station</th><th>Carrying</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>W A S D</kbd> / <kbd>← ↑ → ↓</kbd></td><td>Walk, 8-direction</td><td>Lane / column / side / colour — whatever direction means there</td><td>Walk (20% slower)</td></tr>
+        <tr><td><kbd>E</kbd></td><td>Pick up · put down · join a work tile · lever · catch</td><td>Station-specific (FAIL stamp, lid, spool)</td><td>Put down on a shelf or the floor tile you face</td></tr>
+        <tr><td><kbd>Space</kbd></td><td>—</td><td>The beat: charge/release, stamp, tap, drop, shove</td><td><strong>Throw</strong> 2 tiles in your facing direction</td></tr>
+        <tr><td><kbd>Q</kbd> / <kbd>E</kbd></td><td>—</td><td>Sticky selector: colour, crate size</td><td>—</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>—</td><td>Bail. Inputs forfeit, combo resets, and mid-pour the keg tips off the jig</td><td>—</td></tr>
+        <tr><td><kbd>Tab</kbd></td><td colspan="3">Order Board overlay (so you don't have to walk to the wall)</td></tr>
+        <tr><td><kbd>⇧ Shift</kbd> + arrow</td><td colspan="3">Emotes — ↑ HELP · ↓ STOP · ← GO BACK · → ? — for whoever isn't on the call (a <a href="#decide">pick</a>)</td></tr>
+      </tbody></table></div>
+  </div>
+
+  <div class="grid g2">
+    <figure class="plate" style="margin-top:0"><h4>Joining a station</h4><div id="sb-join"></div><figcaption>Walk onto a work tile → 3 s clipboard (a joke line) → the overlay opens in the bottom third. The camera never leaves the floor; you can see the truck arrive while you stamp.</figcaption></figure>
+    <figure class="plate" style="margin-top:0"><h4>Throw &amp; catch</h4><div id="sb-throw"></div><figcaption>Space while carrying throws 2 tiles. A facing teammate taps E as it arrives: ±150 ms OK, ±75 ms <em>snap</em> — Perfect. Faster than walking and it feels great. Throws never land on shelves; someone still has to shelve it, so a bucket brigade needs a catcher.</figcaption></figure>
+    <figure class="plate" style="margin-top:0"><h4>Hands full — the shelf is full</h4><div id="sb-hands"></div><figcaption>The keg lands in your hands; the plunger goes dark; the combo keeps ticking. E drops it at your feet. The pile is yours, one keg at a time. (ADR 0012)</figcaption></figure>
+    <figure class="plate" style="margin-top:0"><h4>Too many helpers</h4><div id="sb-crowd"></div><figcaption>Two on the jig, one on the rack. The fourth and fifth stand in the aisle, block the input shelf, and ask "what can I do?" every ~6 s — pausing the active mini-game 0.5 s each time. Brooks's Law as a literal mechanic.</figcaption></figure>
+    <figure class="plate" style="margin-top:0"><h4>Hot potato → Blast Bin</h4><div id="sb-potato"></div><figcaption>A lit keg can be picked up. Throw it into the sand bin: contained WHUMP, NICE SAVE, +3 Groove, one-off confetti. Miss, and it goes off where it lands. Goes off in your hands: sooted, stunned, radius 1 around <em>you</em>.</figcaption></figure>
+    <figure class="plate" style="margin-top:0"><h4>The truck ride</h4><div id="sb-truck"></div><figcaption>Standing on the bed when it pulls out → driven off. Back at the break-room door 20 s later: <em>"I SAW THE HIGHWAY."</em> Only ever self-inflicted.</figcaption></figure>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>The drop table — bumps, uncaught throws, full-handed catches, butterfingers</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Item</th><th>What happens</th><th>Consequence</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Keg</strong></td><td>Rolls one tile; hits a wall, station, or player → <strong>knocked over</strong>: spill tile, keg becomes damp.</td><td>Fuel + a sweep. A damp keg pours slow at the Jig.</td></tr>
+        <tr><td><strong>Stick</strong></td><td><strong>30% fizzle</strong> — <em>pop</em>, soot on the nearest player, stick destroyed, Groove −2. Otherwise +1 dent on the floor. On a fuel tile the fizzle <em>is</em> a spark.</td><td>This is "dropping dynamite."</td></tr>
+        <tr><td><strong>Crate</strong></td><td>→ RATTLY. Already RATTLY → bursts, sticks scatter.</td><td>Narrower shove window at the dock, or six hauls.</td></tr>
+        <tr><td>Broom, bucket</td><td>Clatters.</td><td>Nothing. Chores stay chores.</td></tr>
+      </tbody></table></div>
+    <p class="small muted" style="margin-top:8px"><strong>Not doing:</strong> random fumbles, ever. Broom-whacking teammates — funny, griefable, an open question for the M2 playtest.</p>
+  </div>
+</div></section>
+
+<!-- ============ 5 BOOM ============ -->
+<section id="boom" class="sec"><div class="wrap">
+  <div class="stripe" style="margin-bottom:18px"></div>
+  <h2><span class="num">5</span>The Boom</h2>
+  <p class="lede"><strong>The factory exploding is the only way to lose.</strong> Everything else is a bad report card. And it is never random: the pile is fuel <em>you</em> put down, the spark is a careless act <em>you</em> did, and the fuse gives you six seconds.</p>
+  <figure class="plate">
+    <svg viewBox="0 0 760 200" role="img" aria-label="Chain: fuel on the floor plus a spark lights a fuse; a blast chains to neighbours; chain size decides Whoops, Incident, or Factory Explodes">
+      <defs><marker id="ba" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g font-size="12" fill="currentColor" text-anchor="middle" font-family="JetBrains Mono, monospace">
+        <rect x="20" y="30" width="130" height="70" rx="5" fill="var(--tierS)" fill-opacity=".18" stroke="var(--tierS)" stroke-width="2"/><text x="85" y="55" font-weight="700">FUEL</text><text x="85" y="72" font-size="10" opacity=".75">floor kegs · spills</text><text x="85" y="86" font-size="10" opacity=".75">shelf kegs (blast only)</text>
+        <rect x="180" y="30" width="130" height="70" rx="5" fill="var(--yellow)" fill-opacity=".18" stroke="var(--yellow)" stroke-width="2"/><text x="245" y="55" font-weight="700">SPARK</text><text x="245" y="72" font-size="10" opacity=".75">Slammer in the red · jam</text><text x="245" y="86" font-size="10" opacity=".75">Hotfix POOF · bad crimp · fizzle</text>
+        <rect x="340" y="30" width="130" height="70" rx="5" fill="var(--red)" fill-opacity=".18" stroke="var(--red)" stroke-width="2"/><text x="405" y="55" font-weight="700">FUSE · 6 s</text><text x="405" y="72" font-size="10" opacity=".75">hissing, visible to all</text><text x="405" y="86" font-size="10" opacity=".75">stomp: stand + Space 1 s</text>
+        <rect x="500" y="30" width="130" height="70" rx="5" fill="var(--red)" fill-opacity=".35" stroke="var(--red)" stroke-width="3"/><text x="565" y="55" font-weight="700">BLAST · r=1</text><text x="565" y="72" font-size="10" opacity=".85">neighbours get 1.5 s fuses</text><text x="565" y="86" font-size="10" opacity=".85">knockback · stun · soot</text>
+        <text x="700" y="70" font-size="34">💥</text><text x="700" y="95" font-size="10" opacity=".75">chains…</text>
+      </g>
+      <g fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ba)"><path d="M150 65 L178 65"/><path d="M310 65 L338 65"/><path d="M470 65 L498 65"/><path d="M630 65 L668 65"/></g>
+      <path d="M690 100 C 690 140, 600 140, 565 105" fill="none" stroke="var(--red)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ba)"/>
+      <g font-size="11" fill="currentColor" text-anchor="middle" transform="translate(0 150)" font-family="JetBrains Mono, monospace">
+        <rect x="20" y="0" width="220" height="36" rx="4" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-opacity=".3"/><text x="130" y="15" font-weight="700">1–3 kegs · WHOOPS</text><text x="130" y="29" font-size="10" opacity=".7">soot, scorch, Groove −10/keg</text>
+        <rect x="270" y="0" width="220" height="36" rx="4" fill="var(--yellow)" fill-opacity=".12" stroke="var(--yellow)"/><text x="380" y="15" font-weight="700">4–9 · INCIDENT</text><text x="380" y="29" font-size="10" opacity=".7">nearest station DAMAGED · repair 10 s</text>
+        <rect x="520" y="0" width="220" height="36" rx="4" fill="var(--red)" fill-opacity=".2" stroke="var(--red)" stroke-width="2"/><text x="630" y="15" font-weight="700">≥ 10 · THE FACTORY EXPLODES</text><text x="630" y="29" font-size="10" opacity=".8">day over · grade F · coin 0</text>
+      </g>
+    </svg>
+  </figure>
+  <div class="grid g3">
+    <div class="card"><h4>Do the arithmetic</h4><p class="small muted">Powder's floor ring is 9 tiles. Its shelf is 6. A full ring next to a full shelf is <strong>15 kegs</strong>. One redlined release and the factory is gone. Going fast <em>and sloppy</em> on the most fun station makes the fuel <strong>and</strong> the spark. Fast and clean makes only fuel.</p></div>
+    <div class="card"><h4>Three warnings, always</h4><ol class="ul small" style="list-style:decimal"><li><strong>The pile.</strong> It's on the floor.</li><li><strong>DANGER beacon</strong> at 50% of threshold — the same pole that glows gold at a 25× combo goes red.</li><li><strong>The fuse.</strong> Six seconds of hiss.</li></ol><p class="small muted" style="margin-top:6px">Ignore all three and the explosion is deserved — and blamed on each other, not the game.</p></div>
+    <div class="card"><h4>Defenses</h4><ul class="ul small"><li><strong>Don't have a pile.</strong></li><li><strong>Stomp</strong> — stand on it, hold Space 1 s.</li><li><strong>Sweep</strong> — spills are fuel.</li><li><strong>Hot potato</strong> — carry it to the Blast Bin. <em>"I got it — oh no."</em></li><li><strong>Sand Bucket</strong> (M2) — the Overcooked extinguisher.</li><li><strong>Blast Shield</strong> (upgrade) — hidden cost: nobody can see the pile.</li></ul><p class="small muted" style="margin-top:6px"><strong>Setback mode</strong> on Level 1 and Sandbox: stations damaged, day continues. Hard loss from Level 2.</p></div>
+  </div>
+</div></section>
+
+<!-- ============ 6 STATIONS ============ -->
+<section id="stations" class="sec"><div class="wrap">
+  <h2><span class="num">6</span>Stations &amp; what the mini-games look like <span class="badge red">v2.2</span></h2>
+  <p class="lede">Six screens, mocked at 16:9. The floor stays visible in the top two-thirds; the overlay sits in the bottom third, anchored to the station; the HUD is always on. Every mini-game: ≤ 3 inputs on the hands you walk with, &lt; 10 s, one gesture, a named tell, a real Perfect.</p>
+
+  <div class="card station" style="--tc:var(--tierS)">
+    <h3><span class="tier tS">S</span> Boom Powder — <span class="sub">The Slammer · mash, then release</span></h3>
+    <div class="screen"><div id="scr-slammer"></div></div>
+    <div class="grid g2" style="margin-top:12px">
+      <p class="small"><strong>The trap, with a greed ceiling.</strong> Mash the three chutes <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd> (or 1 2 3), each once. Mash speed sets charge speed: 0.3 s → the gauge climbs in 0.7 s with a ±105 ms window, a keg every <strong>1.4 s</strong> (8× what Assembly can use). 0.8 s → 1.5 s climb, ±225 ms, every 2.8 s. Every rep is a decision: <em>how hot do I go?</em> DEAD CENTER (±50 ms at any heat) makes a glowing prime keg; late = damp + <strong>a spark on the floor ring</strong>; early = a grey dud that pours slow at the Jig. A 4th press overflows the hopper into a spill at your feet.</p>
+      <p class="small muted"><strong>Tell:</strong> thunk tempo, hopper glow, the beacon pole. Combo tiers are <em>in-world</em> — 10× a flag, 25× steam + HOT STREAK sting + the pole goes gold, 50× a brass layer and a floor ripple. Kegs read from across the room: grey · steaming · normal · glowing. Shelf full = the keg is in your hands, plunger dark, combo ticking.</p>
+    </div>
+  </div>
+
+  <div class="card station" style="--tc:var(--tierS);margin-top:16px">
+    <h3><span class="tier tS">S</span> Casing Prep — <span class="sub">Stamp &amp; Crimp · tap on the beat, ← → Space</span></h3>
+    <div class="screen"><div id="scr-casing"></div></div>
+    <div class="grid g2" style="margin-top:12px">
+      <p class="small">A rhythmic <strong>figure</strong>, not a metronome: <em>chk · chk · KA-CHUNK</em>. <kbd>←</kbd> <kbd>→</kbd> on the two dies (±130 / PERFECT ±60), then both hands on <kbd>Space</kbd> for the crimp (±100 / ±45 — the tightest beat in the game, by design). Three PERFECTs = a GLEAM casing that sparkles on the shelf. Stamp miss +1 dent, crimp miss +2. Combo 5 → bar −12%, 10 → −25%; windows fixed in ms, so it tightens as you climb.</p>
+      <p class="small muted"><strong>Colour is a beat:</strong> Q/E arms a switch; the next bar shows a DIE marker in dead time. <strong>DUET:</strong> two presses on one clock, both crimp PERFECT → KA-CHUNK-CHUNK. <strong>The quiet trap:</strong> casings are 0 fuel; at 10× two presses flood 53/min of clutter beside Powder's bomb. Churn jitters the <em>needle</em>, not the beat.</p>
+    </div>
+  </div>
+
+  <div class="card station" style="--tc:var(--tierA);margin-top:16px">
+    <h3><span class="tier tA">A</span> Assembly — <span class="sub">The Jig · tap on the beat (Space / ← →) + one toss</span></h3>
+    <div class="screen"><div id="scr-jig"></div></div>
+    <div class="grid g2" style="margin-top:12px">
+      <p class="small"><strong>The bottleneck.</strong> After SEAT (← → picks a casing — dents drawn on the shelf), A's loop is one phrase on the beat at 150 BPM: <kbd>Space</kbd> as the fill crosses the mark (5 beats; 7 from a damp keg, 8 from a dud), <kbd>←</kbd>/<kbd>→</kbd> for each fuse knot as it hits the eyelet on its lane (long 3, short 2), <kbd>Space</kbd> on the third ratchet click. One timing judge for the whole station. All Perfect on an undented casing = <strong>PRIME STICK</strong>: one brass flash, one chime, +1 Groove.</p>
+      <p class="small muted"><strong>B</strong> on the rack tile: ← → picks short/long against the next two orders, E spool, E cap, <strong>hold Space</strong> — an arc sweeps rack → jig — release on the crimp beat. Never walks. A full cradle bounces the toss (B's restraint rule). A missed toss litters the aisle. <strong>Tell:</strong> zip-zip-zip, alternating hands from across the room; parts arcing every 6 s; silence = starved. Solo ~8.5 s, pair ~6 s.</p>
+    </div>
+  </div>
+
+  <div class="card station" style="--tc:var(--tierB);margin-top:16px">
+    <h3><span class="tier tB">B</span> QA — <span class="sub">The Look · park and stamp</span></h3>
+    <div class="screen"><div id="scr-qa"></div></div>
+    <div class="grid g2" style="margin-top:12px">
+      <p class="small">Every order line carries a <strong>tolerance</strong> — strict / normal / loose — so the same 1-dent stick is a PASS under one card and a FAIL under the next. Condition renders continuously (dings placed randomly, fill line jittering ±4%); the magnifier actually zooms 2×. <kbd>←</kbd><kbd>→</kbd> park it; <kbd>E</kbd> = FAIL tagged with what you parked on; <kbd>Space</kbd> = PASS.</p>
+      <p class="small muted">Two Perfects: <strong>GOOD EYE</strong> (a correctly tagged FAIL, which chalks the machine that caused it) and <strong>WITHIN SPEC</strong> (a PASS on a flawed-but-in-tolerance stick) — so QA isn't silent in a clean factory. Fail a good stick → it comes back tagged <em>WAS FINE</em>. Pass a defect → Hotfix in 120 s; late ones fire during the report and zero the order. Three chalk marks = a red QA strip on that station.</p>
+    </div>
+  </div>
+
+  <div class="card station" style="--tc:var(--tierC);margin-top:16px">
+    <h3><span class="tier tC">C</span> Packing — <span class="sub">Drop Well · drop</span></h3>
+    <div class="screen"><div id="scr-packing"></div></div>
+    <div class="grid g2" style="margin-top:12px">
+      <p class="small">A <strong>3-wide</strong> well with gravity — an odd width can't be tiled by horizontals, so every crate needs verticals, and a mid-column vertical strands the edge cells. <kbd>←</kbd><kbd>→</kbd> column, <kbd>↑</kbd> rotate, <kbd>↓</kbd> yank, <kbd>Space</kbd> drop (<em>thok</em>). Wrong colour bounces off the rim instantly. <kbd>Q</kbd>/<kbd>E</kbd> picks crate size before the first drop: S 2×2 · M 3×4 · L 3×6.</p>
+      <p class="small muted"><strong>Lid Bounce:</strong> E on the first apex = THOOM (SNUG if every cell is filled); late = RATTLY, narrower OK window at the dock. <strong>Cram</strong> a 7th stick: strap snaps, never SNUG, Hotfix p 0.5 — right with 8 s on the truck, wrong otherwise. <strong>The miss ships:</strong> wrong contents slam crooked with a red <code>?</code> → counts 0 → Returns. Shared shelf + a <em>NEED BLUE ×2</em> bubble give a helper something real to haul.</p>
+    </div>
+  </div>
+
+  <div class="card station" style="--tc:var(--tierC);margin-top:16px">
+    <h3><span class="tier tC">C</span> Shipping — <span class="sub">The Dock · shove on the beep</span></h3>
+    <div class="screen"><div id="scr-dock"></div></div>
+    <div class="grid g2" style="margin-top:12px">
+      <p class="small">The truck's reversing alarm <strong>beeps at 1 Hz</strong> and the bay light strobes — floor-wide, no overlay needed. Set a crate on your ramp tile, tap <kbd>Space</kbd> (or <kbd>↑</kbd>) on a beep: ±70 THUD, springs sag, slot lamp; ±180 scrape; miss = stalls halfway, next beep finishes. <strong>Never Returns.</strong> Lane = Slot (M2): your ramp tile is your aim.</p>
+      <p class="small muted"><strong>Clean Load:</strong> every crate on consecutive beeps → truck bounce, +2 Groove — only possible if you staged before the horn. <strong>Tailgate Slam:</strong> last slot fills, hold E 0.5 s → SLAM, horn ×2, truck leaves <em>now</em> — the floor-wide "go back to your stations" cue. In M1 sticks go straight on the truck: Assembly's shelf → dock is a haul, and that hauler is the one who sees the pile.</p>
+    </div>
+  </div>
+
+  <div class="card station" style="--tc:var(--tierD);margin-top:16px;background:var(--surface2)">
+    <h3><span class="tier tD">D</span> The Chore Floor — <span class="sub">no combos, no particles, a flat click when it ends</span></h3>
+    <div class="screen"><div id="scr-chore"></div></div>
+    <div class="grid g3" style="margin-top:12px">
+      <p class="small"><strong>Rework Bench</strong> — the Jig in reverse, 6 s tagged / 9 s untagged; finds no defect → the stick goes back to QA <em>WAS FINE</em>. <strong>Sweeping</strong> — broom, 1.5 s per tile. <strong>Unjam</strong> — hold E 4 s, <em>WAITING FOR VENDOR SUPPORT</em>.</p>
+      <p class="small"><strong>Hauling</strong> — floor keg → shelf; sometimes the right call, still not fun. <strong>Stomp</strong> — stand on the fuse, hold Space 1 s, <em>ffft</em>. <strong>Repair</strong> (M2) — hold E 10 s, <em>FILING INCIDENT REPORT</em>.</p>
+      <p class="small muted">A well-run factory never touches these. A badly-run one slowly turns into a janitorial simulator. That is the punishment, and it is exactly as fun as it sounds.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 7 RULES ============ -->
+<section id="rules" class="sec"><div class="wrap">
+  <h2><span class="num">7</span>Flow rules</h2>
+  <p class="lede">The whole sim is a few hundred lines of pure TypeScript in <code>shared/sim/</code>. The client predicts with it; the server is authoritative with it.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Per station, per tick (20 Hz)</h3>
+      <div class="code">efficiency   = curve[clamp(workers)]     // 0 → 0
+machine      = floorSeconds / efficiency * churn * (perfect ? .75 : 1)
+interrupts   = 0.5 * bubblesThisCycle    // "what can I do?"
+cycle        = max(execution + interrupts, machine)</div>
+      <p class="small muted" style="margin-top:8px">Every station is <strong>player-paced</strong> — the mini-game completes the cycle; a rhythm game with a dead gap is dead. The curve scales the machine's re-arm floor and, above its peak, adds interrupts to the <em>people</em>. Heat and tempo-up let a good player run under <code>nominalSeconds</code>.</p>
+      <h4 style="margin-top:14px">Groove, per tick</h4>
+      <div class="code">+8 · onTimeShip   −4 · avgShelfFullness   −0.5 · floorItems
+−1 · reworkShelf  −2 · starved   −1 · jammed   −3 · litFuses
+−2 per fizzle   +3 per NICE SAVE</div>
+      <p class="small muted" style="margin-top:8px">Bottleneck estimate for the report: <code>argmax(utilization × inputShelfFullness)</code>.</p>
+    </div>
+    <div class="card">
+      <h3>Staffing curves (M1 baseline)</h3>
+      <div class="tbl"><table class="mono">
+        <thead><tr><th>Station</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>8</th></tr></thead>
+        <tbody>
+          <tr><td>Powder</td><td>1.00</td><td>1.05</td><td>.90</td><td>.75</td><td>.75</td><td>.75</td><td>.75</td></tr>
+          <tr><td>Casing</td><td>1.00</td><td>1.00</td><td>1.05</td><td>.90</td><td>.90</td><td>.90</td><td>.90</td></tr>
+          <tr><td>Assembly ×1</td><td>.60</td><td><strong>1.00</strong></td><td>1.15</td><td>1.10</td><td>.95</td><td>.80</td><td style="color:var(--red)">.50</td></tr>
+          <tr><td>Assembly ×2</td><td>.50</td><td>1.00</td><td>1.40</td><td><strong>2.00</strong></td><td>2.10</td><td>1.90</td><td>1.40</td></tr>
+          <tr><td>QA</td><td>1.00</td><td>1.10</td><td>.90</td><td>.90</td><td>.90</td><td>.90</td><td>.90</td></tr>
+          <tr><td>Packing</td><td>.60</td><td>1.00</td><td>1.10</td><td>.90</td><td>.90</td><td>.90</td><td>.90</td></tr>
+          <tr><td>Dock</td><td>1.00</td><td>1.60</td><td>1.90</td><td>1.80</td><td>1.50</td><td>1.20</td><td>1.00</td></tr>
+        </tbody></table></div>
+      <p class="small muted" style="margin-top:8px">Starting values; playtesting owns the final ones. Curve interpolation and the <code>max(execution, machine)</code> rule get tests first — they're the bits that bite silently.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 8 CHAOS ============ -->
+<section id="chaos" class="sec"><div class="wrap">
+  <h2><span class="num">8</span>Orders, quality, chaos, upgrades</h2>
+  <p class="lede">Defects are <em>made</em>, not rolled — every one traces to a specific miss at a specific station. Events are short and physical. Upgrades move the bottleneck; they never remove it.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Where defects come from</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Defect</th><th>Source</th><th>QA sees?</th><th>If shipped</th></tr></thead>
+        <tbody>
+          <tr><td>dents ≥ 2</td><td>Casing missed beats</td><td>yes</td><td>Hotfix</td></tr>
+          <tr><td>weak / overfill</td><td>Assembly POUR</td><td>yes</td><td>Hotfix</td></tr>
+          <tr><td>frayed · loose cap</td><td>Assembly KNOTS / CRIMP</td><td>yes</td><td>Hotfix</td></tr>
+          <tr><td>wrong colour / fuse</td><td>anyone vs. the order</td><td>yes (card)</td><td>Complaint; crate → Returns</td></tr>
+          <tr><td style="color:var(--yellow)">damp / dud powder</td><td>Slammer late / early</td><td style="color:var(--yellow)">no — but everyone else does</td><td>pours slow at the Jig; "went pfft"</td></tr>
+          <tr><td>crushed</td><td>Packing crammed a 7th</td><td>n/a</td><td>Hotfix p 0.5</td></tr>
+        </tbody></table></div>
+      <h4 style="margin-top:14px">Ambiguous orders (M3)</h4>
+      <p class="small muted"><code>MAKE BIG BOMB</code>. <strong>Guess</strong> (free, 50% wrong → Returns) · <strong>Clarify</strong> (walk to the Phone, 5 s) · <strong>Return to planning</strong> (honest, no score). Each is the right call sometimes.</p>
+    </div>
+    <div class="card">
+      <h3>Chaos events (M3)</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Event</th><th>On the floor</th></tr></thead>
+        <tbody>
+          <tr><td>Rush Order</td><td>Gold order, own truck in 90 s. <em>CEO NEEDS GOLD DYNAMITE FOR A DEMO</em></td></tr>
+          <tr><td>Change of Mind</td><td>45 s in, 50%: gold order vanishes; gold WIP → Returns. <em>THANKS ANYWAY</em></td></tr>
+          <tr><td>Standup</td><td>5 s freeze. "no blockers", "same as yesterday". <em>QUICK SYNC</em></td></tr>
+          <tr><td>Executive Tour</td><td>A suit walks a path; clutter counts ×3 for 20 s.</td></tr>
+          <tr><td>Printer Offline</td><td>Order cards lose their spec for 30 s. QA guesses.</td></tr>
+          <tr><td>Vendor Update</td><td>One station's keys swapped for 60 s. <em>WE'VE IMPROVED YOUR EXPERIENCE</em></td></tr>
+          <tr><td>Hotfix</td><td>120 s after a defect ships: POOF, spill, Rework on Returns.</td></tr>
+          <tr><td>All Hands</td><td>Groove ≤ 10: everyone to the break room, 8 s. <em>EXCITING NEWS ABOUT OUR VALUES</em></td></tr>
+        </tbody></table></div>
+      <p class="small muted" style="margin-top:8px">Longest lockout is 8 s. Standup and All Hands share a 120 s cooldown — two meetings in a row would be too realistic.</p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Upgrades — each one moves the bottleneck</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Upgrade</th><th>Cost</th><th>Changes</th><th>Hidden cost / joke</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Second Jig</strong></td><td>300</td><td>Assembly optimal 2 → 4</td><td>QA is now the bottleneck. It always was going to be.</td></tr>
+        <tr><td>Parts Rack</td><td>120</td><td>Fetch 2.5 s → 1.2 s</td><td>None. Some upgrades should just be good.</td></tr>
+        <tr><td>Cross Training</td><td>200</td><td>Clipboard 3 s → 1.5 s</td><td>People switch stations <em>more</em>.</td></tr>
+        <tr><td>Auto-Check QA</td><td>250</td><td>QA 4 s → 2.5 s</td><td>Packing is now the bottleneck.</td></tr>
+        <tr style="color:var(--yellow)"><td><strong>Bigger Shelf</strong></td><td>80</td><td>Powder shelf 6 → 12</td><td><strong>The trap upgrade.</strong> Hides overproduction for 18 more seconds. Democracy will buy it.</td></tr>
+        <tr><td>Conveyor</td><td>350</td><td>Powder → Assembly automatically</td><td>Overproduction is invisible until the belt backs up.</td></tr>
+        <tr><td>Staging Area</td><td>180</td><td>6-crate shelf by the dock</td><td>Rewards staging before the horn.</td></tr>
+        <tr><td>Longer Truck Wait</td><td>150</td><td>20 s → 40 s</td><td>Feels like relief. Hides how slow Packing is.</td></tr>
+        <tr><td>Blast Shield</td><td>250</td><td>Walls around Powder</td><td>Nobody can see the pile any more.</td></tr>
+      </tbody></table></div>
+    <p class="small muted" style="margin-top:8px">An upgrade is a JSON patch against the level config, applied to every line. Laravel applies owned patches in purchase order and hands Node the result. That's the whole system.</p>
+  </div>
+</div></section>
+
+<!-- ============ 9 REPORT & PAYDAY ============ -->
+<section id="payday" class="sec"><div class="wrap">
+  <h2><span class="num">9</span>The report card &amp; Payday</h2>
+  <p class="lede">The unit of play is a <strong>day</strong>: an order book and a 10-minute shift; it ends on either. It ends with a report card and a P&amp;L. Grade turns profit into coin. Coin is spent at Payday — <strong>by vote</strong>.</p>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><span class="eyebrow">DAY 3 · LEVEL 2 · TOO MUCH POWDER</span><span class="cert" style="padding:4px 12px;display:inline-flex;align-items:center;gap:10px"><span class="eyebrow" style="color:var(--yellow)">REPORT CARD</span><span style="font-family:'Big Shoulders Display',Impact,sans-serif;font-weight:900;font-size:36px;color:var(--red)">D</span></span></div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="cert">
+        <div class="eyebrow" style="text-align:center;color:var(--yellow)">INDIVIDUAL PERFORMANCE</div>
+        <table style="margin-top:6px"><tbody>
+          <tr><td>Sam</td><td class="mono">98%</td><td style="color:var(--yellow)">EXCELLENT ★</td></tr>
+          <tr><td>Priya</td><td class="mono">91%</td><td style="color:var(--yellow)">EXCELLENT ★</td></tr>
+          <tr><td>Marco</td><td class="mono">77%</td><td>GOOD</td></tr>
+          <tr><td>Jo</td><td class="mono">44%</td><td class="muted">NEEDS FOCUS</td></tr>
+        </tbody></table>
+        <p class="small" style="text-align:center;margin-top:6px"><em>Top performer: Sam (Boom Powder)</em></p>
+      </div>
+      <div style="background:var(--surface2);border-radius:6px;padding:14px">
+        <div class="eyebrow" style="text-align:center">FACTORY PERFORMANCE</div>
+        <dl class="kv" style="margin-top:8px">
+          <dt>Orders completed</dt><dd><strong>4</strong> / 11</dd>
+          <dt>Kegs made vs used</dt><dd><strong style="color:var(--red)">31</strong> / 8</dd>
+          <dt>Peak WIP · cycle</dt><dd>37 · 6:12</dd>
+          <dt>Bottleneck</dt><dd>ASSEMBLY — starved 0 s, blocked 84 s</dd>
+          <dt>Hazards</dt><dd>Kegs exploded 3 (Whoops) · Fuses stomped Jo 2 · Sooted Sam</dd>
+          <dt>Oops</dt><dd>Fizzles 3 · Nice Saves Jo 1 · Truck rides Marco 1 · Most dropped Marco (7)</dd>
+          <dt>P&amp;L</dt><dd class="mono">Revenue 480 − Waste 212 = 268 · × D (0.75) = <strong>201 coin</strong></dd>
+          <dt>Materials</dt><dd class="mono">purchased 31 kegs · shipped 8</dd>
+        </dl>
+      </div>
+    </div>
+    <p class="small muted" style="margin-top:10px">Utilization is never green. "EXCELLENT" is styled like a corporate certificate — that is the joke. The grade is factory-level only and never fed by the individual column.</p>
+  </div>
+  <div class="grid g3">
+    <div class="card"><h4>Grade</h4><div class="code">50 · onTime  +20 · (1 − peakWIP/target)
++15 · quality  +15 · cycle vs target
+−5 per Incident  +hero cap 10  +early finish
+EXPLODED → F</div><p class="small muted" style="margin-top:8px">A ≥ 90 ×1.5 · B ≥ 75 ×1.25 · C ≥ 60 ×1.0 · D ≥ 40 ×0.75 · F ×0.5. Finish the book early: +5 per remaining minute. C or better advances; D/F repeats the day — <em>MANAGEMENT WOULD LIKE TO SEE IMPROVEMENT.</em></p></div>
+    <div class="card"><h4>P&amp;L — the pile is money on the floor</h4><div class="code">revenue = shipped × price
+waste   = floor + shelves at close + destroyed + returned
+coin    = max(0, revenue − waste) × grade multiplier</div><p class="small muted" style="margin-top:8px">A huge-revenue day with WIP through the roof and three Hotfixes pays <em>less</em> than a modest clean one. That's "relative coin."</p></div>
+    <div class="card"><h4>Payday — democracy buys the trap</h4>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;display:grid;gap:4px;margin-top:6px">
+        <div style="display:flex;justify-content:space-between;border:1px solid var(--yellow);border-radius:4px;padding:4px 8px"><span><span class="badge yellow">RECOMMENDED BY MANAGEMENT</span> Bigger Shelf · 80</span><span>●●●○</span></div>
+        <div style="display:flex;justify-content:space-between;background:var(--surface2);border-radius:4px;padding:4px 8px"><span>Second Jig · 300</span><span>●●○○</span></div>
+        <div style="display:flex;justify-content:space-between;background:var(--surface2);border-radius:4px;padding:4px 8px"><span>Parts Rack · 120</span><span>●○○○</span></div>
+        <div style="display:flex;justify-content:space-between;background:var(--surface2);border-radius:4px;padding:4px 8px"><span>BANK IT</span><span>○○○○</span></div>
+        <div class="muted" style="text-align:right">0:31 · 201 coin</div>
+      </div>
+      <p class="small muted" style="margin-top:8px">One vote each, live tallies over Reverb, one purchase per day, ties to the earliest vote, owner has no override. From Level 4 the ribbon always sits on a trap upgrade. Nobody has to explain why the shelf made tomorrow worse; the pile does.</p></div>
+  </div>
+</div></section>
+
+<!-- ============ 10 SCALE ============ -->
+<section id="scale" class="sec"><div class="wrap">
+  <h2><span class="num">10</span>Scaling 3 → 10</h2>
+  <p class="lede">The factory grows with the crowd; the stations don't. Ten bodies on one six-station floor is permanent congestion, so above 6 players the one-line template is cloned into two lines (A · B) that share QA, Packing, the Dock and Rework — and the shared downstream is the inter-line bottleneck by design.</p>
+  <div class="grid g2">
+    <div class="card">
+      <div class="tbl" style="margin-top:0"><table>
+        <thead><tr><th>Players</th><th>Lines</th><th>QA lamps</th><th>Benches</th><th>Dock lanes</th><th>Truck</th><th>Order book</th></tr></thead>
+        <tbody>
+          <tr><td><strong>3–6</strong></td><td>1</td><td>1</td><td>2</td><td>4</td><td>60 s</td><td>11</td></tr>
+          <tr><td><strong>7–10</strong></td><td>2 (A, B)</td><td>2</td><td>3</td><td>6</td><td>45 s</td><td>20</td></tr>
+        </tbody></table></div>
+      <p class="small muted" style="margin-top:8px"><strong>Fixed at any size:</strong> every staffing curve, every mini-game and window, buffer sizes, one vote and one purchase. <strong>"Keep it doable":</strong> the order book scales sub-linearly because coordination cost is super-linear. Lines are a hat and a HUD label at lobby lock — never a lock.</p>
+    </div>
+    <div class="card">
+      <p class="small"><strong>At 3</strong> congestion never happens; the trap is understaffing — Assembly wants two and someone must stop making powder. Same lesson. Minimum is 3, not 2, because the Jig's pair split needs a second person somewhere.</p>
+      <p class="small"><strong>At 10:</strong> ten "what can I do?" bubbles across two lines, a ten-row performance review, and emotes for whoever isn't on the call. <em>"Line B, stop — QA is drowning."</em></p>
+      <p class="small muted">Netcode is a non-issue at 10: Colyseus <code>maxClients: 10</code>, 20 Hz throughout, ~10 KB/s per client typical. M1 is one line (3–6); two lines in M2; a full house of 10 in M3.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 11 BUILD ============ -->
+<section id="build" class="sec"><div class="wrap">
+  <h2><span class="num">11</span>How we build it <span class="badge green">confirmed</span></h2>
+  <p class="lede"><strong>Laravel owns the company. Node owns the factory floor.</strong> Reverb is a broadcaster, not a game server — it stays for the lobby and the Payday tallies, not the tick.</p>
+  <figure class="plate">
+    <svg viewBox="0 0 760 340" role="img" aria-label="Architecture: browser talks HTTPS and Reverb WS to Laravel, and Colyseus WS to the Node game server; Laravel and Node exchange HMAC HTTP; Laravel owns Postgres">
+      <defs><marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g font-size="12" fill="currentColor" text-anchor="middle" font-family="JetBrains Mono, monospace">
+        <rect x="60" y="20" width="640" height="90" rx="6" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".4"/><text x="380" y="40" font-weight="700">BROWSER</text>
+        <rect x="90" y="52" width="270" height="44" rx="5" fill="var(--teal)" fill-opacity=".18" stroke="var(--teal)"/><text x="225" y="70" font-weight="700">Livewire + Flux shell</text><text x="225" y="86" font-size="10" opacity=".7">login · lobby · factory · Payday · admin · report</text>
+        <rect x="400" y="52" width="270" height="44" rx="5" fill="var(--tierA)" fill-opacity=".18" stroke="var(--tierA)"/><text x="535" y="70" font-weight="700">Phaser 4 game client (TS)</text><text x="535" y="86" font-size="10" opacity=".7">renders state · predicts own avatar · mini-game UI</text>
+        <rect x="60" y="190" width="300" height="80" rx="6" fill="var(--red)" fill-opacity=".14" stroke="var(--red)" stroke-width="2"/><text x="210" y="216" font-weight="700">Laravel 13 · PHP 8.4</text><text x="210" y="234" font-size="10" opacity=".75">auth · factories · levels · runs · admin</text><text x="210" y="250" font-size="10" opacity=".75">Reverb (lobby presence, vote tallies)</text>
+        <rect x="430" y="190" width="270" height="80" rx="6" fill="var(--green)" fill-opacity=".14" stroke="var(--green)" stroke-width="2"/><text x="565" y="216" font-weight="700">game-server · Node 22</text><text x="565" y="234" font-size="10" opacity=".75">Colyseus 0.18 · FactoryRoom · 20 Hz sim</text><text x="565" y="250" font-size="10" opacity=".75">stateless between days · no DB</text>
+        <rect x="130" y="300" width="160" height="34" rx="5" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-opacity=".5"/><text x="210" y="322" font-weight="700">Postgres</text>
+        <rect x="380" y="300" width="250" height="34" rx="5" fill="var(--yellow)" fill-opacity=".12" stroke="var(--yellow)" stroke-dasharray="4 3"/><text x="505" y="322" font-size="11">shared/ — types · sim/*.ts · config.schema.json</text>
+        <text x="120" y="150" font-size="10" opacity=".75">HTTPS</text><text x="278" y="150" font-size="10" opacity=".75">WS · Reverb</text><text x="545" y="150" font-size="10" opacity=".75">WS · Colyseus</text><text x="395" y="222" font-size="10" opacity=".75">HMAC HTTP</text>
+      </g>
+      <g fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#aa)"><path d="M170 96 L170 188"/><path d="M270 96 L270 188"/><path d="M535 96 L535 188"/><path d="M210 270 L210 298"/></g>
+      <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aa)" marker-start="url(#aa)"><path d="M360 230 L430 230"/></g>
+    </svg>
+  </figure>
+  <div class="grid g3">
+    <div class="card">
+      <h4>The seam: three internal calls</h4>
+      <div class="tbl" style="margin-top:6px"><table><tbody>
+        <tr><td class="mono small">POST /game/ticket</td><td class="small">"Enter factory". HMAC-signed <code>{userId, factoryId, exp:+60s}</code>; Colyseus <code>onAuth</code> verifies it. Node has no DB creds.</td></tr>
+        <tr><td class="mono small">GET /internal/factories/{id}/config</td><td class="small">Room create. One JSON blob: level config with owned upgrade patches applied, scaled for the player count.</td></tr>
+        <tr><td class="mono small">POST /internal/runs</td><td class="small">Day end. Report + grade + P&amp;L (computed in <code>shared/sim/grade.ts</code>). Laravel credits coin, opens Payday, broadcasts <code>DayEnded</code>.</td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="card">
+      <h4>Stack, verified today</h4>
+      <dl class="kv">
+        <dt>Backend</dt><dd>Laravel 13.30 · PHP 8.4 (Herd)</dd>
+        <dt>Shell</dt><dd>Livewire 4.4 + Flux 2.18 (free); Phaser mounts in a <code>wire:ignore</code> island</dd>
+        <dt>Lobby RT</dt><dd>Reverb 1.11</dd>
+        <dt>Game server</dt><dd>Node 22 · Colyseus 0.18.5 · @colyseus/schema 5</dd>
+        <dt>Client</dt><dd>Phaser 4.2.1 · @colyseus/sdk 0.18</dd>
+        <dt>DB</dt><dd>Postgres, jsonb, no extensions</dd>
+        <dt>Deploy</dt><dd>One VPS: nginx → PHP-FPM; Reverb + game server as systemd; nginx proxies both WS paths</dd>
+      </dl>
+      <p class="small muted" style="margin-top:8px"><strong>Why not Reverb for the sim:</strong> it's Pusher-protocol pub/sub — input via HTTP or fire-and-forget client events, no rooms, no state sync. Colyseus is exactly "8 people share a room with binary delta state". <strong>Top-down, not iso:</strong> the game's key information is who stands where and what's piled where; iso muddies exactly that. The sim stores tile coords, so iso is a renderer swap later.</p>
+    </div>
+    <div class="card">
+      <h4>Repo &amp; data</h4>
+      <div class="code" style="margin-top:6px">dynamite/
+├── app/ …            Laravel: Actions, Models, Livewire
+├── resources/js/game/  Phaser: scenes, entities, minigames, net/
+├── game-server/      Node + Colyseus (own package.json)
+├── shared/           schema · sim/*.ts · config.schema.json
+├── config/game/      levels/*.json · upgrades.json · copy.json
+└── docs/             the record</div>
+      <div class="code">users            + is_admin
+factories        owner · name · coin · day · unlocked_level
+factory_members  role       factory_upgrades  key · day
+levels           key · config jsonb · is_active
+runs             day · seed · grade · profit · coin_earned
+                 metrics jsonb   run_players stats jsonb</div>
+      <p class="small muted" style="margin-top:8px">Saving a factory = the row existing. Admin is an <code>is_admin</code> gate: edit level JSON (validated), view runs, force-end. No roles table until a second role exists.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 12 ROADMAP ============ -->
+<section id="roadmap" class="sec"><div class="wrap">
+  <h2><span class="num">12</span>Roadmap</h2>
+  <p class="lede"><strong>M1 is the gate.</strong> Nothing past it gets built until "stop making powder" is fun with real humans. Each milestone answers one question.</p>
+  <div class="grid g3">
+    <div class="card"><h4>M0 · Walking Simulator</h4><p class="small muted"><em>Does the stack work end to end?</em></p><p class="small">Laravel + auth + Postgres + <code>is_admin</code>. Colyseus room with ticket auth. Phaser scene, tilemap, squares with faces. Debug overlay.</p><p class="small" style="color:var(--green)"><strong>Done:</strong> two browsers on two machines see each other walk at 20 Hz.</p></div>
+    <div class="card accent"><h4>M1 · The Trap <span class="badge red">gate</span></h4><p class="small muted"><em>Is "stop making powder" fun?</em></p><p class="small">Slammer, Jig (solo then B's Toss), Dock (bare sticks, beep, tailgate). Items as entities, shelves, hands-full, the pile. Throw + catch + drop table. Fuel, sparks, fuse, chain, explosion (+ setback flag). Hot potato + Blast Bin. Truck ride. Staffing curve + congestion. Clipboard. Shift clock + order book. Report with grade + P&amp;L. Levels 1–4. Sandbox. One line, 3–6.</p><p class="small" style="color:var(--green)"><strong>Done:</strong> in 3 playtests with 4+ people who haven't read the docs, someone says "stop making powder" or "no, not everyone" unprompted, and wants to play again.</p><p class="small" style="color:var(--yellow)"><strong>If not:</strong> tune for a week. Still not? Change the core loop before touching M2.</p></div>
+    <div class="card"><h4>M2 · The Gradient</h4><p class="small muted"><em>Is Tier D hated and Tier S loved?</em></p><p class="small">Casing, QA, Packing v2. Rework, Sweep, Unjam, Returns. Groove/Churn with music layers. Hotfix. Sand Bucket, Incidents, sooted sprites. Crate drops, footprints. Two-line tilemap (7–10). Levels 5–6.</p><p class="small" style="color:var(--green)"><strong>Done:</strong> playtesters name the station they like and the one they avoid; the avoided ones are all Tier D.</p></div>
+    <div class="card"><h4>M3 · Chaos</h4><p class="small muted"><em>Are interruptions funny the tenth time?</em></p><p class="small">Event system + catalogue. Ambiguous orders + the Phone. Order Board. Full-house playtest at 10. Levels 7–8. Kanban board is a <em>maybe</em>.</p><p class="small" style="color:var(--green)"><strong>Done:</strong> no event makes a playtester groan twice.</p></div>
+    <div class="card"><h4>M4 · The Company</h4><p class="small muted"><em>Does persistence bring people back?</em></p><p class="small">Factory screen: coin, corkboard of report cards, level select. <strong>Payday</strong>: the vote, one purchase, BANK IT, Management's ribbon. Reverb presence + tallies. Admin editor. Levels 9–10. One VPS.</p><p class="small" style="color:var(--green)"><strong>Done:</strong> a group plays three days on three evenings and their factory remembers.</p></div>
+    <div class="card"><h4>Build order, M0 → M1</h4><ol class="ul small" style="list-style:decimal;margin-top:4px"><li>Laravel + auth + Postgres</li><li><code>shared/</code>: schema, <code>sim/curve.ts</code>, <code>sim/cycle.ts</code> (tests)</li><li>Colyseus room, ticket auth, PlayerState</li><li>Phaser scene, tilemap, avatars, prediction</li><li>Station abstraction, work tiles, clipboard</li><li>Curve → efficiency; overlay shows it</li><li>The Slammer — Heat first</li><li>Items, shelves, hands, throw/catch</li><li>The Jig — A's beats, then B's Toss</li><li>Starved, jam + unjam, fuel, fuse, boom</li><li>Dock + truck + orders + tailgate</li><li>Clock + book; report with grade + P&amp;L</li><li>Levels 1–4; Sandbox</li><li><strong>Playtest. Tune. Playtest. Tune.</strong></li></ol></div>
+  </div>
+</div></section>
+
+<!-- ============ 13 DECIDE ============ -->
+<section id="decide" class="sec"><div class="wrap">
+  <h2><span class="num">13</span>Decide</h2>
+  <p class="lede">Five picks about how the floor, the interactions and the mini-games <em>look</em>. Choose, then <strong>Save pick</strong> — it saves to this page and I read it back. What's already decided is listed underneath.</p>
+  <p id="db-note" class="small muted" hidden>Picks can't be saved from this view — tell me your choices in chat instead.</p>
+  <div class="grid g2">
+    <form class="card" data-pick="overlay">
+      <h4>Where does the mini-game overlay live?</h4>
+      <div class="opt">
+        <label><input type="radio" name="v" value="bottom-strip" checked><div><div class="t">Bottom-third strip, anchored to the station <span class="badge red">recommended</span></div><div class="d">What the mockups above show. The floor stays visible; you can see the truck while you stamp. Same place at every station, so hands and eyes learn one layout.</div></div></label>
+        <label><input type="radio" name="v" value="side-panel"><div><div class="t">Side panel, right third</div><div class="d">Keeps the whole floor width visible. Costs horizontal room on 13-inch laptops; the Drop Well and the QA card get cramped.</div></div></label>
+        <label><input type="radio" name="v" value="in-world"><div><div class="t">No panel — everything drawn in-world at the station</div><div class="d">Most diegetic (the gauge is on the hopper, the bar is on the press). Hardest to read from your own avatar at 32 px tiles; risks the "precision" feel we've ruled out.</div></div></label>
+      </div>
+      <div class="pickrow"><button class="btn" type="submit">Save pick</button><span class="saved" data-status></span></div>
+    </form>
+    <form class="card" data-pick="avatars">
+      <h4>Art direction after M1 (M1 is squares with faces, on purpose)</h4>
+      <div class="opt">
+        <label><input type="radio" name="v" value="flat-vector" checked><div><div class="t">Flat vector cartoon <span class="badge red">recommended</span></div><div class="d">Cheapest to animate spills, soot and squash-and-stretch; scales cleanly; reads at 32 px. The keg spectrum and sooted faces are trivial.</div></div></label>
+        <label><input type="radio" name="v" value="chunky-pixel"><div><div class="t">Chunky pixel art</div><div class="d">Charming and forgiving of placeholder-quality art, but every animation is frames, and the DANGER beacon / heat glow need shader tricks to read.</div></div></label>
+        <label><input type="radio" name="v" value="paper-cutout"><div><div class="t">Paper cut-out</div><div class="d">Distinctive (RV There Yet energy). Highest art cost per station; the two-line map doubles it.</div></div></label>
+      </div>
+      <div class="pickrow"><button class="btn" type="submit">Save pick</button><span class="saved" data-status></span></div>
+    </form>
+    <form class="card" data-pick="camera">
+      <h4>Camera</h4>
+      <div class="opt">
+        <label><input type="radio" name="v" value="whole-floor" checked><div><div class="t">The whole floor, fixed <span class="badge red">recommended</span></div><div class="d">Everyone sees the pile, the truck and the fuse at all times — "readable from across the room" is literal. Avatars are small (28 × 18 tiles fits a 1280-wide window at ~40 px/tile).</div></div></label>
+        <label><input type="radio" name="v" value="follow-zoom"><div><div class="t">Follow the player, zoomed in</div><div class="d">Bigger, prettier avatars and mini-games. You can't see the pile from the dock — the tells would need a minimap, which is a message, not a mechanic.</div></div></label>
+      </div>
+      <div class="pickrow"><button class="btn" type="submit">Save pick</button><span class="saved" data-status></span></div>
+    </form>
+    <form class="card" data-pick="emotes">
+      <h4>Emote binding — STOP · HELP · GO · ?</h4>
+      <div class="opt">
+        <label><input type="radio" name="v" value="shift-arrows" checked><div><div class="t">Shift + arrows <span class="badge red">recommended</span></div><div class="d">Never conflicts with a mini-game (Shift is unused everywhere); works one-handed while walking.</div></div></label>
+        <label><input type="radio" name="v" value="f-keys"><div><div class="t">F1–F4</div><div class="d">Unambiguous but a reach; browsers eat some F-keys.</div></div></label>
+        <label><input type="radio" name="v" value="tab-arrows"><div><div class="t">Hold Tab + arrows</div><div class="d">Tab already opens the Order Board; overloading it is one more thing to learn.</div></div></label>
+      </div>
+      <div class="pickrow"><button class="btn" type="submit">Save pick</button><span class="saved" data-status></span></div>
+    </form>
+    <form class="card" data-pick="mapsize">
+      <h4>MVP map size</h4>
+      <div class="opt">
+        <label><input type="radio" name="v" value="tight-28x18" checked><div><div class="t">Tight — 28 × 18 <span class="badge red">recommended</span></div><div class="d">Plate A. Powder is six tiles from Assembly; the dock is far enough that the horn causes a run but not a hike. Congestion happens naturally at 4+.</div></div></label>
+        <label><input type="radio" name="v" value="roomy-36x22"><div><div class="t">Roomy — 36 × 22</div><div class="d">More aisle, more hauling distance, more throwing. Congestion needs 6+ to show. Better if the two-line layout should share one tile scale.</div></div></label>
+      </div>
+      <div class="pickrow"><button class="btn" type="submit">Save pick</button><span class="saved" data-status></span></div>
+    </form>
+    <div class="card">
+      <h4>Already decided</h4>
+      <div class="stack">
+        <span class="done">Stack B — Laravel (company) + Node/Colyseus (floor) · ADR 0001/0002</span>
+        <span class="done">Livewire + Flux shell, Phaser as an island · ADR 0007</span>
+        <span class="done">Phaser 4 over Pixi · top-down over iso · ADR 0003/0004</span>
+        <span class="done">Keyboard-first, one gesture ≠ one key · ADR 0006/0009</span>
+        <span class="done">Explosion is the only loss, never random · ADR 0008</span>
+        <span class="done">Output-to-hands when the shelf is full · ADR 0012</span>
+        <span class="done">Days, A–F, P&amp;L, Payday by vote · ADR 0010</span>
+        <span class="done">3–10 players, scale by lines · ADR 0011</span>
+      </div>
+      <p class="small muted" style="margin-top:10px">Still open, settled by playtests: hard vs soft collision, floor WIP slow vs block, the line breakpoint at 6 or 7, broom whack, the CEO's cigar, the Kanban board. All in <code>docs/15-open-questions.md</code>.</p>
+    </div>
+  </div>
+</div></section>
+
+<section class="sec"><div class="wrap">
+  <h2>The record</h2>
+  <p class="lede">Everything above is a projection of these files. When they disagree, the markdown wins.</p>
+  <div class="code">docs/
+├── README.md                 index + conventions
+├── 00 vision · 01 doctrine · 02 floor · 03 stations · 04 mini-games (v2.2)
+├── 05 flow mechanics · 06 orders/quality/rework · 07 chaos events · 08 upgrades
+├── 09 progression · 10 metrics · 11 architecture · 12 data model · 13 config schema
+├── 14 roadmap · 15 open questions · 16 hazards and explosions
+├── 17 oops: carry, throw, drop · 18 days, grades, payday · 19 scaling 3–10
+└── decisions/
+    0001 node game server · 0002 colyseus · 0003 phaser · 0004 top-down
+    0005 spill (superseded) · 0006 keyboard-first · 0007 livewire+flux
+    0008 explosion is the only loss · 0009 depth not difficulty
+    0010 days, grades, payday · 0011 scale by lines · 0012 output-to-hands</div>
+  <div class="stripe" style="margin-top:36px"></div>
+  <p class="foot">DYNAMITE · plan v0.3 · 2026-09-04 · a fun project, not a product.</p>
+</div></section>
+</main>
+
+<script>
+(function(){
+  var MONO='JetBrains Mono, ui-monospace, monospace';
+  var KEG={prime:'var(--red)',glow:'var(--yellow)',damp:'var(--muted)',dud:'var(--muted)'};
+  function keg(cx,cy,state,r){ r=r||6; state=state||'prime';
+    var s='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+(KEG[state]||KEG.prime)+'" stroke="var(--soot)" stroke-width="1"/>';
+    if(state==='glow') s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(r+3)+'" fill="none" stroke="var(--yellow)" stroke-opacity=".7"/>';
+    if(state==='damp') s+='<path d="M'+(cx-3)+' '+(cy-r-2)+' q2 -3 0 -6 M'+(cx+2)+' '+(cy-r-2)+' q2 -3 0 -6" stroke="currentColor" stroke-opacity=".5" fill="none"/>';
+    if(state==='dud') s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="#000" opacity=".3"/>';
+    return s; }
+  function fuse(cx,cy){ return '<path d="M'+(cx+4)+' '+(cy-6)+' l3 -4 l-2 -1 l4 -3" stroke="var(--yellow)" stroke-width="1.5" fill="none"/><circle cx="'+(cx+9)+'" cy="'+(cy-14)+'" r="2.5" fill="var(--yellow)"/><circle cx="'+(cx+9)+'" cy="'+(cy-14)+'" r="5.5" fill="var(--yellow)" opacity=".3"/>'; }
+  function spill(cx,cy){ return '<ellipse cx="'+cx+'" cy="'+cy+'" rx="9" ry="6" fill="var(--soot)" opacity=".45"/>'; }
+  function av(x,y,c,name,o){ o=o||{};
+    var s='<g transform="translate('+x+' '+y+')"><rect width="16" height="16" rx="3" fill="'+c+'"/><circle cx="5" cy="7" r="1.7" fill="#fff"/><circle cx="11" cy="7" r="1.7" fill="#fff"/>';
+    if(o.mouth) s+='<path d="M5 11 q3 '+(o.mouth==='sad'?-2:2)+' 6 0" stroke="#fff" fill="none"/>';
+    if(o.hat) s+='<rect x="1" y="-3" width="14" height="4" rx="1" fill="'+o.hat+'"/>';
+    if(o.soot) s+='<circle cx="8" cy="8" r="9" fill="#000" opacity=".4"/>';
+    s+='</g>';
+    if(o.keg) s+=keg(x+15,y-2,o.keg,5);
+    if(o.crate) s+='<rect x="'+(x+11)+'" y="'+(y-8)+'" width="11" height="9" rx="1.5" fill="#B08A4A" stroke="var(--soot)"/>';
+    if(o.lit) s+=fuse(x+15,y-2);
+    if(name) s+='<text x="'+(x+8)+'" y="'+(o.below?(y+26):(y-(o.hat?8:5)))+'" font-size="8" text-anchor="middle" fill="currentColor" opacity=".8" font-family="'+MONO+'">'+name+'</text>';
+    return s; }
+  function bubble(x,y,t,w){ w=w||Math.round(t.length*5.4+12);
+    return '<rect x="'+x+'" y="'+(y-14)+'" width="'+w+'" height="16" rx="4" fill="var(--surface)" stroke="currentColor" stroke-opacity=".45"/><text x="'+(x+w/2)+'" y="'+(y-3)+'" font-size="8" text-anchor="middle" fill="currentColor" font-family="'+MONO+'">'+t+'</text>'; }
+  function txt(x,y,t,o){ o=o||{}; return '<text x="'+x+'" y="'+y+'" font-size="'+(o.s||9)+'" '+(o.a?'text-anchor="'+o.a+'"':'')+' fill="'+(o.c||'currentColor')+'" '+(o.op?'opacity="'+o.op+'"':'')+' font-family="'+(o.f||MONO)+'" '+(o.w?'font-weight="'+o.w+'"':'')+'>'+t+'</text>'; }
+  function grid(w,h,id,T){ return '<defs><pattern id="'+id+'" width="'+T+'" height="'+T+'" patternUnits="userSpaceOnUse"><path d="M '+T+' 0 L 0 0 0 '+T+'" fill="none" stroke="currentColor" stroke-opacity=".10"/></pattern></defs><rect width="'+w+'" height="'+h+'" fill="var(--surface2)"/><rect width="'+w+'" height="'+h+'" fill="url(#'+id+')"/>'; }
+
+  /* ---------------- Plate A: the MVP map ---------------- */
+  (function(){
+    var W=28,H=18,T=20; var s='<svg viewBox="0 0 '+(W*T)+' '+(H*T)+'" role="img" aria-label="MVP factory floor at tile scale">';
+    s+=grid(W*T,H*T,'mg',T);
+    var tile=function(x,y,fill,stroke,dash){ return '<rect x="'+(x*T+1.5)+'" y="'+(y*T+1.5)+'" width="'+(T-3)+'" height="'+(T-3)+'" rx="3" fill="'+fill+'" '+(stroke?'stroke="'+stroke+'" stroke-width="1.5"':'')+' '+(dash?'stroke-dasharray="3 2"':'')+'/>'; };
+    var ring=function(x0,y0,x1,y1){ var r=''; for(var x=x0;x<=x1;x++){ r+=tile(x,y0,'none','var(--muted)',1)+tile(x,y1,'none','var(--muted)',1);} for(var y=y0+1;y<y1;y++){ r+=tile(x0,y,'none','var(--muted)',1)+tile(x1,y,'none','var(--muted)',1);} return r; };
+    var block=function(x,y,w,h,label,sub){ return '<rect x="'+(x*T+2)+'" y="'+(y*T+2)+'" width="'+(w*T-4)+'" height="'+(h*T-4)+'" rx="4" fill="var(--soot)" opacity=".9"/>'+txt(x*T+w*T/2,y*T+h*T/2-1,label,{a:'middle',c:'var(--yellow)',w:700,s:9})+(sub?txt(x*T+w*T/2,y*T+h*T/2+10,sub,{a:'middle',c:'#E8E6DD',s:7,op:.85}):''); };
+    var shelf=function(x,y,n,cap,vert){ var r=''; for(var i=0;i<n;i++){ var xx=vert?x:x+i, yy=vert?y+i:y; r+=tile(xx,yy,'var(--teal)',null); r+='<rect x="'+(xx*T+1.5)+'" y="'+(yy*T+1.5)+'" width="'+(T-3)+'" height="'+(T-3)+'" rx="3" fill="#fff" opacity=".18"/>'; } return r; };
+    var work=function(x,y){ return tile(x,y,'none','var(--yellow)'); };
+    // walls + dock door + spawn door
+    s+='<rect x="3" y="3" width="'+(W*T-6)+'" height="'+(H*T-6)+'" fill="none" stroke="var(--soot)" stroke-width="6"/>';
+    s+='<rect x="'+(22*T)+'" y="0" width="'+(5*T)+'" height="8" fill="var(--surface2)"/>'; // dock door gap
+    s+='<rect x="'+(13*T)+'" y="'+(H*T-8)+'" width="'+(2*T)+'" height="8" fill="var(--surface2)"/>'+txt(14*T,H*T-2,'spawn',{a:'middle',s:7,op:.6});
+    // ---- Boom Powder
+    s+=ring(2,1,7,6);
+    s+=block(3,2,3,3,'POWDER','the Slammer');
+    s+=shelf(6,2,3,6,true); s+=txt(6*T+10,5*T+14,'out 6/6',{a:'middle',s:7,op:.8});
+    s+=work(4,5);
+    // kegs on the shelf (6 = 2 per tile)
+    [[6,2],[6,3],[6,4]].forEach(function(p,i){ s+=keg(p[0]*T+7,p[1]*T+10,i===1?'glow':'prime',4)+keg(p[0]*T+14,p[1]*T+10,i===2?'damp':'prime',4); });
+    // pile on the ring
+    s+=keg(2*T+10,4*T+10,'prime')+keg(2*T+10,5*T+10,'dud')+keg(3*T+10,6*T+10,'prime')+keg(5*T+10,6*T+10,'damp')+keg(7*T+10,3*T+10,'prime')+keg(7*T+10,5*T+10,'prime')+fuse(7*T+10,5*T+10);
+    s+=spill(6*T+10,6*T+11);
+    // beacon pole + DANGER
+    s+='<line x1="'+(8*T+10)+'" y1="'+(1*T+4)+'" x2="'+(8*T+10)+'" y2="'+(2*T+14)+'" stroke="var(--soot)" stroke-width="2"/><circle cx="'+(8*T+10)+'" cy="'+(1*T+4)+'" r="4" fill="var(--red)"/><circle cx="'+(8*T+10)+'" cy="'+(1*T+4)+'" r="8" fill="var(--red)" opacity=".25"/>'+txt(8*T+10,1*T-2,'DANGER',{a:'middle',s:7,c:'var(--red)',w:700});
+    // blast bin
+    s+=tile(1,8,'#C9A400',null)+txt(1*T+10,8*T+13,'BIN',{a:'middle',s:7,c:'#1B1D1F',w:700});
+    // Sam on the work tile, hands full
+    s+=av(4*T+2,5*T+2,'var(--red)','Sam',{keg:'prime',hat:'var(--red)'});
+    s+=bubble(3*T-2,7*T+16,'HANDS FULL · ×24',84);
+    // ---- Assembly
+    s+=ring(10,5,17,11);
+    s+=block(12,6,4,2,'ASSEMBLY','the Jig');
+    s+=shelf(11,6,2,8,true); s+=txt(11*T+10,8*T+14,'in 8',{a:'middle',s:7,op:.8});
+    s+=shelf(12,10,2,4,false); s+=txt(14*T+12,10*T+14,'out 4',{s:7,op:.8});
+    s+=work(13,8); s+=work(14,8); s+=tile(16,8,'none','var(--teal)',1)+txt(16*T+10,8*T+13,'rack',{a:'middle',s:6,op:.8});
+    s+=tile(16,6,'var(--surface)','var(--muted)')+txt(16*T+10,6*T+13,'cart',{a:'middle',s:6,op:.8});
+    // casings + a keg on the input shelf
+    s+=keg(11*T+7,6*T+10,'prime',4)+'<rect x="'+(11*T+11)+'" y="'+(6*T+6)+'" width="6" height="9" rx="1" fill="var(--red)"/><rect x="'+(11*T+5)+'" y="'+(7*T+6)+'" width="6" height="9" rx="1" fill="var(--red)"/>';
+    s+=av(13*T+2,8*T+2,'var(--teal)','Priya',{hat:'var(--red)',below:true}); s+=av(14*T+2,8*T+2,'var(--green)','Marco',{hat:'var(--red)',below:true});
+    s+=av(15*T+2,9*T+6,'#8B5CF6','Alex',{hat:'var(--red)',below:true}); s+=bubble(15*T+18,12*T+4,'what can I do?',76);
+    // arc from rack to jig (B's toss)
+    s+='<path d="M'+(16*T+8)+' '+(8*T+4)+' Q '+(15*T)+' '+(6*T)+' '+(14*T)+' '+(7*T+6)+'" fill="none" stroke="var(--tierA)" stroke-width="1.5" stroke-dasharray="3 3"/>';
+    // Jo hauling
+    s+=av(9*T+2,8*T+2,'var(--yellow)','Jo',{keg:'prime',hat:'var(--red)'});
+    s+='<path d="M'+(8*T+14)+' '+(7*T+8)+' L '+(6*T+6)+' '+(6*T+14)+'" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="2 3" fill="none"/>';
+    // ---- Dock
+    s+=ring(20,1,26,7);
+    // truck in the dock door
+    s+='<g transform="translate('+(22*T+4)+' '+(0*T+6)+')"><rect x="0" y="6" width="70" height="30" rx="4" fill="var(--surface)" stroke="var(--soot)" stroke-width="2"/><rect x="70" y="14" width="22" height="22" rx="3" fill="var(--surface)" stroke="var(--soot)" stroke-width="2"/><circle cx="14" cy="38" r="5" fill="var(--soot)"/><circle cx="58" cy="38" r="5" fill="var(--soot)"/><circle cx="82" cy="38" r="5" fill="var(--soot)"/>'+txt(35,25,'5 / 8',{a:'middle',s:9,w:700})+'</g>';
+    s+='<circle cx="'+(26*T+10)+'" cy="'+(1*T+6)+'" r="4" fill="var(--yellow)"/><circle cx="'+(26*T+10)+'" cy="'+(1*T+6)+'" r="8" fill="var(--yellow)" opacity=".3"/>';
+    [22,23,24,25].forEach(function(x){ s+=work(x,4); });
+    s+=txt(23.5*T+10,4*T-4,'ramp · 4 lanes',{a:'middle',s:7,op:.7});
+    s+='<rect x="'+(26*T+2)+'" y="'+(5*T+2)+'" width="'+(T-4)+'" height="'+(T*2-4)+'" rx="3" fill="var(--soot)"/>'+txt(26*T+10,5*T+14,'00',{a:'middle',s:9,c:'var(--yellow)',w:700})+txt(26*T+10,6*T+10,'14',{a:'middle',s:9,c:'var(--yellow)',w:700});
+    s+=tile(21,8,'none','var(--red)',1)+txt(21*T+10,8*T+13,'RET',{a:'middle',s:6,c:'var(--red)'});
+    // sticks staged by the ramp
+    s+='<rect x="'+(22*T+6)+'" y="'+(5*T+6)+'" width="5" height="9" rx="1" fill="var(--red)"/><rect x="'+(23*T+6)+'" y="'+(5*T+6)+'" width="5" height="9" rx="1" fill="var(--red)"/>';
+    // ---- Order board on the top wall, break room, broom
+    s+='<rect x="'+(16*T)+'" y="'+(1*T+2)+'" width="'+(3*T)+'" height="14" rx="2" fill="var(--surface)" stroke="var(--soot)"/>'+txt(17.5*T,1*T+12,'ORDER BOARD · 7/11',{a:'middle',s:6.5,w:700});
+    s+='<rect x="'+(3*T+2)+'" y="'+(14*T+2)+'" width="'+(6*T-4)+'" height="'+(3*T-4)+'" rx="4" fill="var(--surface)" stroke="var(--muted)" stroke-dasharray="4 3"/>'+txt(6*T,15*T+12,'BREAK ROOM',{a:'middle',s:8,op:.7,w:700})+txt(6*T,16*T+6,'(All Hands · the truck ride returns here)',{a:'middle',s:6,op:.6});
+    s+='<line x1="'+(10*T+10)+'" y1="'+(15*T+2)+'" x2="'+(10*T+10)+'" y2="'+(15*T+18)+'" stroke="#B08A4A" stroke-width="3"/><rect x="'+(10*T+5)+'" y="'+(15*T+14)+'" width="10" height="5" fill="var(--yellow)"/>'+txt(10*T+10,17*T-2,'broom',{a:'middle',s:6,op:.6});
+    s+='</svg>';
+    document.getElementById('map-mvp').innerHTML=s;
+  })();
+
+  /* ---------------- storyboards ---------------- */
+  function strip(id,frames){ var W=170,H=104,G=15; var s='<svg viewBox="0 0 '+(frames.length*(W+G)-G)+' '+(H+34)+'" role="img">';
+    s+='<defs><pattern id="sg'+id+'" width="17" height="17" patternUnits="userSpaceOnUse"><path d="M17 0 L0 0 0 17" fill="none" stroke="currentColor" stroke-opacity=".08"/></pattern></defs>';
+    frames.forEach(function(f,i){ var x=i*(W+G); s+='<g transform="translate('+x+' 0)"><rect width="'+W+'" height="'+H+'" rx="4" fill="var(--surface2)"/><rect width="'+W+'" height="'+H+'" rx="4" fill="url(#sg'+id+')"/><rect width="'+W+'" height="'+H+'" rx="4" fill="none" stroke="currentColor" stroke-opacity=".25"/>'+f.b+'</g>';
+      s+='<text x="'+(x+W/2)+'" y="'+(H+14)+'" font-size="8.5" text-anchor="middle" fill="currentColor" font-family="'+MONO+'" font-weight="700">'+(i+1)+' · '+f.t+'</text>';
+      if(f.c) s+='<text x="'+(x+W/2)+'" y="'+(H+26)+'" font-size="7.5" text-anchor="middle" fill="currentColor" opacity=".7" font-family="'+MONO+'">'+f.c+'</text>'; });
+    s+='</svg>'; document.getElementById(id).innerHTML=s; }
+  var jig=function(x,y){ return '<rect x="'+x+'" y="'+y+'" width="60" height="26" rx="3" fill="var(--soot)" opacity=".9"/>'+txt(x+30,y+16,'JIG',{a:'middle',c:'var(--yellow)',s:8,w:700})+'<rect x="'+(x+8)+'" y="'+(y+30)+'" width="17" height="17" rx="3" fill="none" stroke="var(--yellow)" stroke-width="1.5"/><rect x="'+(x+34)+'" y="'+(y+30)+'" width="17" height="17" rx="3" fill="none" stroke="var(--yellow)" stroke-width="1.5"/>'; };
+  var hopper=function(x,y,glow){ return (glow?'<rect x="'+(x-4)+'" y="'+(y-4)+'" width="52" height="38" rx="6" fill="var(--yellow)" opacity=".35"/>':'')+'<rect x="'+x+'" y="'+y+'" width="44" height="30" rx="3" fill="var(--soot)" opacity=".9"/>'+txt(x+22,y+19,'POWDER',{a:'middle',c:'var(--yellow)',s:7,w:700})+'<rect x="'+(x+13)+'" y="'+(y+34)+'" width="17" height="17" rx="3" fill="none" stroke="var(--yellow)" stroke-width="1.5"/>'; };
+  var shelfG=function(x,y,n,cap){ var s='<rect x="'+x+'" y="'+y+'" width="'+(cap*9+4)+'" height="14" rx="2" fill="var(--teal)" opacity=".55"/>'; for(var i=0;i<n;i++) s+=keg(x+7+i*9,y+7,'prime',3.5); return s+txt(x+cap*9+8,y+11,n+'/'+cap,{s:7,op:.8}); };
+  var overlay=function(x,y,w,t){ return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="26" rx="3" fill="var(--soot)"/>'+txt(x+6,y+11,t,{s:6.5,c:'#E8E6DD',w:700})+'<rect x="'+(x+6)+'" y="'+(y+15)+'" width="'+(w-12)+'" height="5" rx="2" fill="#E8E6DD" opacity=".25"/><rect x="'+(x+6+(w-12)*.62)+'" y="'+(y+15)+'" width="'+((w-12)*.16)+'" height="5" fill="var(--green)"/>'; };
+
+  strip('sb-join',[
+    {t:'Walk to the work tile',c:'WASD / arrows',b:jig(55,20)+av(20,55,'var(--teal)','Priya',{hat:'var(--red)'})+'<path d="M40 63 L60 60" stroke="currentColor" stroke-opacity=".5" stroke-dasharray="2 2" fill="none"/>'},
+    {t:'Clipboard · 3 s',c:'a joke line every time',b:jig(55,20)+av(63,51,'var(--teal)','Priya',{hat:'var(--red)'})+bubble(52,45,'Asking Dave. Dave is at lunch.',118)+'<rect x="66" y="80" width="30" height="4" rx="2" fill="currentColor" opacity=".25"/><rect x="66" y="80" width="18" height="4" rx="2" fill="var(--yellow)"/>'},
+    {t:'Overlay opens, bottom third',c:'the floor stays visible',b:jig(55,10)+av(63,41,'var(--teal)','Priya',{hat:'var(--red)'})+overlay(8,68,154,'THE JIG · SEAT ← → · Space on the beat')}
+  ]);
+  strip('sb-throw',[
+    {t:'Hold Space · aim',c:'2 tiles, facing direction',b:av(20,50,'var(--yellow)','Jo',{keg:'prime',hat:'var(--red)'})+'<path d="M40 48 Q 75 20 110 48" fill="none" stroke="var(--tierA)" stroke-width="1.5" stroke-dasharray="3 3"/>'+av(112,50,'var(--teal)','Priya',{hat:'var(--red)'})},
+    {t:'Release · in flight',c:'~0.5 s arc',b:av(20,50,'var(--yellow)','Jo',{hat:'var(--red)'})+keg(72,26,'prime')+'<path d="M40 48 Q 75 20 110 48" fill="none" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="3 3"/>'+av(112,50,'var(--teal)','Priya',{hat:'var(--red)'})},
+    {t:'E as it arrives',c:'±150 OK · ±75 snap PERFECT · hands full → WHO THREW THAT',b:av(20,50,'var(--yellow)','Jo',{hat:'var(--red)'})+av(112,50,'var(--teal)','Priya',{keg:'prime',hat:'var(--red)'})+txt(120,38,'snap ✓',{s:8,c:'var(--green)',w:700})}
+  ]);
+  strip('sb-hands',[
+    {t:'Release · shelf 6/6',c:'the keg lands in your hands',b:hopper(20,14,true)+shelfG(80,20,6,6)+av(33,52,'var(--red)','Sam',{keg:'prime',hat:'var(--red)'})+txt(60,70,'×24',{s:12,c:'var(--red)',w:700})},
+    {t:'Plunger dark · HANDS FULL',c:'the combo is still ticking',b:hopper(20,14,false)+shelfG(80,20,6,6)+av(33,52,'var(--red)','Sam',{keg:'prime',hat:'var(--red)'})+bubble(70,60,'HANDS FULL',60)+txt(60,84,'×24',{s:12,c:'var(--red)',w:700})},
+    {t:'E · keg at your feet',c:'the pile is yours, one keg at a time',b:hopper(20,14,true)+shelfG(80,20,6,6)+av(33,52,'var(--red)','Sam',{hat:'var(--red)'})+keg(58,84,'prime')+keg(70,90,'prime')+keg(46,92,'dud')+txt(100,84,'×25',{s:12,c:'var(--red)',w:700})}
+  ]);
+  strip('sb-crowd',[
+    {t:'Two on the jig, one on the rack',c:'optimal · curve 1.15',b:jig(55,16)+av(63,47,'var(--teal)','',{hat:'var(--red)'})+av(89,47,'var(--green)','',{hat:'var(--red)'})+av(122,47,'#8B5CF6','',{hat:'var(--red)'})+txt(85,90,'zip · zip · zip',{s:8,a:'middle',c:'var(--tierA)',w:700})},
+    {t:'Four and five arrive',c:'nowhere to stand; the input shelf is blocked',b:jig(55,16)+av(63,47,'var(--teal)','',{hat:'var(--red)'})+av(89,47,'var(--green)','',{hat:'var(--red)'})+av(122,47,'#8B5CF6','',{hat:'var(--red)'})+av(30,70,'var(--yellow)','',{hat:'var(--red)'})+av(50,80,'#E879F9','',{hat:'var(--red)'})+bubble(4,66,'what can I do?',72)},
+    {t:'…every 6 s',c:'the active mini-game pauses 0.5 s each time',b:jig(55,16)+av(63,47,'var(--teal)','',{hat:'var(--red)',mouth:'sad'})+av(89,47,'var(--green)','',{hat:'var(--red)'})+av(122,47,'#8B5CF6','',{hat:'var(--red)'})+av(30,70,'var(--yellow)','',{hat:'var(--red)'})+av(50,80,'#E879F9','',{hat:'var(--red)'})+bubble(4,66,'what can I do?',72)+bubble(90,96,'what can I do?',72)+txt(85,90,'— paused —',{s:8,a:'middle',op:.6})}
+  ]);
+  strip('sb-potato',[
+    {t:'A fuse is hissing',c:'6 s · anyone can pick it up',b:keg(40,60,'prime')+fuse(40,60)+keg(56,68,'prime')+keg(30,72,'prime')+av(90,50,'var(--yellow)','Jo',{hat:'var(--red)',mouth:'sad'})},
+    {t:'E · carry it away',c:'it keeps burning in your hands',b:keg(56,68,'prime')+keg(30,72,'prime')+av(90,50,'var(--yellow)','Jo',{hat:'var(--red)',lit:true})+'<rect x="128" y="40" width="30" height="24" rx="3" fill="#C9A400"/>'+txt(143,55,'BIN',{a:'middle',s:7,c:'#1B1D1F',w:700})+'<path d="M112 46 Q 128 30 140 40" fill="none" stroke="var(--tierA)" stroke-width="1.5" stroke-dasharray="3 3"/>'},
+    {t:'Space → WHUMP',c:'contained · NICE SAVE · +3 Groove · or, in your hands: sooted',b:keg(56,68,'prime')+keg(30,72,'prime')+av(90,50,'var(--yellow)','Jo',{hat:'var(--red)'})+'<rect x="128" y="40" width="30" height="24" rx="3" fill="#C9A400"/><circle cx="143" cy="52" r="16" fill="var(--yellow)" opacity=".45"/>'+txt(143,30,'NICE SAVE',{a:'middle',s:8,c:'var(--green)',w:700})}
+  ]);
+  strip('sb-truck',[
+    {t:'Loading on the bed',c:'00:02 on the wall',b:'<rect x="30" y="30" width="80" height="34" rx="4" fill="var(--surface)" stroke="var(--soot)" stroke-width="2"/><rect x="110" y="40" width="26" height="24" rx="3" fill="var(--surface)" stroke="var(--soot)" stroke-width="2"/><circle cx="46" cy="66" r="5" fill="var(--soot)"/><circle cx="96" cy="66" r="5" fill="var(--soot)"/><circle cx="124" cy="66" r="5" fill="var(--soot)"/>'+av(60,38,'var(--green)','Marco',{crate:true,hat:'var(--red)'})+txt(150,26,'00:02',{a:'middle',s:9,c:'var(--yellow)',w:700})},
+    {t:'It leaves. With Marco.',c:'horn ×2',b:'<rect x="90" y="30" width="80" height="34" rx="4" fill="var(--surface)" stroke="var(--soot)" stroke-width="2"/><circle cx="106" cy="66" r="5" fill="var(--soot)"/><circle cx="156" cy="66" r="5" fill="var(--soot)"/>'+av(120,38,'var(--green)','',{hat:'var(--red)',mouth:'sad'})+'<path d="M20 50 L70 50" stroke="currentColor" stroke-opacity=".4" stroke-width="2"/><path d="M20 58 L60 58" stroke="currentColor" stroke-opacity=".3" stroke-width="2"/>'+txt(20,36,'HONK HONK',{s:8,w:700,op:.7})},
+    {t:'20 s later, break-room door',c:'"I SAW THE HIGHWAY"',b:'<rect x="20" y="30" width="70" height="50" rx="4" fill="var(--surface)" stroke="var(--muted)" stroke-dasharray="4 3"/>'+txt(55,58,'BREAK ROOM',{a:'middle',s:7,op:.7,w:700})+av(100,55,'var(--green)','Marco',{hat:'var(--red)'})+bubble(92,44,'I SAW THE HIGHWAY',82)}
+  ]);
+
+  /* ---------------- screen mockups ---------------- */
+  function screen(id,o){ var W=640,H=360,FH=240; var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+o.aria+'">';
+    s+='<defs><pattern id="pg'+id+'" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0 L0 0 0 32" fill="none" stroke="currentColor" stroke-opacity=".09"/></pattern></defs>';
+    s+='<rect width="'+W+'" height="'+H+'" fill="var(--surface2)"/><rect width="'+W+'" height="'+FH+'" fill="url(#pg'+id+')"/>';
+    s+=o.floor||'';
+    // HUD
+    s+='<rect x="10" y="10" width="150" height="22" rx="4" fill="var(--soot)" opacity=".85"/>'+txt(18,25,'BOOK 7/11 · TRUCK 00:41',{s:9,c:'#E8E6DD',w:700});
+    s+='<rect x="'+(W/2-58)+'" y="10" width="116" height="22" rx="4" fill="var(--soot)" opacity=".85"/>'+txt(W/2,25,'DAY 3 · 06:12',{s:10,c:'var(--yellow)',w:700,a:'middle'});
+    var g=o.groove||64; s+='<rect x="'+(W-170)+'" y="10" width="160" height="22" rx="4" fill="var(--soot)" opacity=".85"/><rect x="'+(W-162)+'" y="17" width="100" height="8" rx="4" fill="#E8E6DD" opacity=".2"/><rect x="'+(W-162)+'" y="17" width="'+g+'" height="8" rx="4" fill="'+(g>=70?'var(--green)':g<=30?'var(--red)':'var(--yellow)')+'"/>'+txt(W-56,25,'GROOVE '+g,{s:9,c:'#E8E6DD',w:700});
+    s+='<rect x="10" y="'+(FH-30)+'" width="96" height="20" rx="4" fill="var(--soot)" opacity=".85"/><rect x="16" y="'+(FH-24)+'" width="8" height="8" rx="2" fill="var(--red)"/>'+txt(30,FH-16,'LINE A · '+(o.who||'Sam'),{s:9,c:'#E8E6DD',w:700});
+    s+=txt(W-12,FH-16,'⇧+arrows: emotes · Tab: orders · Esc: leave',{s:8,c:'currentColor',op:.6,a:'end'});
+    // overlay panel
+    s+='<rect x="0" y="'+FH+'" width="'+W+'" height="'+(H-FH)+'" fill="var(--soot)"/><rect x="0" y="'+FH+'" width="'+W+'" height="3" fill="'+(o.tier||'var(--yellow)')+'"/>';
+    s+=txt(16,FH+18,o.title,{s:12,c:'#E8E6DD',w:700,f:'Big Shoulders Display, Impact, sans-serif'})+txt(W-16,FH+18,o.keys||'',{s:8,c:'#E8E6DD',op:.7,a:'end'});
+    s+=o.overlay||''; s+='</svg>'; document.getElementById(id).innerHTML=s; }
+  var L='#E8E6DD';
+  var key=function(x,y,t,w){ w=w||(t.length*6.2+10); return '<rect x="'+x+'" y="'+(y-11)+'" width="'+w+'" height="15" rx="3" fill="#E8E6DD" opacity=".15" stroke="#E8E6DD" stroke-opacity=".5"/>'+txt(x+w/2,y,t,{s:8.5,c:L,a:'middle',w:700}); };
+  var gauge=function(x,y,w,needle,band0,band1,hair){ var s='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="14" rx="7" fill="#E8E6DD" opacity=".15"/><rect x="'+(x+w*band0)+'" y="'+y+'" width="'+(w*(band1-band0))+'" height="14" fill="var(--green)" opacity=".7"/>'; if(hair!=null) s+='<rect x="'+(x+w*hair-1)+'" y="'+(y-3)+'" width="2" height="20" fill="var(--yellow)"/>'; s+='<rect x="'+(x+w*needle-1.5)+'" y="'+(y-4)+'" width="3" height="22" rx="1" fill="#fff"/>'; return s; };
+
+  screen('scr-slammer',{aria:'Slammer screen mockup',tier:'var(--tierS)',title:'THE SLAMMER · BOOM POWDER',keys:'← ↑ → mash · Space hold/release · E drop · Esc',groove:58,
+    floor:hopperF(180,60)+'<rect x="300" y="70" width="70" height="20" rx="3" fill="var(--teal)" opacity=".55"/>'+[0,1,2,3,4,5].map(function(i){return keg(310+i*11,80,i===2?'glow':i===5?'damp':'prime',4);}).join('')+txt(335,64,'out 6/6',{a:'middle',s:9,op:.7})
+      +av(232,146,'var(--red)','Sam',{keg:'prime',hat:'var(--red)'})+keg(212,178,'prime')+keg(196,190,'dud')+keg(262,186,'prime')+keg(280,172,'prime')+fuse(280,172)+spill(248,196)
+      +'<line x1="440" y1="56" x2="440" y2="120" stroke="var(--soot)" stroke-width="3"/><circle cx="440" cy="50" r="8" fill="var(--yellow)"/><circle cx="440" cy="50" r="16" fill="var(--yellow)" opacity=".25"/>'+txt(440,80,'HOT STREAK',{a:'middle',s:9,c:'var(--yellow)',w:700})+txt(440,92,'beacon pole · gold → red',{a:'middle',s:7,op:.6})
+      +txt(150,104,'×24',{a:'middle',s:28,c:'var(--red)',w:700,f:'Big Shoulders Display, Impact, sans-serif'})+txt(150,118,'combo · in-world',{a:'middle',s:7,op:.6})+'<rect x="228" y="44" width="10" height="14" fill="var(--red)"/><line x1="228" y1="40" x2="228" y2="62" stroke="var(--soot)" stroke-width="2"/>',
+    overlay:txt(16,268,'MASH',{s:9,c:L,op:.7})+key(16,286,'←')+key(38,286,'↑')+key(60,286,'→')+txt(90,286,'0.31 s → HOT',{s:9,c:'var(--yellow)',w:700})
+      +txt(16,318,'CHARGE · climb 0.7 s',{s:9,c:L,op:.7})+txt(316,318,'DEAD CENTER ±50 ms',{s:8,c:'var(--yellow)',a:'end',w:700})+gauge(16,326,300,0.69,0.62,0.78,0.70)+txt(16,352,'early = dud (grey)',{s:8,c:L,op:.6})+txt(316,352,'late = damp + SPARK',{s:8,c:'var(--red)',a:'end',w:700})
+      +'<rect x="350" y="270" width="274" height="80" rx="4" fill="#E8E6DD" opacity=".06"/>'+txt(362,286,'HANDS',{s:9,c:L,op:.7})+txt(362,304,'shelf 6/6 — the keg is in your hands.',{s:9,c:L})+txt(362,318,'Plunger waits. Combo ticks.',{s:9,c:L})+key(362,340,'E',18)+txt(386,340,'drop at your feet',{s:9,c:L,op:.8})+key(480,340,'Space',44)+txt(530,340,'throw',{s:9,c:L,op:.8})
+  });
+  function hopperF(x,y){ return '<rect x="'+(x-8)+'" y="'+(y-8)+'" width="120" height="76" rx="8" fill="var(--yellow)" opacity=".28"/><rect x="'+x+'" y="'+y+'" width="104" height="60" rx="5" fill="var(--soot)" opacity=".92"/>'+txt(x+52,y+26,'BOOM POWDER',{a:'middle',c:'var(--yellow)',s:11,w:700})+txt(x+52,y+42,'the Slammer',{a:'middle',c:L,s:8,op:.8})+'<rect x="'+(x+38)+'" y="'+(y+66)+'" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/>'; }
+
+  screen('scr-casing',{aria:'Casing Prep screen mockup',tier:'var(--tierS)',title:'STAMP & CRIMP · CASING PREP',keys:'← → stamps · Space crimp · Q/E colour · Esc',groove:71,who:'Priya',
+    floor:'<rect x="150" y="60" width="150" height="56" rx="5" fill="var(--soot)" opacity=".92"/>'+txt(225,86,'CASING PREP',{a:'middle',c:'var(--yellow)',s:11,w:700})+txt(225,102,'two presses · one clock',{a:'middle',c:L,s:8,op:.8})
+      +'<rect x="168" y="122" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/><rect x="252" y="122" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/>'
+      +av(175,129,'var(--teal)','Priya',{hat:'var(--red)'})+av(259,129,'var(--green)','Marco',{hat:'var(--red)'})
+      +'<circle cx="320" cy="70" r="14" fill="none" stroke="var(--muted)" stroke-width="4" stroke-dasharray="6 5"/>'+txt(320,52,'flywheel',{a:'middle',s:8,op:.7})
+      +'<line x1="350" y1="40" x2="350" y2="110" stroke="var(--soot)" stroke-width="3"/><path d="M350 42 L378 50 L350 58 Z" fill="var(--red)"/>'+txt(350,28,'×11 pennant',{a:'middle',s:8,op:.8})
+      +'<rect x="380" y="76" width="90" height="20" rx="3" fill="var(--teal)" opacity=".55"/>'+[0,1,2,3,4,5,6,7].map(function(i){return '<rect x="'+(386+i*10)+'" y="80" width="6" height="12" rx="1" fill="'+(i===3?'var(--teal)':'var(--red)')+'"/>'+(i===1||i===4?'<rect x="'+(385+i*10)+'" y="78" width="8" height="2" fill="#fff" opacity=".8"/>':'');}).join('')+txt(425,70,'out 8/8 · ✦ gleam',{a:'middle',s:8,op:.7}),
+    overlay:'<rect x="16" y="258" width="18" height="18" rx="3" fill="var(--red)"/><rect x="40" y="258" width="18" height="18" rx="3" fill="none" stroke="var(--teal)" stroke-width="2"/><rect x="64" y="258" width="18" height="18" rx="3" fill="none" stroke="var(--yellow)" stroke-width="2"/>'+txt(90,271,'orders need: 3 red · 1 blue',{s:9,c:L,op:.8})+txt(400,271,'DUET armed · Marco ghosted',{s:9,c:'var(--yellow)',w:700})
+      +'<rect x="16" y="292" width="608" height="26" rx="6" fill="#E8E6DD" opacity=".12"/>'
+      +'<circle cx="100" cy="305" r="7" fill="none" stroke="var(--yellow)" stroke-width="2"/>'+txt(100,330,'DIE · Space',{s:8,c:L,a:'middle',op:.8})
+      +'<circle cx="190" cy="305" r="9" fill="var(--green)"/>'+txt(190,330,'STAMP ←',{s:8,c:L,a:'middle'})
+      +'<circle cx="270" cy="305" r="9" fill="var(--green)"/>'+txt(270,330,'STAMP →',{s:8,c:L,a:'middle'})
+      +'<circle cx="440" cy="305" r="12" fill="none" stroke="var(--green)" stroke-width="3"/>'+txt(440,330,'CRIMP · Space',{s:8,c:'var(--green)',a:'middle',w:700})+txt(440,344,'±100 / PERFECT ±45 · the accent',{s:7.5,c:L,a:'middle',op:.7})
+      +'<rect x="392" y="290" width="3" height="30" fill="#fff"/>'+txt(560,305,'chk · chk · KA-CHUNK',{s:9,c:L,op:.75})
+      +'<line x1="290" y1="290" x2="290" y2="320" stroke="var(--yellow)" stroke-opacity=".5" stroke-dasharray="2 2"/>'+txt(290,286,'Marco',{s:7,c:'var(--yellow)',a:'middle'})
+  });
+
+  screen('scr-jig',{aria:'Assembly Jig screen mockup',tier:'var(--tierA)',title:'THE JIG · ASSEMBLY',keys:'Space pour/crimp · ← → knots · E · Esc',groove:66,who:'Priya',
+    floor:'<rect x="200" y="60" width="150" height="46" rx="5" fill="var(--soot)" opacity=".92"/>'+txt(275,80,'ASSEMBLY',{a:'middle',c:'var(--yellow)',s:11,w:700})+txt(275,96,'the Jig',{a:'middle',c:L,s:8,op:.8})
+      +'<rect x="222" y="112" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/><rect x="298" y="112" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/><rect x="372" y="112" width="30" height="30" rx="4" fill="none" stroke="var(--teal)" stroke-width="2" stroke-dasharray="4 3"/>'+txt(387,158,'rack',{a:'middle',s:8,op:.7})
+      +av(229,119,'var(--teal)','A · Priya',{hat:'var(--red)'})+av(379,119,'var(--green)','B · Marco',{hat:'var(--red)'})
+      +'<path d="M380 110 Q 330 50 300 86" fill="none" stroke="var(--tierA)" stroke-width="2" stroke-dasharray="4 3"/>'+txt(340,50,'toss on the crimp beat',{a:'middle',s:8,c:'var(--tierA)',w:700})
+      +'<rect x="140" y="64" width="20" height="60" rx="3" fill="var(--teal)" opacity=".55"/>'+txt(150,56,'in',{a:'middle',s:8,op:.7})+'<rect x="145" y="70" width="10" height="14" rx="1" fill="var(--red)"/><rect x="145" y="88" width="10" height="14" rx="1" fill="var(--red)"/><circle cx="148" cy="94" r="1.6" fill="#000" opacity=".5"/><circle cx="152" cy="98" r="1.6" fill="#000" opacity=".5"/>'+keg(150,113,'glow',4)
+      +txt(150,132,'dent ×2',{a:'middle',s:7,c:'var(--red)'})
+      +'<circle cx="275" cy="30" r="9" fill="var(--yellow)" opacity=".5"/>'+txt(275,34,'✦',{a:'middle',s:10,c:'var(--yellow)'})+txt(275,18,'PRIME STICK',{a:'middle',s:8,c:'var(--yellow)',w:700}),
+    overlay:txt(16,276,'ONE PHRASE · 150 BPM',{s:9,c:L,op:.7})+txt(624,276,'seated: red casing · 0 dents · prime keg · long fuse',{s:9,c:L,op:.75,a:'end'})
+      +'<rect x="16" y="284" width="608" height="30" rx="6" fill="#E8E6DD" opacity=".12"/>'
+      +[0,1,2,3,4].map(function(i){return '<circle cx="'+(60+i*24)+'" cy="299" r="5" fill="'+(i<4?'var(--green)':'none')+'" stroke="var(--green)" stroke-width="2"/>';}).join('')+txt(108,330,'POUR · Space at the mark',{s:8,c:L,a:'middle'})
+      +'<circle cx="230" cy="299" r="8" fill="var(--green)"/>'+txt(230,303,'←',{s:9,c:'#000',a:'middle',w:700})+'<circle cx="270" cy="299" r="8" fill="none" stroke="var(--green)" stroke-width="2"/>'+txt(270,303,'→',{s:9,c:L,a:'middle',w:700})+'<circle cx="310" cy="299" r="8" fill="none" stroke="var(--green)" stroke-width="2"/>'+txt(310,303,'←',{s:9,c:L,a:'middle',w:700})+txt(270,330,'KNOTS · the lane says which key',{s:8,c:L,a:'middle'})
+      +'<rect x="420" y="292" width="6" height="14" fill="#E8E6DD" opacity=".6"/><rect x="436" y="292" width="6" height="14" fill="#E8E6DD" opacity=".6"/><rect x="452" y="288" width="8" height="22" fill="var(--green)"/>'+txt(440,330,'CRIMP · Space on the 3rd click',{s:8,c:L,a:'middle'})
+      +'<rect x="243" y="284" width="3" height="30" fill="#fff"/>'+txt(560,300,'zip · zip · zip',{s:9,c:'var(--tierA)',w:700})+txt(560,344,'all Perfect → brass flash',{s:8,c:L,op:.7})
+  });
+
+  screen('scr-qa',{aria:'QA screen mockup',tier:'var(--tierB)',title:'THE LOOK · QA',keys:'← → park · E FAIL · Space PASS · Esc',groove:62,who:'Jo',
+    floor:'<rect x="230" y="70" width="110" height="46" rx="5" fill="var(--soot)" opacity=".92"/>'+txt(285,90,'QA',{a:'middle',c:'var(--yellow)',s:11,w:700})+txt(285,106,'one lamp',{a:'middle',c:L,s:8,op:.8})+'<rect x="270" y="122" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/>'+av(277,129,'var(--yellow)','Jo',{hat:'var(--red)'})
+      +'<path d="M340 60 L370 40" stroke="var(--soot)" stroke-width="3"/><circle cx="372" cy="40" r="6" fill="var(--yellow)"/><circle cx="372" cy="40" r="14" fill="var(--yellow)" opacity=".2"/>'
+      +'<rect x="90" y="70" width="110" height="46" rx="5" fill="var(--soot)" opacity=".6"/>'+txt(145,90,'CASING PREP',{a:'middle',c:'var(--yellow)',s:9,w:700})+'<line x1="100" y1="100" x2="112" y2="108" stroke="#fff" stroke-width="2"/><line x1="112" y1="100" x2="124" y2="108" stroke="#fff" stroke-width="2"/><line x1="124" y1="100" x2="136" y2="108" stroke="#fff" stroke-width="2"/>'+txt(145,130,'3 chalk marks → red QA strip',{a:'middle',s:8,c:'var(--red)'})
+      +'<rect x="400" y="80" width="90" height="20" rx="3" fill="var(--teal)" opacity=".55"/>'+txt(445,74,'pass 2/4',{a:'middle',s:8,op:.7})+'<rect x="500" y="80" width="60" height="20" rx="3" fill="var(--red)" opacity=".35"/>'+txt(530,74,'rework 1/4',{a:'middle',s:8,op:.7}),
+    overlay:'<rect x="16" y="266" width="190" height="84" rx="4" fill="#E8E6DD" opacity=".08"/>'+txt(26,280,'ORDER CARD',{s:8,c:L,op:.6})+txt(120,280,'STRICT',{s:8,c:'var(--yellow)',w:700})+txt(26,292,'Red Stick × 3',{s:10,c:L,w:700})+txt(26,308,'long fuse · cap · clean',{s:9,c:L,op:.85})+txt(26,326,'strict fails 1 dent or any fill ≠ 1.0',{s:7.5,c:L,op:.6})
+      +'<rect x="220" y="266" width="250" height="84" rx="4" fill="#E8E6DD" opacity=".08"/>'+txt(230,280,'UNDER THE LAMP',{s:8,c:L,op:.6})+txt(460,280,'2× zoom',{s:8,c:L,op:.6,a:'end'})
+      +'<rect x="240" y="286" width="120" height="30" rx="4" fill="var(--red)"/><rect x="360" y="296" width="30" height="8" fill="#B08A4A"/><circle cx="292" cy="300" r="3" fill="#000" opacity=".45"/><rect x="330" y="284" width="2" height="34" fill="#fff" opacity=".7"/>'+txt(331,334,'fill 0.97',{s:7.5,c:'var(--yellow)',a:'middle'})+txt(292,334,'1 ding',{s:7.5,c:'var(--yellow)',a:'middle'})
+      +'<rect x="280" y="282" width="26" height="38" rx="3" fill="none" stroke="var(--yellow)" stroke-width="2"/>'+txt(293,346,'◀ CONDITION ▶',{s:8,c:'var(--yellow)',a:'middle',w:700})
+      +key(490,286,'E',18)+'<rect x="514" y="272" width="46" height="22" rx="3" fill="none" stroke="var(--red)" stroke-width="2" transform="rotate(-4 537 283)"/>'+txt(537,287,'FAIL',{s:9,c:'var(--red)',a:'middle',w:700})+txt(568,286,'tagged: condition',{s:8,c:L,op:.7})
+      +key(490,326,'Space',44)+'<rect x="540" y="312" width="46" height="22" rx="3" fill="none" stroke="var(--green)" stroke-width="2" transform="rotate(-4 563 323)"/>'+txt(563,327,'PASS',{s:9,c:'var(--green)',a:'middle',w:700})+txt(595,326,'→ WITHIN SPEC?',{s:8,c:L,op:.7})
+  });
+
+  screen('scr-packing',{aria:'Packing Drop Well screen mockup',tier:'var(--tierC)',title:'DROP WELL · PACKING',keys:'← → col · ↑ rot · ↓ yank · Space · E lid · Q/E',groove:68,who:'Marco',
+    floor:'<rect x="230" y="66" width="140" height="46" rx="5" fill="var(--soot)" opacity=".92"/>'+txt(300,86,'PACKING',{a:'middle',c:'var(--yellow)',s:11,w:700})+txt(300,102,'two benches',{a:'middle',c:L,s:8,op:.8})+'<rect x="248" y="118" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/><rect x="322" y="118" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/>'+av(255,125,'var(--green)','Marco',{hat:'var(--red)'})
+      +bubble(300,60,'NEED BLUE ×2',70)
+      +'<rect x="140" y="80" width="80" height="20" rx="3" fill="var(--teal)" opacity=".55"/>'+txt(180,74,'shared shelf 5/8',{a:'middle',s:8,op:.7})+[0,1,2,3,4].map(function(i){return '<rect x="'+(146+i*14)+'" y="84" width="7" height="12" rx="1" fill="'+(i===1?'var(--teal)':'var(--red)')+'"/>';}).join('')
+      +'<rect x="400" y="86" width="26" height="20" rx="2" fill="#B08A4A" stroke="var(--soot)"/><rect x="432" y="86" width="26" height="20" rx="2" fill="#B08A4A" stroke="var(--soot)" transform="rotate(-6 445 96)"/>'+txt(438,118,'2 closed · one crooked (?)',{a:'middle',s:8,op:.7})+txt(445,80,'?',{a:'middle',s:11,c:'var(--red)',w:700}),
+    overlay:txt(16,268,'CRATE',{s:9,c:L,op:.7})+key(16,286,'S',18)+key(40,286,'M',18)+key(64,286,'L',18)+'<rect x="39" y="274" width="20" height="16" rx="3" fill="none" stroke="var(--yellow)" stroke-width="2"/>'+txt(90,286,'M 3×4 · 6 sticks',{s:9,c:L,op:.8})+txt(16,318,'order: Red ×2 · Blue ×2 · Mega ×1',{s:9,c:L})+txt(16,336,'Q/E before the first drop',{s:8,c:L,op:.6})
+      +[0,1,2].map(function(c){return [0,1,2,3].map(function(r){return '<rect x="'+(260+c*30)+'" y="'+(252+r*24)+'" width="28" height="22" rx="2" fill="none" stroke="#E8E6DD" stroke-opacity=".3" stroke-dasharray="3 2"/>';}).join('');}).join('')
+      +'<rect x="260" y="324" width="28" height="22" rx="2" fill="var(--red)"/><rect x="290" y="324" width="28" height="22" rx="2" fill="var(--red)"/><rect x="320" y="300" width="28" height="46" rx="2" fill="var(--teal)"/><rect x="260" y="300" width="28" height="22" rx="2" fill="var(--red)"/>'
+      +'<rect x="290" y="252" width="28" height="46" rx="2" fill="var(--teal)" opacity=".85" stroke="#fff"/>'+txt(304,270,'▼ hover · blue · vertical',{s:8,c:L,a:'middle'})
+      +txt(374,300,'a mid-column vertical strands the edges',{s:8,c:L,op:.75})+txt(374,314,'overhang → hole → not SNUG',{s:8,c:'var(--yellow)'})
+      +txt(374,338,'LID BOUNCE · E on the first apex = THOOM',{s:8,c:'var(--green)',w:700})+txt(374,350,'late = RATTLY · well full + Space = CRAM',{s:8,c:L,op:.7})
+  });
+
+  screen('scr-dock',{aria:'Dock screen mockup',tier:'var(--tierC)',title:'THE DOCK · SHIPPING',keys:'E set · Space / ↑ shove on the beep · hold E tailgate',groove:74,who:'Jo',
+    floor:'<rect x="180" y="0" width="300" height="10" fill="var(--surface2)"/><g transform="translate(200 12)"><rect x="0" y="10" width="200" height="60" rx="6" fill="var(--surface)" stroke="var(--soot)" stroke-width="3"/><rect x="200" y="26" width="56" height="44" rx="4" fill="var(--surface)" stroke="var(--soot)" stroke-width="3"/><circle cx="36" cy="74" r="10" fill="var(--soot)"/><circle cx="160" cy="74" r="10" fill="var(--soot)"/><circle cx="230" cy="74" r="10" fill="var(--soot)"/>'
+      +[0,1,2,3].map(function(i){return '<rect x="'+(14+i*46)+'" y="22" width="38" height="36" rx="3" fill="'+(i<2?'#B08A4A':'none')+'" stroke="'+(i<2?'var(--soot)':'#B08A4A')+'" stroke-width="2" stroke-dasharray="'+(i<2?'0':'4 3')+'"/>';}).join('')+txt(100,52,'',{})+'</g>'
+      +txt(330,110,'TRUCK 3 · 2 / 4 slots · lanes = slots',{a:'middle',s:9,op:.8})
+      +[0,1,2,3].map(function(i){return '<rect x="'+(214+i*46)+'" y="130" width="34" height="34" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/>';}).join('')+txt(330,178,'ramp · 4 lanes',{a:'middle',s:8,op:.7})
+      +av(223,139,'var(--yellow)','Jo',{crate:true,hat:'var(--red)'})+av(315,139,'#8B5CF6','Alex',{crate:true,hat:'var(--red)'})
+      +'<rect x="500" y="40" width="60" height="70" rx="6" fill="var(--soot)"/>'+txt(530,72,'00',{a:'middle',s:22,c:'var(--yellow)',w:700,f:'Big Shoulders Display, Impact, sans-serif'})+txt(530,98,'14',{a:'middle',s:22,c:'var(--yellow)',w:700,f:'Big Shoulders Display, Impact, sans-serif'})
+      +'<circle cx="150" cy="40" r="10" fill="var(--yellow)"/><circle cx="150" cy="40" r="22" fill="var(--yellow)" opacity=".3"/>'+txt(150,68,'bay light · strobes on the beep',{a:'middle',s:8,op:.7})
+      +'<rect x="90" y="150" width="60" height="20" rx="3" fill="var(--red)" opacity=".3" stroke="var(--red)" stroke-dasharray="3 3"/>'+txt(120,164,'RETURNS',{a:'middle',s:8,c:'var(--red)'}),
+    overlay:txt(16,268,'SHOVE ON THE BEEP · 1 Hz',{s:9,c:L,op:.7})
+      +[0,1,2,3,4,5].map(function(i){return '<circle cx="'+(40+i*70)+'" cy="300" r="'+(i===4?12:6)+'" fill="var(--yellow)" opacity="'+(i===4?1:.45)+'"/>';}).join('')+txt(320,336,'← tap Space or ↑ now',{s:9,c:L,a:'middle',w:700})
+      +'<rect x="440" y="270" width="184" height="80" rx="4" fill="#E8E6DD" opacity=".06"/>'+txt(452,286,'±70 THUD · springs sag · lamp',{s:8,c:'var(--green)',w:700})+txt(452,300,'±180 scrape · seated',{s:8,c:L,op:.8})+txt(452,314,'miss: stalls halfway, next beep',{s:8,c:L,op:.8})+txt(452,328,'never Returns',{s:8,c:L,op:.6})+txt(452,344,'last slot → hold E 0.5 s → SLAM',{s:8,c:'var(--yellow)',w:700})
+  });
+
+  screen('scr-chore',{aria:'Tier D chore screen mockup',tier:'var(--tierD)',title:'UNJAM · TIER D',keys:'hold E',groove:24,who:'Marco',
+    floor:'<rect x="200" y="60" width="150" height="46" rx="5" fill="var(--soot)" opacity=".92"/>'+txt(275,80,'ASSEMBLY',{a:'middle',c:'var(--yellow)',s:11,w:700})+txt(275,96,'JAMMED',{a:'middle',c:'var(--red)',s:9,w:700})+keg(262,118,'prime')+txt(300,122,'← a thrown keg on the work tile',{s:8,op:.7})
+      +'<rect x="222" y="112" width="30" height="30" rx="4" fill="none" stroke="var(--yellow)" stroke-width="2"/>'+av(360,119,'var(--green)','Marco',{hat:'var(--red)',mouth:'sad'})+'<line x1="352" y1="100" x2="352" y2="126" stroke="#B08A4A" stroke-width="3"/><circle cx="352" cy="98" r="4" fill="var(--red)"/>'
+      +'<rect x="30" y="140" width="120" height="60" rx="4" fill="var(--red)" opacity=".15"/>'+txt(90,172,'THE CHURN',{a:'middle',s:10,c:'var(--red)',w:700}),
+    overlay:txt(16,272,'WAITING FOR VENDOR SUPPORT',{s:10,c:L,w:700})+'<rect x="16" y="286" width="608" height="14" rx="3" fill="#E8E6DD" opacity=".15"/><rect x="16" y="286" width="250" height="14" rx="3" fill="#E8E6DD" opacity=".5"/>'+txt(16,320,'2.3 s remaining. You cannot do anything else. Nobody can help.',{s:9,c:L,op:.8})+txt(16,340,'no combo · no particles · no sound reward · a flat click when it ends',{s:8,c:L,op:.55})
+  });
+
+  /* ---------------- picks → db ---------------- */
+  var forms=Array.prototype.slice.call(document.querySelectorAll('form[data-pick]'));
+  function label(form){ var r=form.querySelector('input:checked'); var t=r&&r.closest('label').querySelector('.t'); return t?t.childNodes[0].textContent.trim():''; }
+  forms.forEach(function(f){ f.addEventListener('submit',function(e){ e.preventDefault(); }); });
+  if(!(window.claude&&window.claude.use)){ document.getElementById('db-note').hidden=false; forms.forEach(function(f){ f.querySelector('button').disabled=true; }); return; }
+  window.claude.use('db').then(function(db){
+    if(!db){ document.getElementById('db-note').hidden=false; forms.forEach(function(f){ f.querySelector('button').disabled=true; }); return; }
+    forms.forEach(function(f){ var k=f.getAttribute('data-pick'); var st=f.querySelector('[data-status]'); var ref=db.doc('picks/'+k);
+      ref.get().then(function(snap){ if(snap.exists){ var d=snap.data(); var r=f.querySelector('input[value="'+d.answer+'"]'); if(r) r.checked=true; st.textContent='Saved · '+d.label; } }).catch(function(){});
+      f.addEventListener('submit',function(){ var v=f.querySelector('input:checked'); if(!v) return; var b=f.querySelector('button'); b.disabled=true; st.textContent='Saving…';
+        ref.set({answer:v.value,label:label(f),at:new Date().toISOString()}).then(function(){ st.textContent='Saved · '+label(f); b.disabled=false; }).catch(function(err){ st.textContent='Couldn’t save ('+(err&&err.code||'error')+') — tell me in chat'; b.disabled=false; }); });
+    });
+  });
+})();
+</script>

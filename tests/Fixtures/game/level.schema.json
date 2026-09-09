@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://dynamite.test/schemas/test-level.json",
+  "title": "Test level config",
+  "description": "A deliberately permissive stand-in for shared/src/config/schema.json. It checks only the keys Laravel itself reads, so F01's tests do not move every time the real schema does.",
+  "type": "object",
+  "required": ["key", "name", "layout", "clipboardSeconds"],
+  "properties": {
+    "key": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "layout": { "type": "string", "minLength": 1 },
+    "clipboardSeconds": { "type": "number" },
+    "day": {
+      "type": "object",
+      "properties": {
+        "endsOn": { "enum": ["either", "book", "clock", "never"] }
+      }
+    },
+    "grading": {
+      "type": "object",
+      "properties": {
+        "advanceOn": { "enum": ["A", "B", "C", "D"] }
+      }
+    },
+    "recipes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "inputs": { "type": "object" }
+        }
+      }
+    }
+  }
+}
