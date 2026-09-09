@@ -278,11 +278,11 @@
             "properties": {
                 "ok": {
                     "type": "number",
-                    "exclusiveMinimum": 0
+                    "minimum": 100
                 },
                 "perfect": {
                     "type": "number",
-                    "exclusiveMinimum": 0
+                    "minimum": 45
                 }
             }
         },

@@ -81,12 +81,17 @@ function orderNumber(id: string): number {
     return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
 }
 
-/** The order chip: the next two jobs, in the order F09 will settle them. */
+/**
+ * The order chip: the next two jobs, in the order F09 will settle them. `open`
+ * is the whole definition, because `activeOrderId` — what `seat` binds to the
+ * stick — counts nothing else, and a truck that left short stamps its order
+ * `partial` for good.
+ */
 function openOrders(world: World): OrderState[] {
     const orders: OrderState[] = [];
 
     world.state.orders.forEach((order) => {
-        if (order.status === 'open' || order.status === 'partial') orders.push(order);
+        if (order.status === 'open') orders.push(order);
     });
 
     return orders.sort((a, b) => orderNumber(a.id) - orderNumber(b.id));

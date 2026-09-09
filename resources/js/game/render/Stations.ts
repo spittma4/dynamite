@@ -3,6 +3,7 @@ import {
     type FactoryState,
     type LayoutConfig,
     type LevelConfig,
+    type ItemType,
     type PlayerState,
     STATION_LABEL,
     type StationConfig,
@@ -16,6 +17,7 @@ import {
 import Phaser from 'phaser';
 
 import { lineColour } from './palette';
+import { dropTargets, shelfLabel } from './dropTargets';
 import { type GlyphItem, drawItemGlyph } from './stationGlyphs';
 import type { Factory, FactoryConn } from '../scenes/Factory';
 
@@ -187,6 +189,7 @@ interface ShelfBox {
     kind: 'in' | 'out';
     tile: Tile;
     cap: number;
+    accepts?: ItemType[];
     centre: { x: number; y: number };
     counter: Phaser.GameObjects.Text;
 }
@@ -247,6 +250,19 @@ class StationSprite {
             );
             counter.setOrigin(0.5, 0);
             this.container.add(counter);
+
+            // Grey boxes teach nothing: say what the shelf is for. The label goes on
+            // whichever side faces away from the machine, so it never lands on the
+            // nameplate or on the other shelf's counter.
+            const label = text(scene, shelfLabel(shelf.kind, shelf.accepts), COUNTER_PX, '#9aa0a6');
+            const outward = shelf.tile[0] <= (bbox.x0 + bbox.x1) / 2 ? -1 : 1;
+
+            label.setPosition(
+                (shelf.tile[0] + (outward < 0 ? 0 : 1)) * TILE_PX + outward * COUNTER_GAP,
+                (shelf.tile[1] + 0.5) * TILE_PX,
+            );
+            label.setOrigin(outward < 0 ? 1 : 0, 0.5);
+            this.container.add(label);
             this.shelves.push({
                 ...shelf,
                 centre: {
@@ -486,11 +502,16 @@ class StationSprite {
     }
 }
 
-function text(scene: Factory, value: string, size: number): Phaser.GameObjects.Text {
+function text(
+    scene: Factory,
+    value: string,
+    size: number,
+    colour = '#ffffff',
+): Phaser.GameObjects.Text {
     const label = scene.add.text(0, 0, value, {
         fontFamily: 'monospace',
         fontSize: `${size}px`,
-        color: '#ffffff',
+        color: colour,
     });
 
     label.setOrigin(0.5, 1);
@@ -499,11 +520,18 @@ function text(scene: Factory, value: string, size: number): Phaser.GameObjects.T
     return label;
 }
 
-function shelvesOf(cfg: StationConfig): { kind: 'in' | 'out'; tile: Tile; cap: number }[] {
-    const shelves: { kind: 'in' | 'out'; tile: Tile; cap: number }[] = [];
+function shelvesOf(
+    cfg: StationConfig,
+): { kind: 'in' | 'out'; tile: Tile; cap: number; accepts?: ItemType[] }[] {
+    const shelves: { kind: 'in' | 'out'; tile: Tile; cap: number; accepts?: ItemType[] }[] = [];
 
     if (cfg.inputShelf) {
-        shelves.push({ kind: 'in', tile: cfg.inputShelf.tile, cap: cfg.inputShelf.capacity });
+        shelves.push({
+            kind: 'in',
+            tile: cfg.inputShelf.tile,
+            cap: cfg.inputShelf.capacity,
+            accepts: cfg.inputShelf.accepts as ItemType[] | undefined,
+        });
     }
 
     if (cfg.outputShelf) {
@@ -538,12 +566,18 @@ function shelfContents(
 class StationsLayer {
     private readonly root: Phaser.GameObjects.Container;
     private readonly sprites = new Map<string, StationSprite>();
+    private readonly hints: Phaser.GameObjects.Graphics;
+    private hintTiles: Tile[] = [];
+    private hintedFor = '';
+    private hintsDrawn = false;
     private builtFrom: LevelConfig | null = null;
     private destroyed = false;
 
     constructor(private readonly scene: Factory) {
         this.root = scene.add.container(0, 0);
         scene.layers.stations.add(this.root);
+        this.hints = scene.add.graphics();
+        scene.layers.stations.add(this.hints);
     }
 
     update(): void {
@@ -562,6 +596,64 @@ class StationsLayer {
         for (const [id, sprite] of this.sprites) {
             sprite.update(state.stations.get(id), state, copy, occupiedWorkTiles(crew, id));
         }
+
+        this.paintDropHints(state, level);
+    }
+
+    /**
+     * While the player carries something, outline every tile it may be put
+     * down on. "Where does this keg go?" is the question the floor could never
+     * answer before: the shelves are identical boxes until one of them lights up.
+     */
+    private paintDropHints(state: FactoryState, level: LevelConfig): void {
+        const me = state.players.get(this.scene.conn.sessionId);
+        const carried = me?.carrying ? state.items.get(me.carrying) : undefined;
+        const key = carried?.type ?? '';
+
+        if (key === this.hintedFor) {
+            this.pulseHints();
+
+            return;
+        }
+
+        this.hintedFor = key;
+        this.hints.clear();
+        this.hintTiles = [];
+
+        if (!carried) return;
+
+        for (const target of dropTargets(carried.type as ItemType, level)) {
+            this.hintTiles.push(...target.tiles);
+        }
+
+        this.pulseHints();
+    }
+
+    private pulseHints(): void {
+        // Nothing in hand: leave the canvas untouched rather than clearing an
+        // already-empty layer every frame, so an idle floor costs nothing.
+        if (this.hintTiles.length === 0) {
+            if (this.hintsDrawn) {
+                this.hints.clear();
+                this.hintsDrawn = false;
+            }
+
+            return;
+        }
+
+        this.hints.clear();
+        this.hintsDrawn = true;
+
+        // A slow breath rather than a blink: readable from across the floor,
+        // and it never competes with the DANGER beacon for attention.
+        const t = this.scene.time.now / 1000;
+        const alpha = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(t * 3));
+
+        this.hints.lineStyle(2, STATION_COLOURS.work, alpha);
+
+        for (const [x, y] of this.hintTiles) {
+            this.hints.strokeRect(x * TILE_PX + 2, y * TILE_PX + 2, TILE_PX - 4, TILE_PX - 4);
+        }
     }
 
     destroy(): void {
@@ -569,6 +661,7 @@ class StationsLayer {
 
         this.destroyed = true;
         this.clear();
+        this.hints.destroy();
         this.root.destroy();
     }
 

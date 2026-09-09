@@ -27,12 +27,13 @@ import type {
     JigTickView,
     JigTiles,
     MgOp,
+    OrderState,
     PlayerState,
     ScaledLevel,
     StationState,
 } from '../../src/shared';
 import { createItem, giveToPlayer, shelfPush } from '../../src/sim/items';
-import { activeOrderId } from '../../src/sim/orders';
+import { activeOrderId, settleOrder } from '../../src/sim/orders';
 import { leave, onInteract, onMg, tick as stationsTick } from '../../src/sim/stations';
 import type { World } from '../../src/sim/World';
 import { makeWorld } from '../helpers/world';
@@ -551,6 +552,22 @@ describe('pour', () => {
         expect(state.fill).toBe(1.2);
         expect(state.phase).toBe('parts');
         expect(effects).toContainEqual({ e: 'spill', tile: [13, 9] });
+    });
+
+    it('holds the pour open for the backdate grace every other beat gets', () => {
+        const { state, targetAt } = seated();
+
+        // A prime keg's OK window is 210 ms, so a tap sent on its edge can
+        // still arrive 200 ms later. The overfill is at +400 ms but the beat
+        // is not over until +410, the way a knot and a crimp close on theirs.
+        advance(state, targetAt + 0.4);
+
+        expect(state.phase).toBe('pour');
+
+        send(state, 'a1', 'pour', { at: targetAt + 0.21, view: { now: targetAt + 0.41 } });
+
+        expect(state.last).toMatchObject({ step: 'pour', grade: 'ok', note: '' });
+        expect(state.fill).toBe(1);
     });
 
     it('waits in pour with no keg and reads starved', () => {
@@ -1171,6 +1188,14 @@ function running(players = 2): World {
     return world;
 }
 
+function orderOf(world: World, id: string): OrderState {
+    const order = world.state.orders.get(id);
+
+    if (order === undefined) throw new Error(`no order ${id}`);
+
+    return order;
+}
+
 function playerOf(world: World, sessionId: string): PlayerState {
     const player = world.state.players.get(sessionId);
 
@@ -1287,6 +1312,67 @@ describe('the jig adapter', () => {
         expect(seated.orderId).toBe(activeOrderId(world));
         expect(seated.orderId).not.toBe('');
         expect(jig.orderChip).toHaveLength(2);
+    });
+
+    it('drops a settled partial order from the chip and from B first pick', () => {
+        const { world, b } = crewedJig();
+
+        orderOf(world, 'o-1').fuseLength = 'long';
+        orderOf(world, 'o-2').fuseLength = 'short';
+
+        // A truck that left one stick short stamps its order 'partial' for the
+        // rest of the day. The chip is what A builds to and what B fetches for,
+        // so it has to be the jobs F09 will still settle.
+        settleOrder(world, 'o-1', 1);
+        leave(world, b);
+        run(world, 0.05);
+        onInteract(world, standOn(world, 'session-1', [16, 9]));
+        world.state.clock += 4;
+        run(world, 0.1);
+
+        const chip = mg(world).orderChip as { orderId: string }[];
+
+        expect(chip.map((entry) => entry.orderId)).not.toContain('o-1');
+        expect(chip[0]?.orderId).toBe(activeOrderId(world));
+        expect(mg(world).bPick).toBe('short');
+    });
+
+    /** A damp keg pours over 7 beats, so the mark is 2.8 s out with room past it. */
+    function pouring(): { world: World; a: PlayerState; targetAt: number } {
+        const { world, a } = crewedJig();
+
+        shelveKeg(world, 0.7);
+        sendMg(world, a, 'seat', 0);
+        run(world, 0.1);
+
+        const { targetAt } = mg(world).pour as { targetAt: number };
+
+        return { world, a, targetAt };
+    }
+
+    it('judges a tap on the client clock offset, never on the raw timestamp', () => {
+        const { world, a, targetAt } = pouring();
+
+        run(world, targetAt - world.state.clock + 0.15);
+
+        // A tab opened five seconds after the whistle: `performance.now()` runs
+        // 5 s behind the clock, and `world.inputClock` is the only thing that
+        // knows it. Judged raw this is 5 s early; judged twice, 150 ms late.
+        world.runtime('session-0').clockOffsetMs = 5_000;
+        onMg(world, a, { stationId: 'assembly-a', op: 'pour', t: targetAt * 1000 - 5_000 });
+
+        expect(mg(world).last).toMatchObject({ step: 'pour', grade: 'perfect', note: '' });
+    });
+
+    it('clamps a stale tap to the backdate floor rather than the beat it claims', () => {
+        const { world, a, targetAt } = pouring();
+
+        run(world, targetAt - world.state.clock + 0.35);
+        onMg(world, a, { stationId: 'assembly-a', op: 'pour', t: targetAt * 1000 });
+
+        // The tap claims the mark exactly but arrives 350 ms after it, so it is
+        // judged at the MAX_INPUT_BACKDATE_S floor: 150 ms late, past the 140.
+        expect(mg(world).last).toMatchObject({ step: 'pour', grade: 'miss', note: 'late' });
     });
 
     it('takes a keg off the shelf and bumps kegsUsed', () => {

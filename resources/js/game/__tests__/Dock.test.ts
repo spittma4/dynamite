@@ -3,16 +3,30 @@ import { describe, expect, it } from 'vitest';
 
 import {
     DOCK_LEGEND,
+    TAILGATE_PROMPT,
     bandHalfFraction,
     canShove,
+    dockKeyAction,
     laneStatus,
     localLane,
     sweepFraction,
     tailgateOpen,
     truckHeadline,
 } from '../minigames/Dock';
-import { DRIVE_IN_SECONDS, bedSlots, lampLit, sagPx, truckSlide } from '../minigames/dock/TruckSprite';
-import { STROBE_FLASH_MS, bayLabel, flashOn, returnsCount, strobeOn } from '../minigames/dock/BayWall';
+import {
+    STROBE_FLASH_MS,
+    bayLabel,
+    flashOn,
+    returnsCount,
+    strobeOn,
+} from '../minigames/dock/BayWall';
+import {
+    DRIVE_IN_SECONDS,
+    bedSlots,
+    lampLit,
+    sagPx,
+    truckSlide,
+} from '../minigames/dock/TruckSprite';
 
 /**
  * The overlay's arithmetic, away from Phaser. Everything the dock draws is a
@@ -94,9 +108,9 @@ describe('canShove', () => {
 
         expect(canShove(staged, 1)).toBe(false);
         expect(canShove(staged, -1)).toBe(false);
-        expect(canShove(mg({ truck: { ...staged.truck, phase: 'away' }, lanes: staged.lanes }), 0)).toBe(
-            false,
-        );
+        const away = mg({ truck: { ...staged.truck, phase: 'away' }, lanes: staged.lanes });
+
+        expect(canShove(away, 0)).toBe(false);
     });
 });
 
@@ -134,25 +148,33 @@ describe('bandHalfFraction', () => {
 
 describe('truckHeadline', () => {
     it('counts the load and the time left while the truck is docked', () => {
-        expect(truckHeadline(mg({ truck: { ...mg().truck, loaded: 3 } }), 28)).toBe('TRUCK 3/8 · 00:12');
+        const loading = mg({ truck: { ...mg().truck, loaded: 3 } });
+
+        expect(truckHeadline(loading, 28)).toBe('TRUCK 3/8 · 00:12');
     });
 
     it('counts down to the next truck while it is away', () => {
-        expect(truckHeadline(mg({ truck: { ...mg().truck, phase: 'away', arrivesAt: 80 } }), 42)).toBe(
-            'NEXT TRUCK 00:38',
-        );
+        const away = mg({ truck: { ...mg().truck, phase: 'away', arrivesAt: 80 } });
+
+        expect(truckHeadline(away, 42)).toBe('NEXT TRUCK 00:38');
     });
 
     it('says the truck is pulling out while it leaves', () => {
-        expect(truckHeadline(mg({ truck: { ...mg().truck, phase: 'leaving' } }), 40)).toBe('TRUCK LEAVING');
+        const leaving = mg({ truck: { ...mg().truck, phase: 'leaving' } });
+
+        expect(truckHeadline(leaving, 40)).toBe('TRUCK LEAVING');
     });
 });
 
-describe('DOCK_LEGEND', () => {
+describe('the legend', () => {
     it('names every key the dock answers to', () => {
         expect(DOCK_LEGEND).toContain('SPACE');
         expect(DOCK_LEGEND).toContain('E');
         expect(DOCK_LEGEND).toContain('ESC');
+    });
+
+    it('asks for the hold by name once the tailgate window opens', () => {
+        expect(TAILGATE_PROMPT).toContain('HOLD E');
     });
 });
 
@@ -162,14 +184,11 @@ describe('bayLabel', () => {
     });
 
     it('counts an away or leaving truck up to the next arrival', () => {
-        expect(bayLabel(mg({ truck: { ...mg().truck, phase: 'away', arrivesAt: 80 } }), 75)).toEqual({
-            text: 'NEXT 00:05',
-            kind: 'next',
-        });
-        expect(bayLabel(mg({ truck: { ...mg().truck, phase: 'leaving', arrivesAt: 80 } }), 41)).toEqual({
-            text: 'NEXT 00:39',
-            kind: 'next',
-        });
+        const away = mg({ truck: { ...mg().truck, phase: 'away', arrivesAt: 80 } });
+        const leaving = mg({ truck: { ...mg().truck, phase: 'leaving', arrivesAt: 80 } });
+
+        expect(bayLabel(away, 75)).toEqual({ text: 'NEXT 00:05', kind: 'next' });
+        expect(bayLabel(leaving, 41)).toEqual({ text: 'NEXT 00:39', kind: 'next' });
     });
 
     it('shouts SLAM IT for as long as the tailgate window is open', () => {
@@ -281,5 +300,43 @@ describe('truckSlide', () => {
 
     it('holds the truck still when it joined mid-departure and never saw the flip', () => {
         expect(truckSlide('leaving', 40.75, 20, null, 1.5)).toBe(0);
+    });
+});
+
+describe('dockKeyAction', () => {
+    const docked = mg({ lanes: [lane('s-1'), lane('s-2', true), lane(), lane()] });
+    const full = { ...docked.truck, loaded: 8 };
+    const slam = mg({ tailgateUntil: 33, truck: full, lanes: docked.lanes });
+
+    it('shoves on SPACE down on a lane with a stick to shove', () => {
+        expect(dockKeyAction('space', true, docked, 0, false, 25)).toBe('shove');
+        expect(dockKeyAction('space', true, docked, 1, false, 25)).toBe('shove');
+    });
+
+    it('lets SPACE fall through to the floor when there is nothing to shove', () => {
+        expect(dockKeyAction('space', true, docked, 2, false, 25)).toBe('none');
+        expect(dockKeyAction('space', false, docked, 0, false, 25)).toBe('none');
+        expect(dockKeyAction('space', true, null, 0, false, 25)).toBe('none');
+    });
+
+    it('takes E only inside the tailgate window, on a lane', () => {
+        expect(dockKeyAction('interact', true, slam, 0, false, 32)).toBe('tailgate-down');
+        expect(dockKeyAction('interact', true, slam, -1, false, 32)).toBe('none');
+        expect(dockKeyAction('interact', true, slam, 0, false, 34)).toBe('none');
+    });
+
+    it('leaves every other E to the floor, which is the only way a stick reaches a lane', () => {
+        expect(dockKeyAction('interact', true, docked, 0, false, 25)).toBe('none');
+    });
+
+    it('releases a hold it started and stays quiet about one it did not', () => {
+        expect(dockKeyAction('interact', false, slam, 0, true, 32)).toBe('tailgate-up');
+        expect(dockKeyAction('interact', false, slam, 0, false, 32)).toBe('none');
+    });
+
+    it('never takes ESC or an arrow: the dock leaves and walks like the floor', () => {
+        expect(dockKeyAction('esc', true, slam, 0, true, 32)).toBe('none');
+        expect(dockKeyAction('left', true, docked, 0, false, 25)).toBe('none');
+        expect(dockKeyAction('up', true, docked, 0, false, 25)).toBe('none');
     });
 });

@@ -166,6 +166,21 @@ describe('validateLevelConfig — the rules a JSON Schema cannot state', () => {
         expect(errorsOf(level).join('\n')).toMatch(/catchPerfectMs/);
     });
 
+    /**
+     * The floors are the jitter allowance a server-side judge needs (docs/04
+     * §9), so they are not a dial a level gets to turn down: every other window
+     * is only ever checked against them.
+     */
+    it('refuses a level that lowers the floors themselves', () => {
+        const level = rawLevelFixture();
+        level.windowFloorsMs = { ok: 20, perfect: 5 };
+
+        const errors = errorsOf(level).join('\n');
+
+        expect(errors).toMatch(/windowFloorsMs\/ok/);
+        expect(errors).toMatch(/windowFloorsMs\/perfect/);
+    });
+
     it('refuses a slammer heat window tighter than the floor', () => {
         const level = rawLevelFixture();
         const stations = level.stations as { minigame: { heat: Record<string, unknown> } }[];

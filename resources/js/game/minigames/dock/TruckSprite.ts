@@ -150,7 +150,13 @@ export class TruckSprite {
             this.lastPhase = phase;
         }
 
-        const slide = truckSlide(phase, serverNow, mg.truck.arrivesAt, this.leftAt, this.leaveSeconds);
+        const slide = truckSlide(
+            phase,
+            serverNow,
+            mg.truck.arrivesAt,
+            this.leftAt,
+            this.leaveSeconds,
+        );
 
         this.container.setVisible(slide < 1);
 

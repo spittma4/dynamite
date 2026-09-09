@@ -9,7 +9,10 @@ import {
     gaugeGeometry,
     heatAlpha,
     heatTint,
+    isRearming,
     keyPlan,
+    localAfterPhase,
+    localMashStale,
     needleLive,
     needleStartMs,
     needleX,
@@ -96,7 +99,9 @@ describe('keyPlan', () => {
     });
 
     it('still sends a mash in charge and lets the server refuse it', () => {
-        expect(keyPlan('charge', 'left', true, false)).toEqual({ kind: 'send', op: 'mash', v: 'l' });
+        const plan = keyPlan('charge', 'left', true, false);
+
+        expect(plan).toEqual({ kind: 'send', op: 'mash', v: 'l' });
     });
 });
 
@@ -244,6 +249,71 @@ describe('chuteLights', () => {
 
     it('keeps a chute lit that both agree on', () => {
         expect(chuteLights(['l'], ['l', 'u'])).toEqual({ l: true, u: true, r: false });
+    });
+});
+
+describe('localMashStale', () => {
+    it('unlights a chute the re-arming machine refused, once a round trip has passed', () => {
+        expect(localMashStale('idle', 0, 401, 400)).toBe(true);
+    });
+
+    it('leaves a fresh press alone while the patch that takes it is still in flight', () => {
+        expect(localMashStale('idle', 0, 200, 400)).toBe(false);
+    });
+
+    it('keeps the light once the server has the mash, however long it takes', () => {
+        expect(localMashStale('mash', 1, 5_000, 400)).toBe(false);
+        expect(localMashStale('idle', 1, 5_000, 400)).toBe(false);
+    });
+
+    it('never fights a charge or a full pair of hands', () => {
+        expect(localMashStale('charge', 0, 5_000, 400)).toBe(false);
+        expect(localMashStale('hands', 0, 5_000, 400)).toBe(false);
+    });
+});
+
+describe('isRearming', () => {
+    /**
+     * F05 writes `working` for both halves of a cycle, so the state on its own
+     * cannot tell a mash from the re-arm that follows it — and dimming the keys
+     * on `working` alone dims them exactly while they are live.
+     */
+    it('leaves the chutes bright while the operator is mid-rep', () => {
+        expect(isRearming('mash', 'working')).toBe(false);
+        expect(isRearming('charge', 'working')).toBe(false);
+    });
+
+    it('dims them once the rep is over and the machine is still working', () => {
+        expect(isRearming('idle', 'working')).toBe(true);
+        expect(isRearming('hands', 'working')).toBe(true);
+    });
+
+    it('leaves them bright on a machine that is not working at all', () => {
+        expect(isRearming('idle', 'idle')).toBe(false);
+        expect(isRearming('idle', 'starved')).toBe(false);
+        expect(isRearming('mash', 'jammed')).toBe(false);
+    });
+});
+
+describe('localAfterPhase', () => {
+    /**
+     * The three presses of one mash can land in different server ticks, and the
+     * patch that confirms the first is a phase change. Wiping the local record
+     * there drops the other two — the fast mash the heat curve rewards is
+     * exactly the case that splits.
+     */
+    it('keeps the presses the confirming patch has not caught up with', () => {
+        expect(localAfterPhase('mash', ['l', 'u', 'r'])).toEqual(['l', 'u', 'r']);
+        expect(chuteLights(['l'], localAfterPhase('mash', ['l', 'u', 'r']))).toEqual({
+            l: true,
+            u: true,
+            r: true,
+        });
+    });
+
+    it('forgets them once the cycle is over or the hands are full', () => {
+        expect(localAfterPhase('idle', ['l', 'u', 'r'])).toEqual([]);
+        expect(localAfterPhase('hands', ['l', 'u', 'r'])).toEqual([]);
     });
 });
 

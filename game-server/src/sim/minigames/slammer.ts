@@ -337,9 +337,19 @@ export const slammerModule: MinigameModule = {
                     mg.phase = 'idle';
 
                     ctx.setMg(mg);
-                } else if (mg.phase === 'charge' && !ctx.paused) {
-                    // An interrupt must not eat the hold, and holding forever
-                    // must not be a way to dodge the miss.
+                } else if (mg.phase === 'charge' && ctx.paused) {
+                    // F05 drops `mg` for the whole interrupt, so a plunger that
+                    // kept climbing would be half a second the player is not
+                    // allowed to release in. The anchor rides the clock instead
+                    // — the Jig shifts its beats the same way — and the judge,
+                    // the overhold and the drawn gauge all stay on one hold.
+                    chargeAt += dt;
+                    chargeT += dt * 1000;
+                    mg.chargeStartAt = chargeAt;
+
+                    ctx.setMg(mg);
+                } else if (mg.phase === 'charge') {
+                    // Holding forever must not be a way to dodge the miss.
                     chargeHeldMs += dt * 1000;
 
                     if (chargeHeldMs > bandCenterMs + okMs + heat.overholdMs) {

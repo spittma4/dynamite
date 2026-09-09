@@ -595,6 +595,48 @@ describe('the overhold', () => {
     });
 });
 
+describe('an interrupt mid-charge', () => {
+    /** F05's own cadence: tick on the clock the station is standing on, then move it. */
+    function run(to: number): void {
+        while (world.state.clock < to - 1e-9) {
+            stationsTick(world, 0.05);
+            world.state.clock = Math.round((world.state.clock + 0.05) * 1000) / 1000;
+        }
+    }
+
+    /** A 0.5 s mash at clock 4–4.5, so the climb is 1.0 s and the band centre 1000 ms. */
+    function startCharge(): void {
+        world.state.clock = 4;
+        send('mash', 1000, 'l');
+        send('mash', 1250, 'u');
+        world.state.clock = 4.5;
+        send('mash', 1500, 'r');
+        send('charge', 1500);
+    }
+
+    it('holds the plunger where it stands, so the hairline is still the hairline', () => {
+        startCharge();
+
+        expect(mgOf(world).tCharge).toBeCloseTo(1, 10);
+
+        pauseStation(world, 'powder-a', 0.5);
+        run(5);
+
+        // Ten paused ticks carry the anchor along with the clock, so the gauge
+        // the overlay draws from waits out the distraction rather than climbing
+        // through half a second the player is not allowed to release in.
+        expect(mgOf(world).chargeStartAt).toBeCloseTo(5, 10);
+        expect(mgOf(world).phase).toBe('charge');
+
+        run(6);
+        send('release', 3000);
+
+        expect(mgOf(world).lastErrorMs).toBe(0);
+        expect(mgOf(world).lastOutcome).toBe('dead_center');
+        expect(kegs()).toEqual([{ quality: 1.0, prime: true }]);
+    });
+});
+
 describe('combo tiers', () => {
     it('lights the beacon gold at tier 2 and clears it on a miss', () => {
         chain(25);

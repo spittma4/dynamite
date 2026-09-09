@@ -623,7 +623,15 @@ function advancePhrase(
             return;
         }
 
-        if (reached(view.now, overfillAt(state.pour))) {
+        // The tap is judged at the overfill, where the jar goes over the top,
+        // but the beat is not over until the OK window and its backdate have
+        // both passed — the rule the knots and the crimp already close on.
+        const closed = closesAt(
+            state.pour.targetAt,
+            pourWindow(state.cfg.pour, state.pour.primeKeg).okMs,
+        );
+
+        if (reached(view.now, Math.max(overfillAt(state.pour), closed))) {
             resolvePour(state, overfillAt(state.pour), effects);
         }
 

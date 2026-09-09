@@ -1,12 +1,20 @@
-import { MAX_INPUT_BACKDATE_S, type JigMg, type PourConfig, type TossConfig } from '@shared';
+import {
+    MAX_INPUT_BACKDATE_S,
+    type AssemblyMinigame,
+    type JigMg,
+    type PourConfig,
+    type TossConfig,
+} from '@shared';
 import { describe, expect, it } from 'vitest';
 
 import {
     JIG_COLOURS,
+    type JigSpan,
     bKeyOp,
     bandsAround,
     beatMarks,
     casingDings,
+    closeAt,
     fractionIn,
     fuseLabel,
     isFrozen,
@@ -17,6 +25,7 @@ import {
     parseJigMg,
     phaseSpan,
     pickerBlock,
+    pickerCarrying,
     popFor,
     pourBands,
     primeFlash,
@@ -41,6 +50,13 @@ const POUR: PourConfig = {
 };
 
 const TOSS: TossConfig = { arcSeconds: 0.5, perfectMs: 120, okMs: 250 };
+
+const CFG: AssemblyMinigame = {
+    pour: POUR,
+    knots: { long: 3, short: 2, secondsPerKnot: 0.4, perfectMs: 60, okMs: 140 },
+    crimp: { clicks: 3, clickSeconds: 0.2, perfectMs: 80, okMs: 200 },
+    toss: TOSS,
+};
 
 function mg(overrides: Partial<JigMg> = {}): JigMg {
     return {
@@ -74,6 +90,15 @@ function mg(overrides: Partial<JigMg> = {}): JigMg {
         primeAt: 0,
         ...overrides,
     };
+}
+
+/** `phaseSpan` is nullable; every phase these tests span is a running one. */
+function span(state: JigMg): JigSpan {
+    const found = phaseSpan(state, CFG);
+
+    if (found === null) throw new Error('the phase has no span');
+
+    return found;
 }
 
 describe('parseJigMg', () => {
@@ -175,13 +200,25 @@ describe('pickerBlock', () => {
     });
 });
 
+describe('pickerCarrying', () => {
+    it('greys the picker out for the hands the seat is actually blocked by', () => {
+        expect(pickerCarrying('a', 'k-1')).toBe('k-1');
+        expect(pickerCarrying('a', '')).toBe('');
+    });
+
+    it('never reads a watcher’s own hands onto the panel it is watching', () => {
+        expect(pickerCarrying('spectator', 'k-1')).toBe('');
+        expect(pickerCarrying('b', 'k-1')).toBe('');
+    });
+});
+
 describe('phaseSpan', () => {
     it('spans the re-arm bar while the machine resets and nothing once it is armed', () => {
-        expect(phaseSpan(mg({ phase: 'seat', rearmFrom: 4, rearmAt: 7 }))).toEqual({
+        expect(phaseSpan(mg({ phase: 'seat', rearmFrom: 4, rearmAt: 7 }), CFG)).toEqual({
             from: 4,
             to: 7,
         });
-        expect(phaseSpan(mg({ phase: 'seat', rearmFrom: 4, rearmAt: 4 }))).toBeNull();
+        expect(phaseSpan(mg({ phase: 'seat', rearmFrom: 4, rearmAt: 4 }), CFG)).toBeNull();
     });
 
     it('spans the pour from the first beat to the overfill point', () => {
@@ -190,32 +227,43 @@ describe('phaseSpan', () => {
                 phase: 'pour',
                 pour: { startAt: 100, targetAt: 102, beats: 5, primeKeg: false },
             }),
+            CFG,
         );
 
         expect(span).toEqual({ from: 100, to: 102.4 });
     });
 
-    it('spans the knots to the last marker and the crimp to the third click', () => {
-        expect(
-            phaseSpan(mg({ phase: 'knots', beatStartAt: 102.4, knotAt: [102.8, 103.2, 103.6] })),
-        ).toEqual({ from: 102.4, to: 103.6 });
-        expect(
-            phaseSpan(
-                mg({ phase: 'crimp', beatStartAt: 103.6, crimpClickAt: [103.8, 104, 104.2] }),
-            ),
-        ).toEqual({ from: 103.6, to: 104.2 });
+    it('runs the knots and the crimp on to the beat the server auto-misses at', () => {
+        const knots = phaseSpan(
+            mg({ phase: 'knots', beatStartAt: 102.4, knotAt: [102.8, 103.2, 103.6] }),
+            CFG,
+        );
+        const crimp = phaseSpan(
+            mg({ phase: 'crimp', beatStartAt: 103.6, crimpClickAt: [103.8, 104, 104.2] }),
+            CFG,
+        );
+
+        expect(knots?.from).toBe(102.4);
+        expect(knots?.to).toBeCloseTo(103.6 + 0.14 + MAX_INPUT_BACKDATE_S, 6);
+        expect(crimp?.from).toBe(103.6);
+        expect(crimp?.to).toBeCloseTo(104.2 + 0.2 + MAX_INPUT_BACKDATE_S, 6);
     });
 
     it('spans the surface tax while a set squares up and nothing while the cradle is empty', () => {
-        expect(phaseSpan(mg({ phase: 'parts', cradle: 'surface', surfaceReadyAt: 12 }))).toEqual({
-            from: 11.5,
-            to: 12,
-        });
-        expect(phaseSpan(mg({ phase: 'parts' }))).toBeNull();
+        expect(
+            phaseSpan(mg({ phase: 'parts', cradle: 'surface', surfaceReadyAt: 12 }), CFG),
+        ).toEqual({ from: 11.5, to: 12 });
+        expect(phaseSpan(mg({ phase: 'parts' }), CFG)).toBeNull();
     });
 
     it('spans nothing for a pour that has no keg to pour', () => {
-        expect(phaseSpan(mg({ phase: 'pour' }))).toBeNull();
+        expect(phaseSpan(mg({ phase: 'pour' }), CFG)).toBeNull();
+    });
+});
+
+describe('closeAt', () => {
+    it('closes a beat one OK window plus the backdate clamp after it', () => {
+        expect(closeAt(10, 140)).toBeCloseTo(10.14 + MAX_INPUT_BACKDATE_S, 6);
     });
 });
 
@@ -363,11 +411,28 @@ describe('primeFlash', () => {
 });
 
 describe('isFrozen', () => {
-    it('holds the needle through an interrupt and a blocked span', () => {
-        expect(isFrozen({ state: 'working', pausedUntil: 12 }, 11)).toBe(true);
-        expect(isFrozen({ state: 'jammed', pausedUntil: 0 }, 11)).toBe(true);
-        expect(isFrozen({ state: 'damaged', pausedUntil: 0 }, 11)).toBe(true);
-        expect(isFrozen({ state: 'working', pausedUntil: 12 }, 12)).toBe(false);
+    it('holds the needle through a blocked span, which the server never shifts', () => {
+        expect(isFrozen({ state: 'jammed' })).toBe(true);
+        expect(isFrozen({ state: 'damaged' })).toBe(true);
+        expect(isFrozen({ state: 'working' })).toBe(false);
+    });
+
+    /**
+     * A paused tick still shifts every pending beat by its own `dt`, so the
+     * marks walk forward in real time and the live clock is what holds the
+     * needle still. Freezing the clock as well slides it backwards down a bar
+     * the player is still looking at.
+     */
+    it('leaves the needle where it stands across a pause the server has shifted', () => {
+        const paused = { state: 'working', pausedUntil: 12.5 };
+        const before = span(mg({ phase: 'knots', beatStartAt: 10, knotAt: [11, 12] }));
+        const shifted = span(mg({ phase: 'knots', beatStartAt: 11, knotAt: [12, 13] }));
+        const at = (s: JigSpan, t: number): number => fractionIn(s.from, s.to, t);
+        const held = 11;
+        const now = isFrozen(paused) ? held : 12;
+
+        expect(at(shifted, now)).toBeCloseTo(at(before, held), 10);
+        expect(at(shifted, held)).toBe(0);
     });
 });
 

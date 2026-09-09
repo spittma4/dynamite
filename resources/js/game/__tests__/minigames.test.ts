@@ -27,11 +27,13 @@ describe('the overlay registry', () => {
         expect(minigames.dock()).not.toBe(minigames.dock());
     });
 
-    it('carries the dock station view F09 registered, and none for a type without one', () => {
-        const view = stationViews.dock?.();
+    it('carries a station view for every type, so no machine is unreadable from the floor', () => {
+        for (const type of TYPES) {
+            const view = stationViews[type]?.();
 
-        expect(typeof view?.create).toBe('function');
-        expect(typeof view?.update).toBe('function');
-        expect(typeof view?.destroy).toBe('function');
+            expect(typeof view?.create).toBe('function');
+            expect(typeof view?.update).toBe('function');
+            expect(typeof view?.destroy).toBe('function');
+        }
     });
 });

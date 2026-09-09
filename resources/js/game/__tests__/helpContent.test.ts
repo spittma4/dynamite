@@ -65,3 +65,15 @@ describe('helpSections', () => {
         expect(HELP_HINT.length).toBeLessThan(40);
     });
 });
+
+describe('the flow section', () => {
+    it('spells out powder to assembly to the dock, which the floor never says', () => {
+        const flow = helpSections(null).find((s) => /where things go/i.test(s.title));
+        const rows = flow?.rows.map(([k, v]) => `${k} ${v}`).join(' | ') ?? '';
+
+        expect(rows).toMatch(/powder/i);
+        expect(rows).toMatch(/assembly/i);
+        expect(rows).toMatch(/dock|truck/i);
+        expect(rows).toMatch(/light|glow/i);
+    });
+});

@@ -61,13 +61,23 @@ const STATIONS: Record<StationType, HelpSection> = {
     },
 };
 
+const FLOW: HelpSection = {
+    title: 'Where things go',
+    rows: [
+        ['Boom Powder', 'Makes kegs. They pile up on its OUT shelf — or in your hands when it is full.'],
+        ['→ Assembly', 'Carry a keg to the IN shelf. Assembly turns a keg and a casing into a stick.'],
+        ['→ the Dock', 'Carry the stick to a ramp lane and shove it onto the truck.'],
+        ['Lost?', 'While you carry something, every tile it can go on lights up.'],
+    ],
+};
+
 /**
  * Help for where the player is standing. The station they are at comes first,
  * because that is the part nobody can guess; the floor controls stay below it
  * so the two are never in separate screens.
  */
 export function helpSections(station: StationType | null): HelpSection[] {
-    if (station && STATIONS[station]) return [STATIONS[station], FLOOR];
+    if (station && STATIONS[station]) return [STATIONS[station], FLOW, FLOOR];
 
-    return [FLOOR];
+    return [FLOW, FLOOR];
 }

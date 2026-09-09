@@ -194,7 +194,7 @@ export interface JigMg {                                       // StationState.m
   cradle: JigCradle; cradleFuse: FuseLength | ''; surfaceReadyAt: number;
   bPhase: JigBPhase; bPick: FuseLength; bFetchDoneAt: number; swingStartAt: number;
   aisleBlocked: boolean;
-  orderChip: { orderId: string; fuseLength: FuseLength }[];     // next two open/partial orders
+  orderChip: { orderId: string; fuseLength: FuseLength }[];     // next two 'open' orders
   last: { who: 'a' | 'b'; step: 'pour' | 'knot' | 'crimp' | 'toss'; grade: JigGrade; note: JigNote; at: number } | null;
   primeAt: number;                                             // clock second of the last PRIME STICK, 0 if none
 }
@@ -213,7 +213,7 @@ export interface JigTickView {
   shelf: { index: number; itemId: string; type: ItemType; dents: number; quality: number; prime: boolean }[];
   casingCount: number; shelfRoom: number;                      // feeder inputs (inputCap − inputShelf.length)
   activeOrderId: string;                                       // orders.activeOrderId(world)
-  orders: { orderId: string; fuseLength: FuseLength }[];        // status open|partial, lowest-numbered first
+  orders: { orderId: string; fuseLength: FuseLength }[];        // status 'open', lowest-numbered first
   aisleFloorItem: boolean; bodyOnAisle: string;                // any floor item / sessionId standing on tiles.aisle
   partsOnJigTile: { sessionId: string; itemId: string; fuseLength: FuseLength } | null;
   aCarrying: string; bCarrying: string;                        // A's and B's PlayerState.carrying
@@ -386,7 +386,9 @@ re-renders from state).
    `primePour = grade === 'perfect'`. Miss with `offset < 0` → `fill = 0.6`, note `early`. Miss with
    `offset > 0` → `fill = 1.2`, note `late`, effect `spill(aTile)`. Any tap ends the pour (the keg
    lifts), even at fill 0.1.
-5. No tap by the time the fill reaches 1.2 → resolved as a late miss exactly as above.
+5. No tap once the fill has reached 1.2 *and* the beat has closed (`targetAt + okMs + MAX_INPUT_BACKDATE_S`,
+   the rule every other step already uses; a wide prime-keg window outlives the overfill) → resolved as a
+   late miss exactly as above, judged at the overfill so the fill and the spill are unchanged.
 6. `pourGrade = grade`, `last = { who: 'a', step: 'pour', grade, note, at }`. → *PARTS*.
 
 **PARTS (waiting for the cradle).** `cradle === 'armed'` → *KNOTS* now. `cradle === 'surface'` → *KNOTS*
@@ -494,8 +496,10 @@ timestamp (`pour.startAt`/`targetAt`, `knotAt[i ≥ knotIndex]`, `crimpClickAt`,
 `bFetchDoneAt`, `swingStartAt`, `beatStartAt`) by `view.dt` and advances nothing else. A jam or damage
 shows up as a gap: the tick compares `view.now` with `state.lastTickAt` and shifts every pending
 timestamp by `view.now − lastTickAt − view.dt` when that is positive. `rearmAt`/`rearmFrom` are never
-shifted (they are F05's machine timer). The client freezes the needle while
-`serverClock() < station.pausedUntil`.
+shifted (they are F05's machine timer). The client draws a pause with the **live** clock — the marks
+were shifted for it, so the needle already stands still and freezing the clock too would walk it
+backwards — and freezes the needle only while `state` is `jammed` or `damaged`, where no tick has run
+and no mark has moved.
 
 **Station state and progress** (`stationStatus(state, view)`, returned from `status(ctx)`; F05 writes it
 verbatim unless the station is `jammed` or `damaged`, which F05/F10 own): `starved` when
@@ -514,7 +518,8 @@ per assembly station from `world.stationConfig(station.cfg.id)` plus `level.bpm`
 Each `tick(ctx, dt)` it builds `JigTickView` from `ctx` and `world` — `operators`/`rackHands` from
 `ctx.operators`/`ctx.rackHands` ordered by `station.members.get(sessionId).joinedAt` and mapped through
 `ctx.sessionIdOf`; `shelf` from `ctx.inputShelf()` in shelf order; `activeOrderId` from F09's
-`activeOrderId(world)` and `orders` from `state.orders` (status `open`/`partial`, lowest-numbered first,
+`activeOrderId(world)` and `orders` from `state.orders` (status `open` — what `activeOrderId` counts, so a
+truck that left short cannot leave its `partial` at the head of the chip — lowest-numbered first,
 first two); `aisleFloorItem`/`bodyOnAisle` from `world.itemsAt`/`world.playersAt` on `tiles.aisle`;
 `partsOnJigTile` from `world.playersAt` over the jig work tiles — calls `reduceJig`, then applies the
 effects **in order** through the mapping in the `JigEffect` union above (`beginCycle` first; a `false`
@@ -541,7 +546,7 @@ panel, the B panel or a read-only spectator panel from `mg.a` / `mg.b` / `ctx.se
   `armed`) and `WAITING FOR PARTS`. Phase `knots`: two lanes; each knot is a marker at `knotAt[i]` in
   lane `lanes[i]` carrying the `←` or `→` glyph, past knots coloured by `knotGrades[i]`. Phase `crimp`:
   three click ticks, the third bold. One needle for all phases at
-  `x = (serverClock() − beatStartAt) / phaseSeconds`, frozen while `serverClock() < station.pausedUntil`.
+  `x = (serverClock() − beatStartAt) / phaseSeconds`, frozen only while `state` is `jammed` or `damaged`.
   Keys: `left`/`right` → `knot` `'l'`/`'r'` in `knots` (cursor moves in `seat`), `space` → `seat` /
   `pour` / `crimp` by phase; all consumed. `esc` and `interact` return `false` so F04's floor behaviour
   (leave / interact) still fires.

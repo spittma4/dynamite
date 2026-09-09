@@ -1,7 +1,9 @@
 import type { StationType } from '@shared';
 
 import { dockOverlay, dockStationView } from './Dock';
-import { Stub } from './Stub';
+import { jigOverlay } from './Jig';
+import { jigView } from './JigWorldFx';
+import { slammerOverlay, slammerStationView } from './Slammer';
 import type { OverlayFactory, StationView } from './types';
 
 /**
@@ -11,22 +13,14 @@ import type { OverlayFactory, StationView } from './types';
  */
 
 export const minigames: Record<StationType, OverlayFactory> = {
-    boom_powder: () =>
-        new Stub(
-            true,
-            'BOOM POWDER — THE SLAMMER',
-            '← ↑ → mash (each once) · hold SPACE charge · release · E floor the keg · ESC bail',
-        ),
-    assembly: () =>
-        new Stub(
-            true,
-            'ASSEMBLY — THE JIG',
-            'A: ← → seat / knots · SPACE pour / crimp · ESC bail   B: ← → short/long · E spool, E cap · hold SPACE toss',
-        ),
+    boom_powder: slammerOverlay,
+    assembly: jigOverlay,
     dock: dockOverlay,
 };
 
 export const stationViews: Partial<Record<StationType, () => StationView>> = {
+    boom_powder: slammerStationView,
+    assembly: jigView,
     dock: dockStationView,
 };
 

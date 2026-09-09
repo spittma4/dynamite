@@ -9,8 +9,8 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
-import { mmss } from '../../ui/format';
 import type { Factory } from '../../scenes/Factory';
+import { mmss } from '../../ui/format';
 
 /**
  * The dock wall as read from across the floor (F09 §Client): how long the truck

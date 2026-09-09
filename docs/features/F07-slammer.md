@@ -1,7 +1,7 @@
 # F07 — The Slammer (Boom Powder)
 **Status:** [ ] Design reviewed · [ ] Implemented · [ ] Unit tests green · [ ] Verified in the running app
 **Owns:** `shared/src/sim/slammer.ts` · `shared/tests/slammer.test.ts` · `game-server/src/sim/minigames/slammer.ts` (replaces F05's stub body) · `game-server/tests/minigames/slammer.test.ts` · `resources/js/game/minigames/Slammer.ts` · `resources/js/game/minigames/SlammerWorld.ts` · `resources/js/game/minigames/slammerAudio.ts`
-**Touches:** one `export * from './sim/slammer';` line in `shared/src/index.ts` (F02) · the two `boom_powder` entries in `resources/js/game/minigames/index.ts` (F04) · `scene.fx.override(...)` calls for `thunk`/`pfft`/`clink`/`slop`
+**Touches:** one `export * from './sim/slammer';` line in `shared/src/index.ts` (F02) · the two `boom_powder` entries in `resources/js/game/minigames/index.ts` (F04) · `scene.fx.override(...)` calls for `thunk`/`pfft`/`clink`/`slop` (permitted by §12; **not taken** — see In-world view)
 **Reads:** `docs/features/00-contracts.md` (v2 — binding) · `docs/04-minigames.md` (Rules, The Slammer) · `docs/03-stations.md` (Boom Powder) · `docs/16-hazards-and-explosions.md` (Sparks) · `docs/13-config-schema.md` · `docs/05-flow-mechanics.md` (Cycle) · `docs/decisions/0012-output-to-hands.md` · `docs/14-roadmap.md`
 
 ## Goal
@@ -63,7 +63,7 @@ the tile and carry it away; the combo keeps ticking while they decide.
 | `game-server/src/sim/minigames/slammer.ts` | `export const slammerModule: MinigameModule` — `create(station)` returns the `MinigameInstance` for `type: 'boom_powder'`: op handling, per-instance private state, `ctx.setMg` writes, `ctx.complete`, spark roll, overflow spill, beacon/banner, hands detection, overhold auto-fire. |
 | `game-server/tests/minigames/slammer.test.ts` | Module tests on a real `World` from `makeWorld` (F03, `game-server/tests/helpers/world.ts`) with a seated dev player driven through `stations.onInteract`/`stations.onMg`. |
 | `resources/js/game/minigames/Slammer.ts` | `slammerOverlay: OverlayFactory` — key mapping, local prediction of chutes and the needle, gauge/band/hairline drawing, outcome label, HANDS FULL panel, `ctx.send(op, v?)`. |
-| `resources/js/game/minigames/SlammerWorld.ts` | `slammerStationView: () => StationView` — in-world view for every client (operator or not): hopper glow, combo counter, flag, steam, ripple; installs the `thunk`/`pfft`/`clink`/`slop` handlers with `scene.fx.override`, with screen shake and confetti. |
+| `resources/js/game/minigames/SlammerWorld.ts` | `slammerStationView: () => StationView` — in-world view for every client (operator or not): hopper glow, combo counter, flag, steam, ripple, with screen shake and confetti. It installs **no** `scene.fx.override`: an override is global to the kind and `Fx` has no fall-through, so taking `clink` (F05 emits one at every shelving) or `thunk`/`pfft`/`slop` would silence other features' effects. The show is driven off the phase leaving `charge`, which is the same event. |
 | `resources/js/game/minigames/slammerAudio.ts` | WebAudio oscillator/noise beeps. Lazily creates the `AudioContext` on the first key press. |
 | `shared/src/index.ts` (F02) — touch | Append `export * from './sim/slammer';` (§1). |
 | `resources/js/game/minigames/index.ts` (F04) — touch | Replace the `boom_powder` entry of `minigames` with `slammerOverlay` and set `stationViews.boom_powder = slammerStationView`. |
@@ -328,6 +328,10 @@ instance while jammed or damaged (§10.3).
      `hands`, `mashed = []`. The station takes no input with full hands.
    - `phase === 'hands'` and `player.carrying === ''` → phase `idle`. The combo is untouched: it persists
      through hands.
+   - `phase === 'charge'` and `ctx.paused`: the hold waits where it stands — `chargeAt += dt`,
+     `chargeT += dt·1000`, `mg.chargeStartAt = chargeAt`, `ctx.setMg(mg)` — the way the Jig's `shiftPending`
+     slides its pending beats. F05 drops every `mg` for the length of an interrupt (§11), so a plunger that
+     kept climbing would be half a second the player is not allowed to release in.
    - `phase === 'charge'` and `!ctx.paused`: `chargeHeldMs += dt·1000` (an interrupt must not eat the
      player's hold, §10.3). When `chargeHeldMs > bandCenterMs + okMs + cfg.overholdMs` the plunger blows:
      `resolve('late', chargeHeldMs − bandCenterMs)`. Holding forever is not a way to avoid a miss.
@@ -396,9 +400,10 @@ plus the shelf/hands beat ≈ 2.8 s nominal (21/min). The 6-keg shelf fills in 9
 
 **In-world view** (`resources/js/game/minigames/SlammerWorld.ts`), one per `boom_powder` station on every
 client, anchored at the station's anchor tile (the hopper; F05's station sprite and F12's layouts put the
-hopper at `anchor`). `create(scene, station, layer)` also installs the four fx handlers with
-`scene.fx.override` — with one Powder station in M1 there is exactly one installer, and the override
-replaces F04's default so both never fire.
+hopper at `anchor`). It installs no `scene.fx.override`: an override replaces F04's default for the whole
+kind with no fall-through, and `clink`, `thunk`, `pfft` and `slop` are shared kinds other features emit
+(F05 sends a `clink` at every shelving), so taking them here would silence those. The show is driven off
+the phase leaving `charge` — the same event the fx would have carried.
 
 - Hopper glow: a radial glow 1.5 tiles wide, alpha = `mg.heat`, tint from `#ffb340` (heat 0.3) to `#fff2c0`
   (heat 1), tweened over 300 ms on change. Off when `heat === 0`.
@@ -429,8 +434,11 @@ samples, no assets, no music layers.
   missing chute.
 - Overflow on a tile that already has a spill: `items.addSpill` is a no-op; the `slop` fx still plays.
 - Overhold: blows as **late** at `target + okMs + 500 ms` of un-paused hold; spark rules apply.
-- An interrupt (`ctx.paused`) mid-charge: the overhold accumulator stops; the release is still judged on the
-  client interval, so a paused player is neither helped nor punished by the pause.
+- An interrupt (`ctx.paused`) mid-charge: the whole hold stops — the accumulator, the judged interval and
+  the published `chargeStartAt` all sit still for the pause — so a paused player is neither helped nor
+  punished by it. Judging the raw wall interval instead would punish them twice, because F05 also drops the
+  `release` that arrives inside the pause. **The overlay must freeze its needle with it** (`chargeStartAt`
+  moving under an unchanged `phase` is the signal), or the drawn hairline is not the judged one.
 - Player disconnects mid-charge: no keg until F05 calls `onLeave(ctx, player, 'disconnect')` after the 30 s
   window, or the player reconnects and releases (judged with the server interval after the tolerance clamp
   if their `t` base changed).
@@ -472,7 +480,7 @@ samples, no assets, no music layers.
 - [ ] A client-reported interval more than 100 ms from the server-measured one is clamped to the server's
       ±100 ms.
 - [ ] Holding Space 500 ms of un-paused time past the band's late edge auto-resolves as late with a spark
-      roll; the accumulator does not advance while `ctx.paused`.
+      roll; the accumulator does not advance while `ctx.paused`, and neither does the judged hold.
 - [ ] `StationState.mg` always equals `encodeMg(mg)` for the module's current `SlammerMg`, and `decodeMg`
       round-trips it.
 - [ ] The operator overlay lights each chute on its key press, starts the needle on Space-down, draws the
@@ -536,6 +544,7 @@ work tile and joined with `stations.onInteract`, then driven with `stations.onMg
 - it keeps the combo through hands
 - it auto-fires late overholdMs past the band
 - it does not advance the overhold accumulator while the station is paused
+- it holds the charge through an interrupt, so a hairline release is still DEAD CENTER
 - it lights the beacon gold at tier 2 and clears it on a miss
 - it never overwrites a red beacon
 - it sets the HOT STREAK banner once when crossing 25
@@ -594,7 +603,10 @@ work tile and joined with `stations.onInteract`, then driven with `stations.onMg
 - [ ] HANDS FULL panel and phase-`hands` key pass-through.
 - [ ] `resources/js/game/minigames/SlammerWorld.ts`: `slammerStationView` glow, counter, flag, steam, ripple
       from `mg`; set `stationViews.boom_powder`.
-- [ ] `scene.fx.override` handlers for `thunk` / `pfft` / `clink` / `slop` with shake and confetti.
+- [x] Shake and confetti on the release. The `thunk` / `pfft` / `clink` / `slop` `scene.fx.override`
+      handlers were dropped: the overrides are global to the kind and would silence F05's and F06's own
+      effects, so the show hangs off the `charge` phase exit instead. §12 still permits the Touch; F07
+      does not take it.
 - [ ] `slammerAudio.ts` beeps and the unlock-on-first-key.
 - [ ] In-app verification steps 1–10 with screenshots; tick the Status boxes.
 

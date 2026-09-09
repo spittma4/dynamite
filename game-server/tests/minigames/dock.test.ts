@@ -489,6 +489,44 @@ describe('shoving on the beep', () => {
         expect(mgOf(world).truck.hits).toBe('O');
     });
 
+    it('judges the shove on the client clock offset, never on the raw timestamp', () => {
+        const world = started();
+        const player = stand(world, 'session-0', LANE_A);
+
+        jumpTo(world, 20);
+        carry(world, 'session-0', orderFuse(world, 'o-1'));
+        stationsInteract(world, player);
+        world.outbox.length = 0;
+
+        // A tab opened five seconds after the whistle: `performance.now()` runs
+        // 5 s behind the clock, and `world.inputClock` is the only thing that
+        // knows it. The same 40 ms-late press as the THUD above, sent raw.
+        world.runtime('session-0').clockOffsetMs = 5_000;
+        world.state.clock = 21.15;
+        stationsMg(world, player, { stationId: DOCK, op: 'shove', t: 16_040 });
+
+        expect(effects(world)).toEqual([{ kind: 'thunk', text: 'THUD' }]);
+        expect(mgOf(world).truck.hits).toBe('P');
+    });
+
+    it('clamps a stale timestamp to the backdate floor rather than the beep it claims', () => {
+        const world = started();
+        const player = stand(world, 'session-0', LANE_A);
+
+        jumpTo(world, 20);
+        carry(world, 'session-0', orderFuse(world, 'o-1'));
+        stationsInteract(world, player);
+        world.outbox.length = 0;
+
+        // The press claims 21.04 — a THUD — but arrives 280 ms later than
+        // MAX_INPUT_BACKDATE_S allows, so it is judged at 21.12 and scrapes.
+        world.state.clock = 21.32;
+        stationsMg(world, player, { stationId: DOCK, op: 'shove', t: 21_040 });
+
+        expect(effects(world)).toEqual([{ kind: 'clink', text: 'scrape' }]);
+        expect(mgOf(world).truck.hits).toBe('O');
+    });
+
     it('stalls the lane beyond the ok window and clears it on the next beep', () => {
         const world = started();
         const player = stand(world, 'session-0', LANE_A);

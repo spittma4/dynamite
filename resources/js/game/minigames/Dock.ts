@@ -11,11 +11,17 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import type { Factory } from '../scenes/Factory';
+import { mmss } from '../ui/format';
 import { BayWall, type ReturnsItem } from './dock/BayWall';
 import { TruckSprite } from './dock/TruckSprite';
-import type { MinigameOverlay, OverlayContext, OverlayFactory, OverlayKey, StationView } from './types';
-import { mmss } from '../ui/format';
-import type { Factory } from '../scenes/Factory';
+import type {
+    MinigameOverlay,
+    OverlayContext,
+    OverlayFactory,
+    OverlayKey,
+    StationView,
+} from './types';
 
 /**
  * The Dock overlay (F09 §Client). The dock joins by standing, so this panel is
@@ -29,6 +35,7 @@ import type { Factory } from '../scenes/Factory';
  */
 
 export const DOCK_LEGEND = 'E set · SPACE shove on the beep · hold E slam (full truck) · ESC leave';
+export const TAILGATE_PROMPT = 'HOLD E — SLAM THE TAILGATE';
 
 const PAD = 16;
 const HEAD_Y = 12;
@@ -47,7 +54,6 @@ export const DOCK_COLOURS = {
     perfect: 0x2f7a33,
     target: 0xffffff,
     marker: 0xffffff,
-    markerIdle: 0x6a6a78,
     chipEmpty: 0x24262e,
     chipReady: 0x2b6fd6,
     chipStalled: 0xd9463d,
@@ -107,6 +113,34 @@ export function bandHalfFraction(windowMs: number, periodMs: number): number {
     return Math.min(0.5, Math.max(0, windowMs / periodMs));
 }
 
+export type DockKeyAction = 'shove' | 'tailgate-down' | 'tailgate-up' | 'none';
+
+/**
+ * What a key means at the dock. `'none'` is not "nothing happens" — it is the
+ * overlay declining the key so F04's floor behaviour fires, and that fall-through
+ * is load-bearing: the plain `interact` message is the only thing that puts a
+ * stick on a lane, and `esc` and the arrows have to reach the floor too.
+ */
+export function dockKeyAction(
+    key: OverlayKey,
+    down: boolean,
+    mg: DockMg | null,
+    lane: number,
+    holding: boolean,
+    serverNow: number,
+): DockKeyAction {
+    if (!mg) return 'none';
+
+    if (key === 'space') return down && canShove(mg, lane) ? 'shove' : 'none';
+    if (key !== 'interact') return 'none';
+
+    if (down) {
+        return lane >= 0 && tailgateOpen(mg, serverNow) ? 'tailgate-down' : 'none';
+    }
+
+    return holding ? 'tailgate-up' : 'none';
+}
+
 export function truckHeadline(mg: DockMg, serverNow: number): string {
     const { phase, loaded, slots, leavesAt, arrivesAt } = mg.truck;
 
@@ -131,6 +165,7 @@ class DockOverlay implements MinigameOverlay {
     private lastMg = '';
     private lane = -1;
     private painted = '';
+    private slam: boolean | null = null;
     private holding = false;
 
     mount(ctx: OverlayContext): void {
@@ -138,6 +173,7 @@ class DockOverlay implements MinigameOverlay {
         this.lastMg = '';
         this.mg = null;
         this.painted = '';
+        this.slam = null;
         this.holding = false;
 
         const scene = ctx.scene;
@@ -175,45 +211,41 @@ class DockOverlay implements MinigameOverlay {
         this.drawRow(ctx, mg, serverNow);
         this.drawChips(ctx, mg);
 
+        // `setColor` re-renders the label whether or not the colour moved, so
+        // the prompt is only rewritten when it actually flips.
         const slam = tailgateOpen(mg, serverNow);
 
-        this.legend.setText(slam ? 'HOLD E — SLAM THE TAILGATE' : DOCK_LEGEND);
+        if (slam === this.slam) return;
+
+        this.slam = slam;
+        this.legend.setText(slam ? TAILGATE_PROMPT : DOCK_LEGEND);
         this.legend.setColor(slam ? TEXT.slam : TEXT.legend);
     }
 
+    /** A repeat is judged like any other press: the server dedupes per beep. */
     onKey(key: OverlayKey, down: boolean, _repeat: boolean): boolean {
         const ctx = this.ctx;
-        const mg = this.mg;
 
-        if (!ctx || !mg) return false;
+        if (!ctx) return false;
 
-        if (key === 'space') {
-            if (!down || !canShove(mg, this.lane)) return false;
+        switch (dockKeyAction(key, down, this.mg, this.lane, this.holding, ctx.serverClock())) {
+            case 'shove':
+                ctx.send('shove');
 
-            ctx.send('shove');
+                return true;
+            case 'tailgate-down':
+                this.holding = true;
+                ctx.send('tailgate', 'down');
 
-            return true;
+                return true;
+            case 'tailgate-up':
+                this.holding = false;
+                ctx.send('tailgate', 'up');
+
+                return true;
+            default:
+                return false;
         }
-
-        // Every other `E` has to fall through: the plain `interact` message is
-        // what puts a stick on the lane in the first place (contracts §10.9).
-        if (key !== 'interact') return false;
-
-        if (down) {
-            if (this.lane < 0 || !tailgateOpen(mg, ctx.serverClock())) return false;
-
-            this.holding = true;
-            ctx.send('tailgate', 'down');
-
-            return true;
-        }
-
-        if (!this.holding) return false;
-
-        this.holding = false;
-        ctx.send('tailgate', 'up');
-
-        return true;
     }
 
     unmount(): void {
@@ -305,6 +337,7 @@ class DockOverlay implements MinigameOverlay {
         for (const label of this.chipText) label.destroy();
 
         this.chipText = [];
+        this.painted = '';
 
         for (let i = 0; i < lanes; i++) {
             const label = text(ctx.scene, CHIP_Y, 12, TEXT.chip, true);

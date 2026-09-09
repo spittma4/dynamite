@@ -8,6 +8,7 @@ import {
     type JigNote,
     type JigPhase,
     type JigWindow,
+    type LevelConfig,
     MAX_INPUT_BACKDATE_S,
     type MgOp,
     type PlayerState,
@@ -182,8 +183,29 @@ export function pickerBlock(input: {
     return '';
 }
 
-/** What the needle runs across in this phase, or `null` when nothing is moving. */
-export function phaseSpan(mg: JigMg): JigSpan | null {
+/**
+ * Whose hands the picker is greyed out for. A watcher is shown A's panel, so
+ * only A's hands can block the seat on it — `mg` does not carry them, and a
+ * watcher's own keg is nothing to do with the seat A is looking at.
+ */
+export function pickerCarrying(role: JigRole, carrying: string): string {
+    return role === 'a' ? carrying : '';
+}
+
+/**
+ * When the server gives up on a beat: one OK window past it, plus the backdate
+ * clamp a late message is allowed to claim (contracts §7).
+ */
+export function closeAt(mark: number, okMs: number): number {
+    return mark + okMs / 1000 + MAX_INPUT_BACKDATE_S;
+}
+
+/**
+ * What the needle runs across in this phase, or `null` when nothing is moving.
+ * A knot and a crimp run to the moment they auto-miss rather than to the beat
+ * itself, so the window the server judges with fits on the bar.
+ */
+export function phaseSpan(mg: JigMg, cfg: AssemblyMinigame): JigSpan | null {
     if (mg.phase === 'seat') {
         return mg.rearmAt > mg.rearmFrom ? { from: mg.rearmFrom, to: mg.rearmAt } : null;
     }
@@ -200,10 +222,13 @@ export function phaseSpan(mg: JigMg): JigSpan | null {
             : null;
     }
 
-    const marks = mg.phase === 'knots' ? mg.knotAt : mg.crimpClickAt;
+    const knots = mg.phase === 'knots';
+    const marks = knots ? mg.knotAt : mg.crimpClickAt;
     const last = marks[marks.length - 1];
 
-    return last === undefined ? null : { from: mg.beatStartAt, to: last };
+    if (last === undefined) return null;
+
+    return { from: mg.beatStartAt, to: closeAt(last, (knots ? cfg.knots : cfg.crimp).okMs) };
 }
 
 export function fractionIn(from: number, to: number, t: number): number {
@@ -243,7 +268,7 @@ export function pourBands(pour: NonNullable<JigMg['pour']>, cfg: PourConfig): Ji
 export function tossBands(swingStartAt: number, cfg: TossConfig): JigBands & { close: number } {
     const bands = bandsAround(swingStartAt + cfg.arcSeconds, cfg);
 
-    return { ...bands, close: bands.ok.to + MAX_INPUT_BACKDATE_S };
+    return { ...bands, close: closeAt(bands.mark, cfg.okMs) };
 }
 
 export function knotMarkers(mg: JigMg): { at: number; lane: JigLane; grade: JigGrade | null }[] {
@@ -286,27 +311,20 @@ export function bKeyOp(bPhase: JigBPhase, down: boolean): MgOp | null {
 }
 
 export function primeFlash(primeAt: number, now: number): number {
-    if (primeAt <= 0 || now < primeAt) return 0;
+    if (primeAt <= 0 || now < primeAt || now >= primeAt + PRIME_FLASH_SECONDS) return 0;
 
-    const left = primeAt + PRIME_FLASH_SECONDS - now;
-
-    return Math.max(0, Math.min(1, left / PRIME_FLASH_SECONDS));
+    return 1 - (now - primeAt) / PRIME_FLASH_SECONDS;
 }
 
 /**
- * The server shifts every pending beat through an interrupt and shifts the
- * whole gap when a jam clears, so the needle waits where it stands rather than
- * running off the end of a bar nobody is playing.
+ * A jam or damage stops F05 ticking the module at all: the marks stand still,
+ * so the clock has to stand still with them or the needle runs off the end of a
+ * bar nobody is playing. An interrupt is the opposite — the paused tick shifts
+ * every pending beat by its own `dt` — so there the live clock is what holds the
+ * needle where the player left it, and freezing it too would walk it backwards.
  */
-export function isFrozen(
-    station: Pick<StationState, 'state' | 'pausedUntil'>,
-    serverNow: number,
-): boolean {
-    return (
-        serverNow < station.pausedUntil ||
-        station.state === 'jammed' ||
-        station.state === 'damaged'
-    );
+export function isFrozen(station: Pick<StationState, 'state'>): boolean {
+    return station.state === 'jammed' || station.state === 'damaged';
 }
 
 export function fuseLabel(fuse: FuseLength): string {
@@ -334,7 +352,8 @@ const LANE_H = 20;
 const LANE_GAP = 6;
 const MARKER_W = 6;
 const NEEDLE_W = 2;
-const POP_MS = 900;
+const POP_SECONDS = 0.9;
+const POP_RISE_PX = 22;
 
 interface LabelStyle {
     size: number;
@@ -393,6 +412,24 @@ class Labels {
     }
 }
 
+/** One frame's worth of facts, so no draw method has to fetch anything itself. */
+interface Frame {
+    ctx: OverlayContext;
+    g: Phaser.GameObjects.Graphics;
+    labels: Labels;
+    mg: JigMg;
+    cfg: AssemblyMinigame;
+    now: number;
+}
+
+function trackWidth(ctx: OverlayContext): number {
+    return ctx.width - PAD * 2;
+}
+
+function trackX(ctx: OverlayContext, span: JigSpan, t: number): number {
+    return PAD + trackWidth(ctx) * fractionIn(span.from, span.to, t);
+}
+
 class JigOverlay implements MinigameOverlay {
     readonly capturesMovement = true;
 
@@ -402,21 +439,24 @@ class JigOverlay implements MinigameOverlay {
 
     private mg: JigMg | null = null;
     private lastMg = '';
+    private configFrom: LevelConfig | null = null;
+    private cfg: AssemblyMinigame | null = null;
     private cursor = 0;
     /** The key B is holding, so the release that follows knows it was a swing. */
     private held: OverlayKey | null = null;
     private swungForHold = false;
     private frozenNow = 0;
-    private popAt = 0;
-    private popMs = 0;
 
     mount(ctx: OverlayContext): void {
         this.ctx = ctx;
         this.graphics = ctx.scene.add.graphics();
         ctx.container.add(this.graphics);
         this.labels = new Labels(ctx.scene, ctx.container);
+        this.frozenNow = ctx.serverClock();
         this.lastMg = '';
         this.mg = null;
+        this.configFrom = null;
+        this.cfg = null;
         this.held = null;
         this.swungForHold = false;
     }
@@ -434,10 +474,11 @@ class JigOverlay implements MinigameOverlay {
         }
 
         const mg = this.mg;
+        const cfg = this.jigConfig(ctx);
 
         g.clear();
 
-        if (!mg) {
+        if (!mg || !cfg) {
             labels.write('title', PAD, TITLE_Y, 'ASSEMBLY — THE JIG', { size: 18, bold: true });
             labels.write('idle', PAD, STRIP_Y, 'WAITING FOR THE STATION', {
                 size: 12,
@@ -448,18 +489,18 @@ class JigOverlay implements MinigameOverlay {
             return;
         }
 
-        if (!isFrozen(station, serverNow)) this.frozenNow = serverNow;
+        if (!isFrozen(station)) this.frozenNow = serverNow;
 
-        const now = this.frozenNow;
+        const frame: Frame = { ctx, g, labels, mg, cfg, now: this.frozenNow };
         const role = roleOf(mg, ctx.sessionId);
 
         this.sendSwingOnHold(mg);
 
-        if (role === 'b') this.drawRack(ctx, g, labels, mg, now);
-        else this.drawJig(ctx, g, labels, mg, me, now, role);
+        if (role === 'b') this.drawRack(frame);
+        else this.drawJig(frame, me, role);
 
-        this.drawPop(ctx, labels, mg, now);
-        this.drawPrimeFlash(ctx, g, mg, now);
+        this.drawPop(frame);
+        this.drawPrimeFlash(frame);
         labels.sweep();
     }
 
@@ -468,10 +509,12 @@ class JigOverlay implements MinigameOverlay {
         const mg = this.mg;
 
         if (!ctx || !mg) return false;
+        if (key === 'esc' || key === 'interact') return false;
 
         const role = roleOf(mg, ctx.sessionId);
 
-        if (key === 'esc' || key === 'interact') return false;
+        // A spectator sends nothing, but its `Space` is still eaten: there is
+        // nothing in a frozen watcher's hands to throw at the floor.
         if (role === 'spectator') return key === 'space';
         if (role === 'b') return this.rackKey(ctx, mg, key, down, repeat);
 
@@ -500,7 +543,7 @@ class JigOverlay implements MinigameOverlay {
             if (!down || repeat) return true;
 
             if (mg.phase === 'knots') ctx.send('knot', lane);
-            else this.cursor = moveCursor(this.cursor, lane === 'l' ? -1 : 1, this.chipCount(ctx));
+            else this.moveTo(ctx, lane === 'l' ? -1 : 1);
 
             return true;
         }
@@ -511,7 +554,8 @@ class JigOverlay implements MinigameOverlay {
         const op = spaceOp(mg.phase);
 
         if (op === 'seat') {
-            const chip = this.chips(ctx)[moveCursor(this.cursor, 0, this.chipCount(ctx))];
+            const casings = this.shelfOf(ctx).casings;
+            const chip = casings[moveCursor(this.cursor, 0, casings.length)];
 
             if (chip) ctx.send('seat', chip.shelfIndex);
         } else if (op !== null) {
@@ -539,14 +583,12 @@ class JigOverlay implements MinigameOverlay {
 
         if (down) {
             this.held = key;
-            this.swungForHold = false;
 
             const op = bKeyOp(mg.bPhase, true);
 
-            if (op !== null) {
-                ctx.send(op);
-                this.swungForHold = op === 'swing';
-            }
+            this.swungForHold = op === 'swing';
+
+            if (op !== null) ctx.send(op);
 
             return true;
         }
@@ -572,63 +614,82 @@ class JigOverlay implements MinigameOverlay {
         this.ctx.send('swing');
     }
 
-    private chips(ctx: OverlayContext): JigChip[] {
+    private moveTo(ctx: OverlayContext, delta: number): void {
+        this.cursor = moveCursor(this.cursor, delta, this.shelfOf(ctx).casings.length);
+    }
+
+    /** The picker draws casings and the pour needs kegs; one read answers both. */
+    private shelfOf(ctx: OverlayContext): { casings: JigChip[]; kegs: number } {
         const station = ctx.state.stations.get(ctx.stationId);
 
-        if (!station) return [];
+        if (!station) return { casings: [], kegs: 0 };
 
         const ids: string[] = [];
 
         station.inputShelf.forEach((id) => ids.push(id));
 
-        return readShelf(ids, (id) => ctx.state.items.get(id)).casings;
+        return readShelf(ids, (id) => ctx.state.items.get(id));
     }
 
-    private chipCount(ctx: OverlayContext): number {
-        return this.chips(ctx).length;
+    /**
+     * The windows the server judges with come from the level itself — the
+     * client invents no numbers. The whistle replaces `conn.config.level` with
+     * the scaled one (contracts §8), so the lookup is cached against it.
+     */
+    private jigConfig(ctx: OverlayContext): AssemblyMinigame | null {
+        const level = ctx.scene.conn.config.level;
+
+        if (level !== this.configFrom) {
+            this.configFrom = level;
+
+            const station = level.stations.find((s) => s.id === ctx.stationId);
+
+            this.cfg = station ? (station.minigame as AssemblyMinigame) : null;
+        }
+
+        return this.cfg;
     }
 
-    private drawJig(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        me: PlayerState,
-        now: number,
-        role: JigRole,
-    ): void {
-        const tag = role === 'a' ? 'A · THE JIG' : 'WATCHING · NO INPUTS';
+    private drawJig(f: Frame, me: PlayerState, role: JigRole): void {
+        const { ctx, labels, mg } = f;
+        const operator = role === 'a';
 
         labels.write('title', PAD, TITLE_Y, 'ASSEMBLY — THE JIG', { size: 18, bold: true });
-        labels.write('tag', ctx.width - PAD, TITLE_Y + 2, tag, {
-            size: 12,
-            colour: role === 'a' ? JIG_COLOURS.text : JIG_COLOURS.label,
-            originX: 1,
-        });
-        this.drawPhaseStrip(labels, mg);
+        labels.write(
+            'tag',
+            ctx.width - PAD,
+            TITLE_Y + 2,
+            operator ? 'A · THE JIG' : 'WATCHING · NO INPUTS',
+            {
+                size: 12,
+                colour: operator ? JIG_COLOURS.text : JIG_COLOURS.label,
+                originX: 1,
+            },
+        );
+        this.drawPhaseStrip(f);
 
-        if (mg.phase === 'seat') this.drawPicker(ctx, g, labels, mg, me, now);
-        else if (mg.phase === 'pour') this.drawPour(ctx, g, labels, mg, now);
-        else if (mg.phase === 'parts') this.drawParts(ctx, g, labels, mg, now);
-        else if (mg.phase === 'knots') this.drawKnots(ctx, g, labels, mg, now);
-        else this.drawCrimp(ctx, g, labels, mg, now);
+        if (mg.phase === 'seat') this.drawPicker(f, pickerCarrying(role, me.carrying));
+        else if (mg.phase === 'pour') this.drawPour(f);
+        else if (mg.phase === 'parts') this.drawParts(f);
+        else if (mg.phase === 'knots') this.drawKnots(f);
+        else this.drawCrimp(f);
 
         labels.write(
             'legend',
             PAD,
             ctx.height - 20,
-            role === 'a'
-                ? '← → pick / knot · SPACE seat · pour · crimp · ESC bail'
+            operator
+                ? '← → pick / knot · SPACE seat, pour, crimp · ESC bail'
                 : 'A helper counts for the staffing curve; the phrase is A’s',
             { size: 11, colour: JIG_COLOURS.label },
         );
     }
 
-    private drawPhaseStrip(labels: Labels, mg: JigMg): void {
+    private drawPhaseStrip(f: Frame): void {
         PHASES.forEach((phase, i) => {
-            const current = phase === mg.phase;
+            const current = phase === f.mg.phase;
 
-            labels.write(`phase-${phase}`, PAD + i * 74, STRIP_Y, phase.toUpperCase(), {
+            f.labels.write(`phase-${phase}`, PAD + i * 74, STRIP_Y, phase.toUpperCase(), {
                 size: 12,
                 bold: current,
                 colour: current ? JIG_COLOURS.perfect : JIG_COLOURS.dim,
@@ -636,29 +697,23 @@ class JigOverlay implements MinigameOverlay {
         });
     }
 
-    private drawPicker(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        me: PlayerState,
-        now: number,
-    ): void {
-        const chips = this.chips(ctx);
+    private drawPicker(f: Frame, carrying: string): void {
+        const { ctx, g, labels, mg, now } = f;
+        const { casings, kegs } = this.shelfOf(ctx);
 
-        this.cursor = moveCursor(this.cursor, 0, chips.length);
+        this.cursor = moveCursor(this.cursor, 0, casings.length);
 
         const block = pickerBlock({
             now,
             rearmAt: mg.rearmAt,
-            casings: chips.length,
-            kegs: readShelfKegs(ctx),
+            casings: casings.length,
+            kegs,
             keg: mg.keg,
-            carrying: me.carrying,
+            carrying,
         });
         const dim = block !== '';
 
-        chips.forEach((chip, i) => {
+        casings.forEach((chip, i) => {
             const x = PAD + i * (CHIP_W + CHIP_GAP);
             const selected = i === this.cursor && !dim;
 
@@ -673,14 +728,14 @@ class JigOverlay implements MinigameOverlay {
             }
         });
 
-        if (chips.length === 0) {
+        if (casings.length === 0) {
             labels.write('picker-empty', PAD, TRACK_Y + 8, 'SHELF EMPTY', {
                 size: 12,
                 colour: JIG_COLOURS.dim,
             });
         }
 
-        this.drawKegGauge(ctx, g, labels, mg);
+        this.drawKegGauge(f);
 
         if (block === '') return;
 
@@ -692,31 +747,19 @@ class JigOverlay implements MinigameOverlay {
 
         if (block !== 'RE-ARMING') return;
 
-        const width = ctx.width - PAD * 2;
+        const bar = TRACK_Y + CHIP_H + 30;
 
         g.fillStyle(JIG_COLOURS.track, 1);
-        g.fillRect(PAD, TRACK_Y + CHIP_H + 30, width, 8);
+        g.fillRect(PAD, bar, trackWidth(ctx), 8);
         g.fillStyle(JIG_COLOURS.ok, 1);
-        g.fillRect(
-            PAD,
-            TRACK_Y + CHIP_H + 30,
-            width * fractionIn(mg.rearmFrom, mg.rearmAt, now),
-            8,
-        );
+        g.fillRect(PAD, bar, trackWidth(ctx) * fractionIn(mg.rearmFrom, mg.rearmAt, now), 8);
     }
 
-    private drawKegGauge(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-    ): void {
+    private drawKegGauge(f: Frame): void {
+        const { ctx, g, labels, mg } = f;
         const x = ctx.width - PAD - 90;
 
-        labels.write('keg-label', x, TRACK_Y - 16, 'KEG', {
-            size: 11,
-            colour: JIG_COLOURS.label,
-        });
+        labels.write('keg-label', x, TRACK_Y - 16, 'KEG', { size: 11, colour: JIG_COLOURS.label });
 
         if (mg.keg === null) {
             labels.write('keg-value', x, TRACK_Y, 'NONE', { size: 14, colour: JIG_COLOURS.dim });
@@ -738,16 +781,12 @@ class JigOverlay implements MinigameOverlay {
         });
     }
 
-    private drawPour(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        now: number,
-    ): void {
+    private drawPour(f: Frame): void {
+        const { ctx, g, labels, mg, cfg, now } = f;
         const pour = mg.pour;
+        const span = phaseSpan(mg, cfg);
 
-        if (pour === null) {
+        if (pour === null || span === null) {
             labels.write('pour-wait', PAD, TRACK_Y, 'NO POWDER — WAITING FOR A KEG', {
                 size: 14,
                 colour: JIG_COLOURS.miss,
@@ -756,37 +795,23 @@ class JigOverlay implements MinigameOverlay {
             return;
         }
 
-        const span = phaseSpan(mg) ?? { from: pour.startAt, to: pour.targetAt };
-        const width = ctx.width - PAD * 2;
-        const at = (t: number): number => PAD + width * fractionIn(span.from, span.to, t);
-        const bands = pourBands(pour, this.pourConfig(ctx));
-
-        this.drawTrack(g, ctx, TRACK_Y, TRACK_H);
-
-        g.fillStyle(JIG_COLOURS.ok, 0.3);
-        g.fillRect(at(bands.ok.from), TRACK_Y, at(bands.ok.to) - at(bands.ok.from), TRACK_H);
-        g.fillStyle(JIG_COLOURS.perfect, 0.4);
-        g.fillRect(
-            at(bands.perfect.from),
-            TRACK_Y,
-            at(bands.perfect.to) - at(bands.perfect.from),
-            TRACK_H,
-        );
+        this.drawTrack(f, TRACK_Y, TRACK_H);
+        this.drawBands(f, span, pourBands(pour, cfg.pour), TRACK_Y, TRACK_H);
 
         const fill = Math.max(0, Math.min(1.2, pourFillAt(pour, now)));
+        const head = trackX(ctx, span, now);
 
         g.fillStyle(fill > 1 ? JIG_COLOURS.overfill : JIG_COLOURS.fill, 0.85);
-        g.fillRect(PAD, TRACK_Y, at(now) - PAD, TRACK_H);
-
+        g.fillRect(PAD, TRACK_Y, head - PAD, TRACK_H);
         g.lineStyle(1, JIG_COLOURS.trackEdge, 1);
 
         for (const mark of beatMarks(pour, mg.bpm)) {
-            g.lineBetween(at(mark), TRACK_Y + TRACK_H - 8, at(mark), TRACK_Y + TRACK_H);
+            const x = trackX(ctx, span, mark);
+
+            g.lineBetween(x, TRACK_Y + TRACK_H - 8, x, TRACK_Y + TRACK_H);
         }
 
-        g.lineStyle(2, JIG_COLOURS.text, 1);
-        g.lineBetween(at(bands.mark), TRACK_Y - 6, at(bands.mark), TRACK_Y + TRACK_H + 6);
-        this.drawNeedle(g, at(now), TRACK_Y, TRACK_H);
+        this.drawNeedle(f, head, TRACK_Y, TRACK_H);
 
         labels.write('pour-fill', PAD, TRACK_Y + TRACK_H + 8, `FILL ${fill.toFixed(2)}`, {
             size: 12,
@@ -801,13 +826,9 @@ class JigOverlay implements MinigameOverlay {
         );
     }
 
-    private drawParts(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        now: number,
-    ): void {
+    private drawParts(f: Frame): void {
+        const { ctx, g, labels, mg, cfg, now } = f;
+
         labels.write('parts-wait', PAD, TRACK_Y, 'WAITING FOR PARTS', {
             size: 16,
             bold: true,
@@ -828,132 +849,91 @@ class JigOverlay implements MinigameOverlay {
             });
         }
 
-        const span = phaseSpan(mg);
+        const span = phaseSpan(mg, cfg);
 
-        if (!span) return;
+        if (span === null) return;
 
-        const width = ctx.width - PAD * 2;
+        const bar = TRACK_Y + 48;
 
         g.fillStyle(JIG_COLOURS.track, 1);
-        g.fillRect(PAD, TRACK_Y + 48, width, 8);
+        g.fillRect(PAD, bar, trackWidth(ctx), 8);
         g.fillStyle(JIG_COLOURS.ok, 1);
-        g.fillRect(PAD, TRACK_Y + 48, width * fractionIn(span.from, span.to, now), 8);
+        g.fillRect(PAD, bar, trackWidth(ctx) * fractionIn(span.from, span.to, now), 8);
     }
 
-    private drawKnots(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        now: number,
-    ): void {
-        const span = phaseSpan(mg);
+    private drawKnots(f: Frame): void {
+        const { ctx, g, labels, mg, cfg, now } = f;
+        const span = phaseSpan(mg, cfg);
 
-        if (!span) return;
+        if (span === null) return;
 
-        const width = ctx.width - PAD * 2;
-        const at = (t: number): number => PAD + width * fractionIn(span.from, span.to, t);
         const lanes: JigLane[] = ['l', 'r'];
-        const window = { perfectMs: this.jigConfig(ctx).knots.perfectMs, okMs: 0 };
+        const laneY = (lane: JigLane): number => TRACK_Y + (lane === 'l' ? 0 : LANE_H + LANE_GAP);
 
-        lanes.forEach((lane, row) => {
-            const y = TRACK_Y + row * (LANE_H + LANE_GAP);
-
+        lanes.forEach((lane) => {
             g.fillStyle(JIG_COLOURS.track, 1);
-            g.fillRect(PAD, y, width, LANE_H);
-            labels.write(`lane-${lane}`, PAD - 4, y + LANE_H / 2, lane === 'l' ? '←' : '→', {
-                size: 14,
-                colour: JIG_COLOURS.lane,
-                originX: 1,
-                originY: 0.5,
-            });
+            g.fillRect(PAD, laneY(lane), trackWidth(ctx), LANE_H);
+            labels.write(
+                `lane-${lane}`,
+                PAD - 4,
+                laneY(lane) + LANE_H / 2,
+                lane === 'l' ? '←' : '→',
+                { size: 14, colour: JIG_COLOURS.lane, originX: 1, originY: 0.5 },
+            );
         });
 
         for (const knot of knotMarkers(mg)) {
-            const y = TRACK_Y + (knot.lane === 'l' ? 0 : LANE_H + LANE_GAP);
+            const bands = bandsAround(knot.at, cfg.knots);
+            const y = laneY(knot.lane);
+
+            if (knot.grade === null) this.drawBands(f, span, bands, y, LANE_H);
 
             g.fillStyle(knot.grade === null ? JIG_COLOURS.lane : GRADE_COLOURS[knot.grade], 1);
-            g.fillRect(at(knot.at) - MARKER_W / 2, y, MARKER_W, LANE_H);
+            g.fillRect(trackX(ctx, span, knot.at) - MARKER_W / 2, y, MARKER_W, LANE_H);
         }
 
-        g.lineStyle(1, JIG_COLOURS.text, 0.5);
+        const height = LANE_H * 2 + LANE_GAP;
 
-        for (const knot of knotMarkers(mg)) {
-            g.lineBetween(
-                at(knot.at - window.perfectMs / 1000),
-                TRACK_Y - 4,
-                at(knot.at + window.perfectMs / 1000),
-                TRACK_Y - 4,
-            );
-        }
-
-        this.drawNeedle(g, at(now), TRACK_Y - 6, LANE_H * 2 + LANE_GAP + 12);
-
+        this.drawNeedle(f, trackX(ctx, span, now), TRACK_Y - 6, height + 12);
         labels.write(
             'knot-count',
             ctx.width - PAD,
-            TRACK_Y + LANE_H * 2 + LANE_GAP + 10,
+            TRACK_Y + height + 10,
             `KNOT ${Math.min(mg.knotIndex + 1, mg.knotAt.length)}/${mg.knotAt.length} · ${fuseLabel(mg.cradleFuse)}`,
             { size: 12, colour: JIG_COLOURS.label, originX: 1 },
         );
     }
 
-    private drawCrimp(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        now: number,
-    ): void {
-        const span = phaseSpan(mg);
+    private drawCrimp(f: Frame): void {
+        const { ctx, g, labels, mg, cfg, now } = f;
+        const span = phaseSpan(mg, cfg);
+        const judged = mg.crimpClickAt[mg.crimpClickAt.length - 1];
 
-        if (!span) return;
+        if (span === null || judged === undefined) return;
 
-        const width = ctx.width - PAD * 2;
-        const at = (t: number): number => PAD + width * fractionIn(span.from, span.to, t);
-        const judged = mg.crimpClickAt[mg.crimpClickAt.length - 1] ?? span.to;
-
-        this.drawTrack(g, ctx, TRACK_Y, TRACK_H);
-
-        const bands = bandsAround(judged, this.jigConfig(ctx).crimp);
-
-        g.fillStyle(JIG_COLOURS.ok, 0.3);
-        g.fillRect(at(bands.ok.from), TRACK_Y, at(bands.ok.to) - at(bands.ok.from), TRACK_H);
-        g.fillStyle(JIG_COLOURS.perfect, 0.4);
-        g.fillRect(
-            at(bands.perfect.from),
-            TRACK_Y,
-            at(bands.perfect.to) - at(bands.perfect.from),
-            TRACK_H,
-        );
+        this.drawTrack(f, TRACK_Y, TRACK_H);
+        this.drawBands(f, span, bandsAround(judged, cfg.crimp), TRACK_Y, TRACK_H);
 
         mg.crimpClickAt.forEach((click, i) => {
             const last = i === mg.crimpClickAt.length - 1;
+            const x = trackX(ctx, span, click);
 
             g.lineStyle(last ? 3 : 1, last ? JIG_COLOURS.text : JIG_COLOURS.trackEdge, 1);
-            g.lineBetween(at(click), TRACK_Y - 4, at(click), TRACK_Y + TRACK_H + 4);
+            g.lineBetween(x, TRACK_Y - 4, x, TRACK_Y + TRACK_H + 4);
         });
 
-        this.drawNeedle(g, at(now), TRACK_Y, TRACK_H);
-
+        this.drawNeedle(f, trackX(ctx, span, now), TRACK_Y, TRACK_H);
         labels.write('crimp-label', PAD, TRACK_Y + TRACK_H + 8, 'CRIMP ON THE THIRD CLICK', {
             size: 12,
             colour: JIG_COLOURS.label,
         });
     }
 
-    private drawRack(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        now: number,
-    ): void {
+    private drawRack(f: Frame): void {
+        const { ctx, g, labels, mg } = f;
+
         labels.write('title', PAD, TITLE_Y, 'ASSEMBLY — THE PARTS RACK', { size: 18, bold: true });
-        labels.write('tag', ctx.width - PAD, TITLE_Y + 2, 'B · THE RACK', {
-            size: 12,
-            originX: 1,
-        });
+        labels.write('tag', ctx.width - PAD, TITLE_Y + 2, 'B · THE RACK', { size: 12, originX: 1 });
 
         mg.orderChip.forEach((chip, i) => {
             labels.write(
@@ -989,7 +969,7 @@ class JigOverlay implements MinigameOverlay {
             });
         });
 
-        this.drawRackTrack(ctx, g, labels, mg, now);
+        this.drawRackTrack(f);
 
         if (mg.cradle !== 'empty') {
             labels.write('badge-full', ctx.width - PAD, TRACK_Y + TRACK_H + 26, 'CRADLE FULL', {
@@ -1018,22 +998,16 @@ class JigOverlay implements MinigameOverlay {
         );
     }
 
-    private drawRackTrack(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        labels: Labels,
-        mg: JigMg,
-        now: number,
-    ): void {
-        const width = ctx.width - PAD * 2;
+    private drawRackTrack(f: Frame): void {
+        const { ctx, g, labels, mg, cfg, now } = f;
 
-        this.drawTrack(g, ctx, TRACK_Y, TRACK_H);
+        this.drawTrack(f, TRACK_Y, TRACK_H);
 
         if (mg.bPhase === 'fetching') {
-            const from = mg.bFetchDoneAt - FETCH_SECONDS;
+            const span = { from: mg.bFetchDoneAt - FETCH_SECONDS, to: mg.bFetchDoneAt };
 
             g.fillStyle(JIG_COLOURS.parts, 0.85);
-            g.fillRect(PAD, TRACK_Y, width * fractionIn(from, mg.bFetchDoneAt, now), TRACK_H);
+            g.fillRect(PAD, TRACK_Y, trackX(ctx, span, now) - PAD, TRACK_H);
             labels.write('b-state', PAD, TRACK_Y + TRACK_H + 8, 'FETCHING SPOOL AND CAP', {
                 size: 12,
                 colour: JIG_COLOURS.label,
@@ -1043,22 +1017,11 @@ class JigOverlay implements MinigameOverlay {
         }
 
         if (mg.bPhase === 'swinging') {
-            const bands = tossBands(mg.swingStartAt, this.jigConfig(ctx).toss);
-            const at = (t: number): number =>
-                PAD + width * fractionIn(mg.swingStartAt, bands.close, t);
+            const bands = tossBands(mg.swingStartAt, cfg.toss);
+            const span = { from: mg.swingStartAt, to: bands.close };
 
-            g.fillStyle(JIG_COLOURS.ok, 0.3);
-            g.fillRect(at(bands.ok.from), TRACK_Y, at(bands.ok.to) - at(bands.ok.from), TRACK_H);
-            g.fillStyle(JIG_COLOURS.perfect, 0.4);
-            g.fillRect(
-                at(bands.perfect.from),
-                TRACK_Y,
-                at(bands.perfect.to) - at(bands.perfect.from),
-                TRACK_H,
-            );
-            g.lineStyle(2, JIG_COLOURS.text, 1);
-            g.lineBetween(at(bands.mark), TRACK_Y - 6, at(bands.mark), TRACK_Y + TRACK_H + 6);
-            this.drawNeedle(g, at(now), TRACK_Y, TRACK_H);
+            this.drawBands(f, span, bands, TRACK_Y, TRACK_H);
+            this.drawNeedle(f, trackX(ctx, span, now), TRACK_Y, TRACK_H);
             labels.write('b-state', PAD, TRACK_Y + TRACK_H + 8, 'RELEASE ON THE MARK', {
                 size: 12,
                 colour: JIG_COLOURS.text,
@@ -1085,106 +1048,70 @@ class JigOverlay implements MinigameOverlay {
         });
     }
 
-    private drawPop(ctx: OverlayContext, labels: Labels, mg: JigMg, now: number): void {
-        const pop = popFor(mg.last);
+    /** The last judgement, rising and fading from the moment the server made it. */
+    private drawPop(f: Frame): void {
+        const last = f.mg.last;
+        const pop = popFor(last);
 
-        if (!pop || mg.last === null) return;
+        if (pop === null || last === null) return;
 
-        if (mg.last.at !== this.popAt) {
-            this.popAt = mg.last.at;
-            this.popMs = ctx.scene.time.now;
-        }
+        const age = f.now - last.at;
 
-        const age = ctx.scene.time.now - this.popMs;
+        if (age < 0 || age > POP_SECONDS) return;
 
-        if (age > POP_MS) return;
-
-        labels.write('pop', ctx.width / 2, TRACK_Y - 34 - age / 40, pop.text, {
+        f.labels.write('pop', f.ctx.width / 2, TRACK_Y - 34 - age * POP_RISE_PX, pop.text, {
             size: 20,
             bold: true,
             colour: pop.colour,
             originX: 0.5,
         });
-        void now;
     }
 
-    /** Everyone at the station sees the flash, wherever the stick was judged. */
-    private drawPrimeFlash(
-        ctx: OverlayContext,
-        g: Phaser.GameObjects.Graphics,
-        mg: JigMg,
-        now: number,
-    ): void {
-        const alpha = primeFlash(mg.primeAt, now);
+    /** Everyone at the station sees the flash, whichever role they are playing. */
+    private drawPrimeFlash(f: Frame): void {
+        const alpha = primeFlash(f.mg.primeAt, f.now);
 
         if (alpha <= 0) return;
 
-        g.fillStyle(JIG_COLOURS.brass, alpha * 0.5);
-        g.fillRect(0, 0, ctx.width, ctx.height);
+        f.g.fillStyle(JIG_COLOURS.brass, alpha * 0.5);
+        f.g.fillRect(0, 0, f.ctx.width, f.ctx.height);
     }
 
-    private drawTrack(
-        g: Phaser.GameObjects.Graphics,
-        ctx: OverlayContext,
+    private drawTrack(f: Frame, y: number, height: number): void {
+        f.g.fillStyle(JIG_COLOURS.track, 1);
+        f.g.fillRect(PAD, y, trackWidth(f.ctx), height);
+        f.g.lineStyle(1, JIG_COLOURS.trackEdge, 1);
+        f.g.strokeRect(PAD, y, trackWidth(f.ctx), height);
+    }
+
+    /** The two windows the server grades with, drawn where it will grade them. */
+    private drawBands(
+        f: Frame,
+        span: JigSpan,
+        bands: JigBands,
         y: number,
         height: number,
     ): void {
-        g.fillStyle(JIG_COLOURS.track, 1);
-        g.fillRect(PAD, y, ctx.width - PAD * 2, height);
-        g.lineStyle(1, JIG_COLOURS.trackEdge, 1);
-        g.strokeRect(PAD, y, ctx.width - PAD * 2, height);
-    }
+        const { ctx, g } = f;
+        const at = (t: number): number => trackX(ctx, span, t);
 
-    private drawNeedle(
-        g: Phaser.GameObjects.Graphics,
-        x: number,
-        y: number,
-        height: number,
-    ): void {
-        g.fillStyle(JIG_COLOURS.needle, 1);
-        g.fillRect(x - NEEDLE_W / 2, y, NEEDLE_W, height);
-    }
-
-    private jigConfig(ctx: OverlayContext): AssemblyMinigame {
-        const cfg = ctx.scene.conn.config.level.stations.find(
-            (station) => station.id === ctx.stationId,
+        g.fillStyle(JIG_COLOURS.ok, 0.3);
+        g.fillRect(at(bands.ok.from), y, at(bands.ok.to) - at(bands.ok.from), height);
+        g.fillStyle(JIG_COLOURS.perfect, 0.4);
+        g.fillRect(
+            at(bands.perfect.from),
+            y,
+            at(bands.perfect.to) - at(bands.perfect.from),
+            height,
         );
-
-        return (cfg?.minigame ?? FALLBACK_MINIGAME) as AssemblyMinigame;
+        g.lineStyle(2, JIG_COLOURS.text, 1);
+        g.lineBetween(at(bands.mark), y - 6, at(bands.mark), y + height + 6);
     }
 
-    private pourConfig(ctx: OverlayContext): PourConfig {
-        return this.jigConfig(ctx).pour;
+    private drawNeedle(f: Frame, x: number, y: number, height: number): void {
+        f.g.fillStyle(JIG_COLOURS.needle, 1);
+        f.g.fillRect(x - NEEDLE_W / 2, y, NEEDLE_W, height);
     }
-}
-
-/**
- * The panel is mounted from `StationState`, which can arrive before the config
- * reply does; the fallback keeps the bands drawable for that one frame and is
- * replaced by the level's own numbers as soon as they land.
- */
-const FALLBACK_MINIGAME: AssemblyMinigame = {
-    pour: {
-        beatsByQuality: { '1.0': 5, '0.7': 7, '0.4': 8 },
-        perfectMs: 60,
-        okMs: 140,
-        primeKegWindowMultiplier: 1.5,
-    },
-    knots: { long: 3, short: 2, secondsPerKnot: 0.4, perfectMs: 60, okMs: 140 },
-    crimp: { clicks: 3, clickSeconds: 0.2, perfectMs: 80, okMs: 200 },
-    toss: { arcSeconds: 0.5, perfectMs: 120, okMs: 250 },
-};
-
-function readShelfKegs(ctx: OverlayContext): number {
-    const station = ctx.state.stations.get(ctx.stationId);
-
-    if (!station) return 0;
-
-    const ids: string[] = [];
-
-    station.inputShelf.forEach((id) => ids.push(id));
-
-    return readShelf(ids, (id) => ctx.state.items.get(id)).kegs;
 }
 
 export const jigOverlay: OverlayFactory = () => new JigOverlay();

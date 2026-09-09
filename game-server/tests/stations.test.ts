@@ -5,7 +5,7 @@ import type { RoomControls } from '../src/rooms/handlers';
 import { createItem, placeOnFloor, shelfPush } from '../src/sim/items';
 import { dropItem } from '../src/sim/itemDrop';
 import { MINIGAMES } from '../src/sim/minigames/index';
-import type { MinigameInstance, StationCtx } from '../src/sim/minigames/types';
+import type { MinigameInstance, OutputSpec, StationCtx } from '../src/sim/minigames/types';
 import {
     build,
     jam,
@@ -159,6 +159,32 @@ function shelve(world: World, id: string, type: ItemType): void {
     const item = createItem(world, type);
 
     shelfPush(world, stateOf(world, id), 'in', item);
+}
+
+/** The plainest thing a module can deliver: what the Slammer hands `complete`. */
+function kegSpec(handsOf: string): OutputSpec {
+    return {
+        type: 'keg',
+        quality: 1,
+        prime: false,
+        dents: 0,
+        fuseLength: '',
+        fill: 0,
+        capLoose: false,
+        frayed: false,
+        orderId: '',
+        handsOf,
+    };
+}
+
+function kegsIn(world: World): number {
+    let found = 0;
+
+    world.state.items.forEach((item) => {
+        if (item.type === 'keg') found++;
+    });
+
+    return found;
 }
 
 describe('build', () => {
@@ -641,17 +667,24 @@ describe('the cycle', () => {
 
     it('shelves the output, hands it over when the shelf is full, and bumps the tally', () => {
         const world = runningWorld(1);
+        const spy = spyOn(world, 'powder-a');
         const player = standOn(world, 'session-0', [5, 4]);
 
         onInteract(world, player);
         world.state.clock = 4;
-        tick(world, 0.05);
+
+        // One judged keg per tick, which is all F05 sees of any module.
+        spy.onTick = (ctx): void => {
+            if (!ctx.beginCycle()) return;
+
+            ctx.complete({ item: kegSpec(ctx.sessionIdOf(player)), perfect: false });
+        };
 
         const st = stateOf(world, 'powder-a');
 
         for (let i = 0; i < 6; i++) {
             world.state.clock += 2;
-            expect(onInteract(world, player)).toBe(true);
+            tick(world, 0.05);
         }
 
         expect(st.outputShelf.length).toBe(6);
@@ -659,15 +692,16 @@ describe('the cycle', () => {
         expect(world.tally.players.get(player.userId)?.produced).toBe(6);
 
         world.state.clock += 2;
-        onInteract(world, player);
+        tick(world, 0.05);
 
         expect(player.carrying).toBe('k-7');
         expect(st.outputShelf.length).toBe(6);
 
+        // Shelf full and hands full: ADR 0012 leaves nowhere to put an eighth.
         world.state.clock += 2;
-        onInteract(world, player);
+        tick(world, 0.05);
 
-        expect(world.state.items.size).toBe(7);
+        expect(kegsIn(world)).toBe(7);
     });
 
     it('forfeits an executing cycle when the operator leaves', () => {
@@ -978,7 +1012,7 @@ describe('a seat going away', () => {
     });
 });
 
-describe('the stub modules', () => {
+describe('the modules', () => {
     it('holds one module per station type', () => {
         expect(Object.keys(MINIGAMES).sort()).toEqual(['assembly', 'boom_powder', 'dock']);
     });
@@ -991,28 +1025,19 @@ describe('the stub modules', () => {
         expect(stationOf(world, 'powder-a').mg).not.toBe(stationOf(other, 'powder-a').mg);
     });
 
-    it('assembles a stick from a casing and a keg on E', () => {
-        const world = runningWorld(1);
-        const player = standOn(world, 'session-0', [13, 9]);
-
-        onInteract(world, player);
-        world.state.clock = 4;
-        shelve(world, 'assembly-a', 'casing');
-        shelve(world, 'assembly-a', 'keg');
-        tick(world, 0.05);
-
-        expect(onInteract(world, player)).toBe(true);
-
-        const st = stateOf(world, 'assembly-a');
-
-        expect(st.inputShelf.length).toBe(0);
-        expect(st.outputShelf.length).toBe(1);
-        expect(world.state.items.get(st.outputShelf[0]!)?.type).toBe('stick');
-    });
-
-    it('keeps the operator on the machine when E lands inside the re-arm floor', () => {
+    /**
+     * The whole round trip a real module takes: the handlers forward the raw
+     * `t`, the module judges it, and the keg lands on F05's shelf. The gesture
+     * belongs to F07 and is asserted to the millisecond in its own suite; what
+     * this owes is that nothing between the socket and the shelf is a stub.
+     */
+    it('takes a keg off the real Slammer verbs, from the handler to the shelf', () => {
         const world = runningWorld(1);
         const player = standOn(world, 'session-0', [5, 4]);
+
+        function mg(op: string, t: number, v?: string): void {
+            dispatchMessage(world, ROOM, 'session-0', 'mg', { stationId: 'powder-a', op, t, v });
+        }
 
         world.state.clock = 104;
         dispatchMessage(world, ROOM, 'session-0', 'interact', { t: 0 });
@@ -1022,19 +1047,38 @@ describe('the stub modules', () => {
         // Past the clipboard, with one tick to put the curve on the row.
         world.state.clock = 108;
         tick(world, 0.05);
-        dispatchMessage(world, ROOM, 'session-0', 'interact', { t: 0 });
+
+        // 0.5 s of mash doubles into a 1.0 s climb, and the hold is that long.
+        mg('mash', 1000, 'l');
+        mg('mash', 1250, 'u');
+        world.state.clock = 108.5;
+        mg('mash', 1500, 'r');
+        mg('charge', 1500);
+        world.state.clock = 109.5;
+        mg('release', 2500);
 
         const st = stateOf(world, 'powder-a');
 
         expect(st.outputShelf.length).toBe(1);
+        expect(world.state.items.get(st.outputShelf[0] ?? '')?.type).toBe('keg');
+        expect(world.tally.counts.kegsMade).toBe(1);
+    });
 
-        // The machine's own floor is 1.4 s. A press inside it is a press the
-        // machine cannot answer, not a press that means "get me off this thing".
-        world.state.clock = 108.2;
+    it('reads E at a module that declines the press as a leave, re-arm floor or not', () => {
+        const world = runningWorld(1);
+        const player = standOn(world, 'session-0', [5, 4]);
+
+        world.state.clock = 104;
+        dispatchMessage(world, ROOM, 'session-0', 'interact', { t: 0 });
+        world.state.clock = 108;
+        tick(world, 0.05);
+
+        // Contracts §10.3: `onInteract` false is F05's cue, and every real
+        // module returns it, so `E` on the machine only ever means "off".
         dispatchMessage(world, ROOM, 'session-0', 'interact', { t: 0 });
 
-        expect(player.stationId).toBe('powder-a');
-        expect(st.outputShelf.length).toBe(1);
+        expect(player.stationId).toBe('');
+        expect(stationOf(world, 'powder-a').members.size).toBe(0);
     });
 });
 
