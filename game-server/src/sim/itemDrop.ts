@@ -9,6 +9,7 @@ import type {
     Tile,
 } from '../shared';
 import { setBubble } from './bubbles';
+import { spark } from './hazards';
 import {
     addSpill,
     blockedForItems,
@@ -90,8 +91,9 @@ function fizzle(world: World, item: ItemState, origin: Tile): void {
     destroyItem(world, item.id);
     world.fx('fizzle', ...tileCentre(origin));
 
-    // TODO(F10): `hazards.spark(world, origin[0], origin[1], 'fizzle')` — always,
-    // never rolled here; F10 decides whether the tile has anything to catch.
+    // Never rolled here (contracts §10.4): a fizzle always sparks, and F10 is
+    // the one that decides whether the tile had anything to catch.
+    spark(world, origin[0], origin[1], 'fizzle');
 }
 
 /**
@@ -142,11 +144,16 @@ export function dropItem(
     // Two floor items never share a tile, so a crowded rest tile pushes the item
     // outwards; nothing free within two tiles and it is gone.
     if (!placeNear(world, item, outcome.restTile)) {
+        world.tally.scrap(item.type as ItemType);
         destroyItem(world, item.id);
         world.fx('pfft', ...tileCentre(outcome.restTile));
 
         return outcome;
     }
+
+    // A lit keg that came down in a blast bin was taken by F10 as it landed
+    // (contracts §10.5), so there is nothing left here to bounce or to jam.
+    if (!world.state.items.has(item.id)) return outcome;
 
     world.fx(knockedOver ? 'pfft' : 'thunk', ...tileCentre([item.x, item.y]));
 

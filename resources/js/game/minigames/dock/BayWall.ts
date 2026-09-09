@@ -46,12 +46,20 @@ export interface BayLabel {
 /**
  * What the wall says. The slam prompt outranks the clock: while the window is
  * open the only number that matters is how fast someone can hold `E`.
+ *
+ * The docked clock names the truck and what it is about to do, because from ten
+ * tiles away a bare `0:12` floating over a doorway is a number with no subject —
+ * the one thing a player halfway down the line needs is whether it is worth
+ * running the stick over.
  */
 export function bayLabel(mg: DockMg, serverNow: number): BayLabel {
     if (mg.tailgateUntil > serverNow) return { text: 'SLAM IT', kind: 'slam' };
 
     if (mg.truck.phase === 'docked') {
-        return { text: mmss(mg.truck.leavesAt - serverNow), kind: 'countdown' };
+        return {
+            text: `TRUCK LEAVES ${mmss(mg.truck.leavesAt - serverNow)}`,
+            kind: 'countdown',
+        };
     }
 
     return { text: `NEXT ${mmss(mg.truck.arrivesAt - serverNow)}`, kind: 'next' };

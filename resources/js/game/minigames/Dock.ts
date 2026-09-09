@@ -147,7 +147,10 @@ export function truckHeadline(mg: DockMg, serverNow: number): string {
     if (phase === 'leaving') return 'TRUCK LEAVING';
     if (phase === 'away') return `NEXT TRUCK ${mmss(arrivesAt - serverNow)}`;
 
-    return `TRUCK ${loaded}/${slots} · ${mmss(leavesAt - serverNow)}`;
+    // The bay wall carries the verb for a reason (`BayWall.ts`): a bare 0:12
+    // floating over a doorway is a number with no subject. The panel the player
+    // is actually looking at once they arrive was dropping it again.
+    return `TRUCK ${loaded}/${slots} · LEAVES ${mmss(leavesAt - serverNow)}`;
 }
 
 class DockOverlay implements MinigameOverlay {

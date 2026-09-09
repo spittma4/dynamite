@@ -2,24 +2,29 @@ import {
     type AssemblyMinigame,
     type FuseLength,
     type JigBPhase,
+    type JigCradle,
     type JigGrade,
     type JigLane,
     type JigMg,
     type JigNote,
     type JigPhase,
     type JigWindow,
+    type ItemType,
     type LevelConfig,
     MAX_INPUT_BACKDATE_S,
     type MgOp,
     type PlayerState,
     type PourConfig,
+    STATION_LABEL,
     type StationState,
+    type StationType,
     type TossConfig,
     pourFillAt,
     pourWindow,
 } from '@shared';
 import type Phaser from 'phaser';
 
+import { pluralOf, producedBy, shelfLabel } from '../render/dropTargets';
 import type { Factory } from '../scenes/Factory';
 import type { MinigameOverlay, OverlayContext, OverlayFactory, OverlayKey } from './types';
 
@@ -90,12 +95,24 @@ const GRADE_COLOURS: Record<JigGrade, number> = {
     miss: JIG_COLOURS.miss,
 };
 
+/**
+ * One spelling per refusal. The pop and the right-hand badge can be on screen
+ * at the same instant, and they used to disagree — 'FULL' against 'CRADLE
+ * FULL', 'BODY IN THE AISLE' against 'AISLE BLOCKED' — so a player read both
+ * spellings of one refusal at once.
+ */
+export const CRADLE_FULL = 'CRADLE FULL';
+export const AISLE_BODY = 'BODY IN THE AISLE';
+
+/** One phrase for the one object B fetches, so no surface invents a fourth. */
+export const FUSE_SET = 'FUSE SET';
+
 const NOTE_LABELS: Record<Exclude<JigNote, ''>, string> = {
     early: 'EARLY',
     late: 'LATE',
     lane: 'WRONG LANE',
-    full: 'FULL',
-    body: 'BODY IN THE AISLE',
+    full: CRADLE_FULL,
+    body: AISLE_BODY,
 };
 
 const SPACE_OPS: Record<JigPhase, MgOp | null> = {
@@ -107,6 +124,19 @@ const SPACE_OPS: Record<JigPhase, MgOp | null> = {
 };
 
 const PHASES: JigPhase[] = ['seat', 'pour', 'parts', 'knots', 'crimp'];
+
+/**
+ * The strip's word for each stop. `parts` is the sim's name for the phase and
+ * the wrong one to show: every other surface calls the object a fuse set, and
+ * the cell used to shorten that to 'FUSE' — a fourth name for one object.
+ */
+const PHASE_LABEL: Record<JigPhase, string> = {
+    seat: 'SEAT',
+    pour: 'POUR',
+    parts: FUSE_SET,
+    knots: 'KNOTS',
+    crimp: 'CRIMP',
+};
 
 /** An `mg` blob the client cannot read leaves the panel empty rather than throwing. */
 export function parseJigMg(mg: string): JigMg | null {
@@ -163,22 +193,109 @@ export function moveCursor(cursor: number, delta: number, count: number): number
 }
 
 /**
+ * The three things a stopped jig is ever short of, in the words the floor
+ * already uses for them (`shortageOf`, `render/intake.ts`). A playtester read
+ * the old `NO CASINGS` as an errand and went hunting for a station that does
+ * not exist in M1 — `feed()` in `shared/src/sim/jig.ts` stocks Assembly's
+ * casings itself, so the honest sentence is a wait. But `feed()` bails on
+ * `shelfRoom <= 0`, so a shelf packed with kegs is a wait that never ends, and
+ * promising a casing there is worse than saying nothing. The last shortage is
+ * never "powder": it is a keg, off Boom Powder's out tray, in somebody's hands.
+ */
+export const CASINGS_COMING = `${pluralOf('casing')} COMING`;
+export const NEED_KEG = 'NEED A KEG';
+
+/**
+ * A packed shelf, said to the hands that are reading it. 'TAKE ONE BACK' is an
+ * instruction a player already holding a keg physically cannot follow, and
+ * nothing told them to put theirs down first or where — so the one sentence
+ * written for the dead end was useless to the only person who ever hits it.
+ */
+export const SHELF_FULL = 'SHELF FULL — LIFT ONE OFF (E)';
+export const SHELF_FULL_HANDS = 'SHELF FULL — PUT YOURS DOWN, THEN LIFT ONE OFF';
+
+/**
+ * What the cradle is doing, in words. `mg.cradle` is the sim's own enum and
+ * `CRADLE SURFACE` — an OK toss that landed askew on the bench — is a state
+ * name no player can decode.
+ */
+export const CRADLE_LABEL: Record<JigCradle, string> = {
+    empty: 'CRADLE EMPTY',
+    armed: `${FUSE_SET} IN THE CRADLE`,
+    surface: `${FUSE_SET} ON THE BENCH`,
+};
+
+/**
+ * Why B is at the rack at all. The panel drew B's keys and the order chips and
+ * named neither the receiver nor the stake, so a first-timer could not learn
+ * from it that the jig is stopped until the toss lands.
+ */
+export const RACK_STAKE = 'The jig is stopped until a fuse set lands in the cradle.';
+
+/** The header that turns two loose chips into the reason for the SHORT/LONG press. */
+export const ORDER_STRIP_LABEL = 'NEXT ORDERS WANT';
+
+const ORDINALS = ['1st', '2nd', '3rd'];
+
+/** An order's place in the queue. 'o-1' is the database's name for it, not the player's. */
+export function orderPlace(index: number): string {
+    return ORDINALS[index] ?? `${index + 1}th`;
+}
+
+/** The strip every role at a starved station gets, whatever panel they are on. */
+export const KEG_STRIP = `${NEED_KEG} — nobody is fetching one`;
+
+/**
+ * The machine at the far end of the errand, read off the level's recipes the
+ * way the floor sign is (`producedBy`, `render/dropTargets.ts`). Spelled into
+ * the panel as a constant it would point at Boom Powder on a level whose kegs
+ * came from somewhere else.
+ */
+export function kegSource(level: Pick<LevelConfig, 'stations' | 'recipes'>): string {
+    const maker = level.stations.find((station) => producedBy(station, level.recipes) === 'keg');
+
+    return maker ? STATION_LABEL[maker.type as StationType] : STATION_LABEL.boom_powder;
+}
+
+/**
+ * The errand as four presses rather than a place name. Every noun in it is the
+ * paint the player will be standing in front of — `shelfLabel` builds both the
+ * out tray's caption and the IN sign, so the sentence and the floor cannot
+ * drift apart.
+ */
+export function kegRoute(source: string, inSign: string): string {
+    const tray = shelfLabel('out', undefined, 'keg');
+
+    // `putDownItem` (game-server/src/sim/items.ts) shelves onto the tile the
+    // player is FACING, and the apron is two tiles — the shelf and the aisle you
+    // stand in. 'E in the striped zone' was true from only one of them.
+    return `ESC · walk to ${source} · E at ${tray} · back in the striped zone, face ${inSign}, E`;
+}
+
+/** Whether the machine has powder for the next stick, wherever it is sitting. */
+export function kegShortage(kegs: number, keg: { poursLeft: number } | null): boolean {
+    return kegs === 0 && (keg === null || keg.poursLeft <= 0);
+}
+
+/**
  * Why the picker is greyed out. The reasons come from state rather than a flag,
- * and they are ordered by what the player can do about them: the machine timer
- * clears itself, their own hands do not.
+ * and they are ordered the way `shortageOf` orders the floor sign: the machine
+ * timer clears itself, their own hands do not, and an errand somebody can run
+ * beats a wait nobody can hurry.
  */
 export function pickerBlock(input: {
     now: number;
     rearmAt: number;
     casings: number;
     kegs: number;
+    room: number;
     keg: { poursLeft: number } | null;
     carrying: string;
 }): string {
     if (input.now < input.rearmAt) return 'RE-ARMING';
     if (input.carrying !== '') return 'HANDS FULL';
-    if (input.casings === 0) return 'NO CASINGS';
-    if (input.kegs === 0 && (input.keg === null || input.keg.poursLeft <= 0)) return 'NO POWDER';
+    if (kegShortage(input.kegs, input.keg)) return NEED_KEG;
+    if (input.casings === 0) return input.room > 0 ? CASINGS_COMING : SHELF_FULL;
 
     return '';
 }
@@ -354,6 +471,16 @@ const MARKER_W = 6;
 const NEEDLE_W = 2;
 const POP_SECONDS = 0.9;
 const POP_RISE_PX = 22;
+/**
+ * The bottom 20 px of the panel belongs to the HUD: `Hud.ts` draws the help
+ * hint at `floorHeight - 16` on a higher depth, and the legend used to smear
+ * across it at exactly the moment a stuck player needs to find it.
+ */
+const LEGEND_UP = 34;
+/** The keg strip rides just above the legend, clear of the right-hand badges. */
+const STRIP_UP = 54;
+
+const OPERATOR_LEGEND = '← → pick / knot · SPACE seat, pour, crimp · ESC bail';
 
 interface LabelStyle {
     size: number;
@@ -420,6 +547,8 @@ interface Frame {
     mg: JigMg;
     cfg: AssemblyMinigame;
     now: number;
+    /** A's own panel prints the route inline; everyone else gets it as their legend. */
+    operator: boolean;
 }
 
 function trackWidth(ctx: OverlayContext): number {
@@ -491,8 +620,16 @@ class JigOverlay implements MinigameOverlay {
 
         if (!isFrozen(station)) this.frozenNow = serverNow;
 
-        const frame: Frame = { ctx, g, labels, mg, cfg, now: this.frozenNow };
         const role = roleOf(mg, ctx.sessionId);
+        const frame: Frame = {
+            ctx,
+            g,
+            labels,
+            mg,
+            cfg,
+            now: this.frozenNow,
+            operator: role === 'a',
+        };
 
         this.sendSwingOnHold(mg);
 
@@ -618,17 +755,45 @@ class JigOverlay implements MinigameOverlay {
         this.cursor = moveCursor(this.cursor, delta, this.shelfOf(ctx).casings.length);
     }
 
-    /** The picker draws casings and the pour needs kegs; one read answers both. */
-    private shelfOf(ctx: OverlayContext): { casings: JigChip[]; kegs: number } {
+    /**
+     * The picker draws casings, the pour needs kegs and the restock needs a
+     * free slot to land in; one read answers all three.
+     */
+    private shelfOf(ctx: OverlayContext): { casings: JigChip[]; kegs: number; room: number } {
         const station = ctx.state.stations.get(ctx.stationId);
 
-        if (!station) return { casings: [], kegs: 0 };
+        if (!station) return { casings: [], kegs: 0, room: 0 };
 
         const ids: string[] = [];
 
         station.inputShelf.forEach((id) => ids.push(id));
 
-        return readShelf(ids, (id) => ctx.state.items.get(id));
+        return {
+            ...readShelf(ids, (id) => ctx.state.items.get(id)),
+            room: Math.max(0, station.inputCap - ids.length),
+        };
+    }
+
+    /** The keg question, asked the same way for every role at the station. */
+    private kegShort(ctx: OverlayContext, mg: JigMg): boolean {
+        return kegShortage(this.shelfOf(ctx).kegs, mg.keg);
+    }
+
+    /** The machine the errand ends at, from the level this round is running. */
+    private kegSourceOf(ctx: OverlayContext): string {
+        return kegSource(ctx.scene.conn.config.level);
+    }
+
+    /**
+     * The errand in the words painted at both ends of it. The IN sign comes off
+     * this station's own shelf through `shelfLabel`, the same call that paints
+     * it on the floor, so the sentence cannot name a sign that is not there.
+     */
+    private routeOf(ctx: OverlayContext): string {
+        const station = ctx.scene.conn.config.level.stations.find((s) => s.id === ctx.stationId);
+        const accepts = station?.inputShelf?.accepts as ItemType[] | undefined;
+
+        return kegRoute(this.kegSourceOf(ctx), shelfLabel('in', accepts, null));
     }
 
     /**
@@ -674,22 +839,46 @@ class JigOverlay implements MinigameOverlay {
         else if (mg.phase === 'knots') this.drawKnots(f);
         else this.drawCrimp(f);
 
+        // The watcher is by definition the most lost person at the station, and
+        // A's panel answers none of their questions. The keg block is the one
+        // fact that is theirs to act on, so it is repeated where they will see
+        // it even when the phrase A is playing has moved past the seat.
+        if (!operator && this.kegShort(ctx, mg)) this.drawKegStrip(f);
+
         labels.write(
             'legend',
             PAD,
-            ctx.height - 20,
-            operator
-                ? '← → pick / knot · SPACE seat, pour, crimp · ESC bail'
-                : 'A helper counts for the staffing curve; the phrase is A’s',
+            ctx.height - LEGEND_UP,
+            operator ? OPERATOR_LEGEND : this.watcherLegend(ctx, mg),
             { size: 11, colour: JIG_COLOURS.label },
         );
+    }
+
+    /** The one line a player who is not driving the jig can do something about. */
+    private drawKegStrip(f: Frame): void {
+        f.labels.write('keg-strip', PAD, f.ctx.height - STRIP_UP, KEG_STRIP, {
+            size: 13,
+            bold: true,
+            colour: JIG_COLOURS.miss,
+        });
+    }
+
+    /**
+     * A watcher is by definition the most lost person at the station, so when
+     * the errand is on they get the whole walk rather than a hint at it. It sits
+     * in the legend slot, directly under the strip that named the shortage.
+     */
+    private watcherLegend(ctx: OverlayContext, mg: JigMg): string {
+        return this.kegShort(ctx, mg)
+            ? this.routeOf(ctx)
+            : 'Watching. An extra pair of hands still speeds this station up · ESC bail';
     }
 
     private drawPhaseStrip(f: Frame): void {
         PHASES.forEach((phase, i) => {
             const current = phase === f.mg.phase;
 
-            f.labels.write(`phase-${phase}`, PAD + i * 74, STRIP_Y, phase.toUpperCase(), {
+            f.labels.write(`phase-${phase}`, PAD + i * 74, STRIP_Y, PHASE_LABEL[phase], {
                 size: 12,
                 bold: current,
                 colour: current ? JIG_COLOURS.perfect : JIG_COLOURS.dim,
@@ -699,7 +888,7 @@ class JigOverlay implements MinigameOverlay {
 
     private drawPicker(f: Frame, carrying: string): void {
         const { ctx, g, labels, mg, now } = f;
-        const { casings, kegs } = this.shelfOf(ctx);
+        const { casings, kegs, room } = this.shelfOf(ctx);
 
         this.cursor = moveCursor(this.cursor, 0, casings.length);
 
@@ -708,6 +897,7 @@ class JigOverlay implements MinigameOverlay {
             rearmAt: mg.rearmAt,
             casings: casings.length,
             kegs,
+            room,
             keg: mg.keg,
             carrying,
         });
@@ -728,8 +918,13 @@ class JigOverlay implements MinigameOverlay {
             }
         });
 
-        if (casings.length === 0) {
-            labels.write('picker-empty', PAD, TRACK_Y + 8, 'SHELF EMPTY', {
+        // An empty rail and the block below it are the same fact, so the rail
+        // speaks only when the block is busy naming something else — a machine
+        // timer or a full pair of hands the casings are waiting behind.
+        const rail = room > 0 ? CASINGS_COMING : SHELF_FULL;
+
+        if (casings.length === 0 && block !== rail) {
+            labels.write('picker-empty', PAD, TRACK_Y + 8, rail, {
                 size: 12,
                 colour: JIG_COLOURS.dim,
             });
@@ -744,6 +939,20 @@ class JigOverlay implements MinigameOverlay {
             bold: true,
             colour: JIG_COLOURS.miss,
         });
+
+        // A station name is not an instruction. Three of the four presses this
+        // errand takes appear nowhere else on the panel, so the seat spells the
+        // whole walk out — and quotes the paint at both ends of it.
+        if (block === NEED_KEG) {
+            if (f.operator) {
+                labels.write('block-route', PAD, TRACK_Y + CHIP_H + 30, this.routeOf(ctx), {
+                    size: 11,
+                    colour: JIG_COLOURS.dim,
+                });
+            }
+
+            return;
+        }
 
         if (block !== 'RE-ARMING') return;
 
@@ -787,10 +996,26 @@ class JigOverlay implements MinigameOverlay {
         const span = phaseSpan(mg, cfg);
 
         if (pour === null || span === null) {
-            labels.write('pour-wait', PAD, TRACK_Y, 'NO POWDER — WAITING FOR A KEG', {
+            // `seat()` sets `phase = 'pour'` and `pour = null` a tick before
+            // `startPour` builds the pour, with the keg already in hand. Reading
+            // that gap as a shortage walks the operator away from a machine that
+            // has everything it needs.
+            const ready = !kegShortage(this.shelfOf(ctx).kegs, mg.keg);
+
+            labels.write('pour-wait', PAD, TRACK_Y, ready ? 'STARTING THE POUR' : NEED_KEG, {
                 size: 14,
-                colour: JIG_COLOURS.miss,
+                colour: ready ? JIG_COLOURS.label : JIG_COLOURS.miss,
             });
+
+            // The shortage and the way out of it are one sentence. Printed apart,
+            // an operator who joined mid-phrase read NEED A KEG with no route at
+            // all — the same player and the same problem as the seat, half answered.
+            if (!ready && f.operator) {
+                labels.write('pour-route', PAD, TRACK_Y + 22, this.routeOf(ctx), {
+                    size: 11,
+                    colour: JIG_COLOURS.dim,
+                });
+            }
 
             return;
         }
@@ -813,7 +1038,7 @@ class JigOverlay implements MinigameOverlay {
 
         this.drawNeedle(f, head, TRACK_Y, TRACK_H);
 
-        labels.write('pour-fill', PAD, TRACK_Y + TRACK_H + 8, `FILL ${fill.toFixed(2)}`, {
+        labels.write('pour-fill', PAD, TRACK_Y + TRACK_H + 8, `FILL ${Math.round(fill * 100)}%`, {
             size: 12,
             colour: fill > 1 ? JIG_COLOURS.overfill : JIG_COLOURS.label,
         });
@@ -829,12 +1054,12 @@ class JigOverlay implements MinigameOverlay {
     private drawParts(f: Frame): void {
         const { ctx, g, labels, mg, cfg, now } = f;
 
-        labels.write('parts-wait', PAD, TRACK_Y, 'WAITING FOR PARTS', {
+        labels.write('parts-wait', PAD, TRACK_Y, `WAITING FOR A ${FUSE_SET}`, {
             size: 16,
             bold: true,
             colour: mg.cradle === 'empty' ? JIG_COLOURS.miss : JIG_COLOURS.ok,
         });
-        labels.write('parts-cradle', PAD, TRACK_Y + 24, `CRADLE ${mg.cradle.toUpperCase()}`, {
+        labels.write('parts-cradle', PAD, TRACK_Y + 24, CRADLE_LABEL[mg.cradle], {
             size: 12,
             colour: JIG_COLOURS.label,
         });
@@ -932,23 +1157,34 @@ class JigOverlay implements MinigameOverlay {
     private drawRack(f: Frame): void {
         const { ctx, g, labels, mg } = f;
 
-        labels.write('title', PAD, TITLE_Y, 'ASSEMBLY — THE PARTS RACK', { size: 18, bold: true });
+        labels.write('title', PAD, TITLE_Y, 'ASSEMBLY — THE FUSE RACK', { size: 18, bold: true });
         labels.write('tag', ctx.width - PAD, TITLE_Y + 2, 'B · THE RACK', { size: 12, originX: 1 });
+
+        labels.write('order-label', ctx.width - PAD, STRIP_Y - 6, ORDER_STRIP_LABEL, {
+            size: 10,
+            colour: JIG_COLOURS.dim,
+            originX: 1,
+        });
 
         mg.orderChip.forEach((chip, i) => {
             labels.write(
                 `order-${i}`,
-                PAD,
-                STRIP_Y + i * 16,
-                `${chip.orderId}  ${fuseLabel(chip.fuseLength)}`,
-                { size: 12, colour: i === 0 ? JIG_COLOURS.text : JIG_COLOURS.label },
+                ctx.width - PAD,
+                STRIP_Y + 8 + i * 15,
+                `${orderPlace(i)}  ${fuseLabel(chip.fuseLength)}`,
+                {
+                    size: 12,
+                    colour: i === 0 ? JIG_COLOURS.text : JIG_COLOURS.label,
+                    originX: 1,
+                },
             );
         });
 
         if (mg.orderChip.length === 0) {
-            labels.write('order-none', PAD, STRIP_Y, 'NO ORDERS ON THE BOARD', {
+            labels.write('order-none', ctx.width - PAD, STRIP_Y + 8, 'NOTHING ON THE BOARD', {
                 size: 12,
                 colour: JIG_COLOURS.dim,
+                originX: 1,
             });
         }
 
@@ -969,10 +1205,18 @@ class JigOverlay implements MinigameOverlay {
             });
         });
 
+        // What the keys are for, under the choice they explain. Without it the
+        // panel is a key list beside two loose chips, and B cannot learn from the
+        // screen that A is stopped until the toss lands.
+        labels.write('stake', PAD, STRIP_Y + 24, RACK_STAKE, {
+            size: 11,
+            colour: JIG_COLOURS.label,
+        });
+
         this.drawRackTrack(f);
 
         if (mg.cradle !== 'empty') {
-            labels.write('badge-full', ctx.width - PAD, TRACK_Y + TRACK_H + 26, 'CRADLE FULL', {
+            labels.write('badge-full', ctx.width - PAD, TRACK_Y + TRACK_H + 26, CRADLE_FULL, {
                 size: 12,
                 bold: true,
                 colour: JIG_COLOURS.miss,
@@ -981,7 +1225,7 @@ class JigOverlay implements MinigameOverlay {
         }
 
         if (mg.aisleBlocked) {
-            labels.write('badge-aisle', ctx.width - PAD, TRACK_Y + TRACK_H + 44, 'AISLE BLOCKED', {
+            labels.write('badge-aisle', ctx.width - PAD, TRACK_Y + TRACK_H + 44, AISLE_BODY, {
                 size: 12,
                 bold: true,
                 colour: JIG_COLOURS.miss,
@@ -989,10 +1233,15 @@ class JigOverlay implements MinigameOverlay {
             });
         }
 
+        // B has the same view of the shelf A does and, until now, was told
+        // nothing about it: in a three-player session that left two of the
+        // three people at Assembly waiting on a keg nobody had gone for.
+        if (this.kegShort(ctx, mg)) this.drawKegStrip(f);
+
         labels.write(
             'legend',
             PAD,
-            ctx.height - 20,
+            ctx.height - LEGEND_UP,
             '← short · → long · hold SPACE fetch, swing · release to toss · ESC bail',
             { size: 11, colour: JIG_COLOURS.label },
         );
@@ -1008,7 +1257,7 @@ class JigOverlay implements MinigameOverlay {
 
             g.fillStyle(JIG_COLOURS.parts, 0.85);
             g.fillRect(PAD, TRACK_Y, trackX(ctx, span, now) - PAD, TRACK_H);
-            labels.write('b-state', PAD, TRACK_Y + TRACK_H + 8, 'FETCHING SPOOL AND CAP', {
+            labels.write('b-state', PAD, TRACK_Y + TRACK_H + 8, `FETCHING A ${FUSE_SET}`, {
                 size: 12,
                 colour: JIG_COLOURS.label,
             });
@@ -1034,7 +1283,7 @@ class JigOverlay implements MinigameOverlay {
             'b-state',
             PAD,
             TRACK_Y + TRACK_H + 8,
-            mg.bPhase === 'holding' ? 'HOLD SPACE TO SWING' : 'SPACE TO FETCH A SET',
+            mg.bPhase === 'holding' ? 'HOLD SPACE TO SWING' : `SPACE TO FETCH A ${FUSE_SET}`,
             { size: 12, colour: JIG_COLOURS.label },
         );
 

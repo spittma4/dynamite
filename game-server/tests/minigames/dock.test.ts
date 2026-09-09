@@ -653,6 +653,10 @@ describe('departure', () => {
         expect(toasts(world)).toEqual([{ text: 'TRUCK OUT 8/8 — 180', kind: 'good' }]);
         expect(world.state.score).toBe(score);
         expect(world.state.groove).toBe(groove);
+
+        // Eight sticks left on a truck: that is revenue, and a sale is never
+        // billed to the day as waste.
+        expect(world.tally.wastedByType.stick).toBe(0);
     });
 
     it('drives off everyone standing in the truck bay', () => {
@@ -678,6 +682,10 @@ describe('departure', () => {
         expect(rider.bubble).toBe(copy.bubbles.sawTheHighway);
         expect(rider.bubbleUntil).toBe(62);
         expect(world.tally.players.get('u1')?.truckRides).toBe(1);
+
+        // The stick went to the highway rather than to a customer, so the day
+        // is billed for it the way it is billed for anything else lost.
+        expect(world.tally.wastedByType.stick).toBe(1);
     });
 });
 

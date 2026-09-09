@@ -2,14 +2,27 @@ import {
     MAX_INPUT_BACKDATE_S,
     type AssemblyMinigame,
     type JigMg,
+    type PlayerState,
     type PourConfig,
+    type StationState,
     type TossConfig,
 } from '@shared';
 import { describe, expect, it } from 'vitest';
 
 import {
+    AISLE_BODY,
+    CASINGS_COMING,
+    CRADLE_FULL,
+    CRADLE_LABEL,
+    FUSE_SET,
     JIG_COLOURS,
     type JigSpan,
+    KEG_STRIP,
+    NEED_KEG,
+    ORDER_STRIP_LABEL,
+    RACK_STAKE,
+    SHELF_FULL,
+    SHELF_FULL_HANDS,
     bKeyOp,
     bandsAround,
     beatMarks,
@@ -30,10 +43,15 @@ import {
     pourBands,
     primeFlash,
     readShelf,
+    kegRoute,
+    kegSource,
     roleOf,
     spaceOp,
     tossBands,
 } from '../minigames/Jig';
+import type { OverlayContext } from '../minigames/types';
+import { pluralOf } from '../render/dropTargets';
+import { shortageOf } from '../render/intake';
 
 /**
  * The Jig overlay's decisions (F08 §Client). Everything the panel draws is a
@@ -177,6 +195,7 @@ describe('pickerBlock', () => {
         rearmAt: 9,
         casings: 2,
         kegs: 1,
+        room: 4,
         keg: null,
         carrying: '',
     };
@@ -190,13 +209,95 @@ describe('pickerBlock', () => {
             'RE-ARMING',
         );
         expect(pickerBlock({ ...clear, carrying: 's-1', casings: 0 })).toBe('HANDS FULL');
-        expect(pickerBlock({ ...clear, casings: 0 })).toBe('NO CASINGS');
+        expect(pickerBlock({ ...clear, casings: 0 })).toBe(CASINGS_COMING);
+    });
+
+    it('calls an empty casing rail a wait, in the words the floor uses', () => {
+        expect(CASINGS_COMING).toBe(`${pluralOf('casing')} COMING`);
+        expect(CASINGS_COMING).toBe('CASINGS COMING');
     });
 
     it('reads powder from the keg on the jig before the shelf', () => {
-        expect(pickerBlock({ ...clear, kegs: 0 })).toBe('NO POWDER');
+        expect(pickerBlock({ ...clear, kegs: 0 })).toBe(NEED_KEG);
         expect(pickerBlock({ ...clear, kegs: 0, keg: { poursLeft: 1 } })).toBe('');
-        expect(pickerBlock({ ...clear, kegs: 0, keg: { poursLeft: 0 } })).toBe('NO POWDER');
+        expect(pickerBlock({ ...clear, kegs: 0, keg: { poursLeft: 0 } })).toBe(NEED_KEG);
+    });
+
+    it('sends the hauler out before it asks anybody to stand and wait', () => {
+        expect(pickerBlock({ ...clear, casings: 0, kegs: 0 })).toBe(NEED_KEG);
+    });
+
+    it('never promises a casing the shelf has no room to take', () => {
+        expect(pickerBlock({ ...clear, casings: 0, kegs: 8, room: 0 })).toBe(SHELF_FULL);
+    });
+
+    it('names the keg, and leaves the machine to the route line', () => {
+        expect(NEED_KEG).toBe('NEED A KEG');
+        expect(NEED_KEG).toContain('KEG');
+    });
+});
+
+/**
+ * The panel and the paint under the player's feet are two renderings of one
+ * shelf. A playtester who reads “CASINGS COMING” inside while the floor says
+ * the shelf is jammed has been told the machine is fine by the surface that
+ * knows least, so the two sentences are pinned to each other here.
+ */
+describe('the panel and the floor sign agree about the shelf', () => {
+    const station = {
+        id: 'assembly',
+        type: 'assembly',
+        anchor: [12, 6],
+        workTiles: [[13, 8]],
+        rackTiles: [[16, 8]],
+        inputShelf: { tile: [11, 7], capacity: 8, accepts: ['keg', 'casing'] },
+    } as unknown as Parameters<typeof shortageOf>[0];
+
+    it('uses one sentence for a shelf with no room left', () => {
+        const packed = Array.from({ length: 8 }, () => 'keg' as const);
+
+        expect(shortageOf(station, packed, null)?.sentence).toBe(SHELF_FULL);
+    });
+
+    it('uses one sentence for a restock that can actually happen', () => {
+        expect(shortageOf(station, ['keg'], null)?.sentence).toBe(CASINGS_COMING);
+    });
+
+    it('names the same object when the keg is the thing missing', () => {
+        expect(shortageOf(station, ['casing'], null)?.sentence).toContain('KEG');
+        expect(NEED_KEG).toContain('KEG');
+    });
+});
+
+describe('kegSource and kegRoute', () => {
+    const level = {
+        stations: [
+            { id: 'powder-a', type: 'boom_powder' },
+            { id: 'assembly-a', type: 'assembly' },
+        ],
+        recipes: { keg: { station: 'boom_powder', output: { type: 'keg' } } },
+    } as unknown as Parameters<typeof kegSource>[0];
+
+    it('reads the machine that makes kegs off the level, not off a constant', () => {
+        expect(kegSource(level)).toBe('BOOM POWDER');
+    });
+
+    it('follows a level that makes its kegs somewhere else', () => {
+        const moved = {
+            stations: [{ id: 'assembly-a', type: 'assembly' }],
+            recipes: { keg: { station: 'assembly', output: { type: 'keg' } } },
+        } as unknown as Parameters<typeof kegSource>[0];
+
+        expect(kegSource(moved)).toBe('ASSEMBLY');
+    });
+
+    it('spells the errand out in the words painted on the floor at each end', () => {
+        const route = kegRoute('BOOM POWDER', 'KEGS IN');
+
+        expect(route).toContain('ESC');
+        expect(route).toContain('BOOM POWDER');
+        expect(route).toContain('KEGS OUT');
+        expect(route).toContain('striped');
     });
 });
 
@@ -366,8 +467,9 @@ describe('popFor', () => {
         expect(popFor({ who: 'b', step: 'toss', grade: 'miss', note: 'body', at: 1 })?.text).toBe(
             'MISS — BODY IN THE AISLE',
         );
+        // Was 'MISS — FULL', while the badge beside it read 'CRADLE FULL'.
         expect(popFor({ who: 'b', step: 'toss', grade: 'miss', note: 'full', at: 1 })?.text).toBe(
-            'MISS — FULL',
+            `MISS — ${CRADLE_FULL}`,
         );
     });
 });
@@ -456,5 +558,453 @@ describe('jigOverlay', () => {
 
     it('builds a fresh overlay per call so two jigs never share a cursor', () => {
         expect(jigOverlay()).not.toBe(jigOverlay());
+    });
+});
+
+/** What one `Text` in the pool was last told to say, where, and whether it shows. */
+interface WrittenLabel {
+    text: string;
+    visible: boolean;
+    x: number;
+    y: number;
+}
+
+/** A Phaser object that answers every call it is not asked about with itself. */
+function stub(target: Record<string, unknown>): Record<string, unknown> {
+    const proxy: Record<string, unknown> = new Proxy(target, {
+        get: (obj, prop) => (prop in obj ? obj[prop as string] : () => proxy),
+    });
+
+    return proxy;
+}
+
+function textStub(written: WrittenLabel[]): Record<string, unknown> {
+    const label: WrittenLabel = { text: '', visible: false, x: 0, y: 0 };
+
+    written.push(label);
+
+    return stub({
+        setText: (value: string) => {
+            label.text = value;
+        },
+        setVisible: (value: boolean) => {
+            label.visible = value;
+        },
+        setPosition: (x: number, y: number) => {
+            label.x = x;
+            label.y = y;
+        },
+    });
+}
+
+const PANEL_W = 896;
+const PANEL_H = 192;
+
+/**
+ * The level the panel reads out of: the windows it draws with, the shelf it
+ * counts room on, and the recipe that says which machine an errand ends at.
+ */
+const LEVEL = {
+    stations: [
+        {
+            id: 'assembly',
+            type: 'assembly',
+            minigame: CFG,
+            inputShelf: { tile: [11, 7], capacity: 8, accepts: ['keg', 'casing'] },
+        },
+        { id: 'powder-a', type: 'boom_powder', outputShelf: { tile: [6, 3], capacity: 6 } },
+    ],
+    recipes: { keg: { station: 'boom_powder', inputs: {}, output: { type: 'keg', pours: 2 } } },
+};
+
+/**
+ * The panel one frame at a time. `pickerBlock` returning a sentence proves
+ * nothing on its own — the picker and the pour each choose whether to write it
+ * — so the overlay is mounted on a recording `Text` pool and the frame is read
+ * back as the words a player would actually be looking at.
+ */
+function panelLabels(
+    state: JigMg,
+    shelf: readonly { id: string; type: string }[],
+    over: { carrying?: string; now?: number; sessionId?: string } = {},
+): WrittenLabel[] {
+    const written: WrittenLabel[] = [];
+    const now = over.now ?? 10;
+    const station = {
+        mg: JSON.stringify(state),
+        state: 'running',
+        inputShelf: shelf.map((item) => item.id),
+        inputCap: 8,
+    };
+    const ctx = stub({
+        scene: stub({
+            add: stub({
+                text: () => textStub(written),
+                graphics: () => stub({}),
+            }),
+            conn: { config: { level: LEVEL } },
+        }),
+        container: stub({}),
+        width: PANEL_W,
+        height: PANEL_H,
+        stationId: 'assembly',
+        sessionId: over.sessionId ?? 'A1',
+        state: {
+            stations: new Map([['assembly', station]]),
+            items: new Map(shelf.map((item) => [item.id, { type: item.type, dents: 0 }])),
+        },
+        serverClock: () => now,
+    }) as unknown as OverlayContext;
+
+    const overlay = jigOverlay();
+
+    overlay.mount(ctx);
+    overlay.update(
+        station as unknown as StationState,
+        { carrying: over.carrying ?? '' } as unknown as PlayerState,
+        now,
+    );
+
+    return written.filter((label) => label.visible);
+}
+
+function panelText(
+    state: JigMg,
+    shelf: readonly { id: string; type: string }[],
+    over: { carrying?: string; now?: number; sessionId?: string } = {},
+): string[] {
+    return panelLabels(state, shelf, over).map((label) => label.text);
+}
+
+describe('the words a stopped jig puts on the panel', () => {
+    const casing = { id: 'c-1', type: 'casing' };
+    const keg = { id: 'k-1', type: 'keg' };
+
+    it('tells a seat with no casing to wait, because the jig prints its own', () => {
+        const lines = panelText(mg(), [keg]);
+
+        expect(lines).toContain(CASINGS_COMING);
+        expect(lines.join(' ')).not.toContain('NO CASINGS');
+    });
+
+    it('sends a seat with no keg to the machine that makes one', () => {
+        const lines = panelText(mg(), [casing]);
+
+        expect(lines).toContain(NEED_KEG);
+    });
+
+    it('says the same thing when the pour has nothing to pour', () => {
+        const lines = panelText(mg({ phase: 'pour', pour: null }), [casing]);
+
+        expect(lines).toContain(NEED_KEG);
+        expect(lines.join(' ')).not.toContain('NO POWDER');
+    });
+
+    it('never gives the empty casing rail a second name of its own', () => {
+        const waiting = panelText(mg({ rearmFrom: 8, rearmAt: 12 }), [keg]);
+
+        expect(waiting).toContain('RE-ARMING');
+        expect(waiting).toContain(CASINGS_COMING);
+        expect(waiting.join(' ')).not.toContain('SHELF EMPTY');
+        expect(panelText(mg(), [keg]).filter((line) => line === CASINGS_COMING)).toHaveLength(1);
+    });
+});
+
+describe('the route out of a stopped jig', () => {
+    const casing = { id: 'c-1', type: 'casing' };
+    const keg = { id: 'k-1', type: 'keg' };
+
+    it('spells out the walk instead of naming a station and stopping', () => {
+        const lines = panelText(mg(), [casing]);
+
+        expect(lines).toContain(NEED_KEG);
+        expect(lines).toContain(kegRoute('BOOM POWDER', 'KEGS IN'));
+    });
+
+    it('gives the seat every verb the errand takes', () => {
+        const route = panelText(mg(), [casing]).find((line) => line.includes('ESC'));
+
+        expect(route).toBeDefined();
+        expect(route).toContain('walk to BOOM POWDER');
+        expect(route).toContain('KEGS OUT');
+        expect(route).toContain('striped');
+    });
+
+    /**
+     * The route used to live inside `drawPicker` alone, so an operator who
+     * joined during `pour` with no keg read a bare NEED A KEG and was given no
+     * way out of it — the same player, the same problem, half the answer. The
+     * shortage and the route are one sentence now, wherever it is printed.
+     */
+    it('gives the pour that has nothing to pour the same walk', () => {
+        const lines = panelText(mg({ phase: 'pour', pour: null }), [casing]);
+
+        expect(lines).toContain(NEED_KEG);
+        expect(lines).toContain(kegRoute('BOOM POWDER', 'KEGS IN'));
+    });
+
+    it('keeps the route off a machine that is not short of a keg', () => {
+        const lines = panelText(mg({ phase: 'knots' }), [casing, keg]);
+
+        expect(lines.some((line) => line.includes('walk to'))).toBe(false);
+    });
+
+    /**
+     * `putDownItem` (game-server/src/sim/items.ts) shelves onto the tile the
+     * player is FACING, and the apron is two tiles — the shelf and the aisle you
+     * stand in. 'E in the striped zone' is true only from one of them, looking at
+     * the other, and nothing on screen said so.
+     */
+    it('says which way to be looking, not just where to stand', () => {
+        const route = kegRoute('BOOM POWDER', 'KEGS IN');
+
+        expect(route).toContain('face KEGS IN');
+        expect(route).toContain('striped');
+    });
+});
+
+describe('the promise a packed shelf cannot keep', () => {
+    const packed = Array.from({ length: 8 }, (_, i) => ({ id: `k-${i}`, type: 'keg' }));
+
+    it('tells a jammed restock to lift a keg back off, the way the floor does', () => {
+        const lines = panelText(mg(), packed);
+
+        expect(lines).toContain(SHELF_FULL);
+        expect(lines).not.toContain(CASINGS_COMING);
+    });
+
+    it('still promises the restock while there is room to make it', () => {
+        const lines = panelText(mg(), [{ id: 'k-1', type: 'keg' }]);
+
+        expect(lines).toContain(CASINGS_COMING);
+        expect(lines).not.toContain(SHELF_FULL);
+    });
+});
+
+describe('the pour that has everything it needs', () => {
+    const casing = { id: 'c-1', type: 'casing' };
+
+    it('never sends the operator away from a machine that is about to pour', () => {
+        const lines = panelText(
+            mg({ phase: 'pour', pour: null, keg: { quality: 1, prime: false, poursLeft: 2 } }),
+            [casing],
+        );
+
+        expect(lines).not.toContain(NEED_KEG);
+        expect(lines).toContain('STARTING THE POUR');
+    });
+
+    it('reads a keg waiting on the shelf as a pour about to start too', () => {
+        const lines = panelText(mg({ phase: 'pour', pour: null }), [
+            casing,
+            { id: 'k-1', type: 'keg' },
+        ]);
+
+        expect(lines).not.toContain(NEED_KEG);
+        expect(lines).toContain('STARTING THE POUR');
+    });
+});
+
+describe('one name for the thing B fetches', () => {
+    const keg = { id: 'k-1', type: 'keg' };
+    const casing = { id: 'c-1', type: 'casing' };
+
+    const frames = (): string[] =>
+        [
+            panelText(mg({ phase: 'parts' }), [keg, casing]),
+            panelText(mg({ bPhase: 'idle' }), [keg, casing], { sessionId: 'B1' }),
+            panelText(mg({ bPhase: 'fetching', bFetchDoneAt: 11 }), [keg, casing], {
+                sessionId: 'B1',
+            }),
+        ].flat();
+
+    it('calls it a fuse set wherever it is named', () => {
+        for (const line of frames()) {
+            expect(line).not.toContain('SPOOL');
+
+            if (line.includes('SET')) expect(line).toContain(FUSE_SET);
+        }
+    });
+
+    it('names the phase after the fuse rather than after “parts”', () => {
+        const lines = panelText(mg({ phase: 'parts' }), [keg, casing]);
+
+        expect(lines).toContain(FUSE_SET);
+        expect(lines.join(' ')).not.toContain('PARTS');
+    });
+
+    it('puts the fuse on the rack’s own title', () => {
+        const lines = panelText(mg(), [keg, casing], { sessionId: 'B1' });
+
+        expect(lines).toContain('ASSEMBLY — THE FUSE RACK');
+    });
+});
+
+describe('what the rack hand and the watcher are told about the keg', () => {
+    const casing = { id: 'c-1', type: 'casing' };
+    const keg = { id: 'k-1', type: 'keg' };
+
+    it('tells the rack hand the station is standing still for a keg', () => {
+        const lines = panelText(mg(), [casing], { sessionId: 'B1' });
+
+        expect(lines).toContain(KEG_STRIP);
+    });
+
+    it('says nothing about kegs to a rack hand whose shelf has one', () => {
+        const lines = panelText(mg(), [casing, keg], { sessionId: 'B1' });
+
+        expect(lines).not.toContain(KEG_STRIP);
+    });
+
+    it('tells a watcher mid-cycle the same thing', () => {
+        const lines = panelText(
+            mg({ phase: 'pour', pour: { startAt: 8, targetAt: 12, beats: 5, primeKeg: false } }),
+            [casing],
+            { sessionId: 'C1' },
+        );
+
+        expect(lines).toContain(KEG_STRIP);
+    });
+
+    it('gives a watcher the same four presses the operator gets', () => {
+        const lines = panelText(mg(), [casing], { sessionId: 'C1' });
+
+        expect(lines.join(' ')).not.toContain('staffing curve');
+        expect(lines).toContain(KEG_STRIP);
+        expect(lines).toContain(kegRoute('BOOM POWDER', 'KEGS IN'));
+    });
+});
+
+describe('where the legend sits', () => {
+    const keg = { id: 'k-1', type: 'keg' };
+    const casing = { id: 'c-1', type: 'casing' };
+
+    const legendY = (sessionId: string): number => {
+        const label = panelLabels(mg(), [keg, casing], { sessionId }).find((written) =>
+            written.text.includes('ESC bail'),
+        );
+
+        if (!label) throw new Error('the panel drew no legend');
+
+        return label.y;
+    };
+
+    it('leaves the bottom band of the panel to the HUD’s help hint', () => {
+        expect(PANEL_H - legendY('A1')).toBeGreaterThanOrEqual(24);
+        expect(PANEL_H - legendY('B1')).toBeGreaterThanOrEqual(24);
+    });
+});
+
+describe('the fuse rack as a first-timer reads it', () => {
+    const keg = { id: 'k-1', type: 'keg' };
+    const casing = { id: 'c-1', type: 'casing' };
+
+    const rack = (over: Partial<JigMg> = {}): string[] =>
+        panelText(mg(over), [keg, casing], { sessionId: 'B1' });
+
+    /**
+     * The panel said what B's keys did and nothing about why. Nothing on it
+     * named the receiver, the stake, or what the order chips had to do with the
+     * SHORT/LONG press — the word 'cradle' appeared only behind the H key.
+     */
+    it('names who the toss is for and what is waiting on it', () => {
+        expect(rack()).toContain(RACK_STAKE);
+        expect(RACK_STAKE.toLowerCase()).toContain('cradle');
+    });
+
+    it('labels the order strip so the chips read as the reason for the press', () => {
+        const lines = rack({
+            orderChip: [
+                { orderId: 'o-1', fuseLength: 'short' },
+                { orderId: 'o-2', fuseLength: 'long' },
+            ],
+        });
+
+        expect(lines).toContain(ORDER_STRIP_LABEL);
+        expect(lines.join(' ')).toContain('SHORT');
+        expect(lines.join(' ')).toContain('LONG');
+    });
+
+    // 'o-1' is the database's name for an order, not the player's.
+    it('never puts a raw order id on the panel', () => {
+        const lines = rack({
+            orderChip: [
+                { orderId: 'o-1', fuseLength: 'short' },
+                { orderId: 'o-2', fuseLength: 'long' },
+            ],
+        }).join(' ');
+
+        expect(lines).not.toContain('o-1');
+        expect(lines).not.toContain('o-2');
+        expect(lines).toContain('1st');
+        expect(lines).toContain('2nd');
+    });
+});
+
+describe('the words the jig uses for its own state', () => {
+    const keg = { id: 'k-1', type: 'keg' };
+    const casing = { id: 'c-1', type: 'casing' };
+
+    /**
+     * `CRADLE ${mg.cradle.toUpperCase()}` leaked the sim's own enum onto the
+     * panel: 'SURFACE' is `shared/src/sim/jig.ts`'s name for an OK toss that
+     * landed askew, and no player can decode it.
+     */
+    it('gives every cradle state a word rather than the enum behind it', () => {
+        for (const cradle of ['empty', 'armed', 'surface'] as const) {
+            const lines = panelText(mg({ phase: 'parts', cradle }), [keg, casing]);
+
+            expect(lines).toContain(CRADLE_LABEL[cradle]);
+            expect(lines.join(' ')).not.toContain('SURFACE');
+            expect(lines.join(' ')).not.toContain('ARMED');
+        }
+    });
+
+    it('reads the fill as a percentage rather than a raw fraction', () => {
+        const lines = panelText(
+            mg({
+                phase: 'pour',
+                pour: { startAt: 8, targetAt: 12, beats: 5, primeKeg: false },
+            }),
+            [keg, casing],
+            { now: 10 },
+        ).join(' ');
+
+        expect(lines).toMatch(/FILL \d+%/);
+        expect(lines).not.toMatch(/FILL 0\./);
+    });
+
+    /**
+     * The pop and the badge can be on screen together, so two spellings of one
+     * refusal were readable at once.
+     */
+    it('spells a refusal the same way in the pop and on the badge', () => {
+        const badges = panelText(mg({ cradle: 'armed', aisleBlocked: true }), [keg, casing], {
+            sessionId: 'B1',
+        });
+
+        expect(badges).toContain(CRADLE_FULL);
+        expect(badges).toContain(AISLE_BODY);
+        expect(popFor({ who: 'b', step: 'toss', grade: 'miss', note: 'full', at: 0 })?.text).toContain(
+            CRADLE_FULL,
+        );
+        expect(popFor({ who: 'b', step: 'toss', grade: 'miss', note: 'body', at: 0 })?.text).toContain(
+            AISLE_BODY,
+        );
+    });
+});
+
+describe('the two sentences a packed shelf needs', () => {
+    it('tells empty hands to lift one off', () => {
+        expect(SHELF_FULL).toContain('LIFT ONE OFF');
+    });
+
+    /**
+     * 'TAKE ONE BACK' is an instruction a player holding a keg physically
+     * cannot follow, and nothing told them to put theirs down first.
+     */
+    it('tells full hands to put theirs down before trying', () => {
+        expect(SHELF_FULL_HANDS).toContain('PUT YOURS DOWN');
+        expect(SHELF_FULL_HANDS).toContain('LIFT ONE OFF');
     });
 });

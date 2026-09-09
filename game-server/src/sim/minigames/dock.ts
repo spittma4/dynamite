@@ -14,6 +14,7 @@ import type {
     DockMg,
     DockMinigame,
     ItemState,
+    ItemType,
     LayoutConfig,
     MgOp,
     OrderState,
@@ -216,8 +217,13 @@ function driveOffRiders(world: World, seconds: number): void {
 
         player.drivenOffUntil = now + seconds;
 
-        if (player.carrying !== '' && player.carrying !== 'broom') {
-            destroyItem(world, player.carrying);
+        const cargo = world.state.items.get(player.carrying);
+
+        // Whatever they were holding went to the highway with them: it never
+        // reached a customer, so the day is billed for it.
+        if (cargo !== undefined) {
+            world.tally.scrap(cargo.type as ItemType);
+            destroyItem(world, cargo.id);
         }
 
         player.stationId = '';

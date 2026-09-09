@@ -9,6 +9,7 @@ import { type MountData, readMount } from './mount';
 import { Connection, describeJoinFailure, nextInputSeq } from './net/connection';
 import { Boot } from './scenes/Boot';
 import { Factory, type FactoryConn } from './scenes/Factory';
+import { ReportScene } from './scenes/Report';
 import { Debug } from './ui/Debug';
 import { Hud } from './ui/Hud';
 
@@ -55,8 +56,7 @@ async function boot(): Promise<void> {
             mode: Phaser.Scale.ScaleModes.FIT,
             autoCenter: Phaser.Scale.Center.CENTER_BOTH,
         },
-        // F11 appends `Report` here.
-        scene: [Boot, Factory],
+        scene: [Boot, Factory, ReportScene],
     });
 
     game.registry.set('mount', mount);

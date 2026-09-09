@@ -7,9 +7,10 @@ import {
     StationState,
     canShelve,
     resolveDelivery,
+    scaleLevel,
     tileSpeedFactor,
 } from '../src/shared';
-import type { FxKind, LayoutConfig, Tile } from '../src/shared';
+import type { FxKind, LayoutConfig, ScaledLevel, Tile } from '../src/shared';
 import {
     addSpill,
     canDeliver,
@@ -32,6 +33,7 @@ import {
     takeCarried,
     tick,
 } from '../src/sim/items';
+import { spark } from '../src/sim/hazards';
 import { dispatchMessage } from '../src/rooms/handlers';
 import type { RoomControls } from '../src/rooms/handlers';
 import { SYSTEMS } from '../src/sim/systems';
@@ -828,14 +830,51 @@ describe('releaseCarried', () => {
         releaseCarried(world, 'session-0');
 
         expect(world.state.items.has('k-2')).toBe(false);
+
+        // Gone is gone: a keg the floor had no room for still cost the factory,
+        // so the day is billed for it rather than quietly refunded.
+        expect(world.tally.wastedByType.keg).toBe(1);
     });
 });
 
 describe('the F10 hooks this feature owes (contracts §10.4)', () => {
-    // Acceptance: "Every landing and every floor put-down calls
-    // `hazards.onItemLanded(world, itemId, x, y)`; a `'saved'` return leaves no
-    // item on the floor." The TODO in `placeOnFloor` is where it hooks in.
-    it.todo('every floor placement calls hazards.onItemLanded, and a saved return leaves nothing');
+    /** The one tile F10 answers differently, so the seam is visible from here. */
+    function bin(world: World): Tile {
+        const tile = world.layout.blastBins[0];
+
+        if (tile === undefined) throw new Error('no blast bin');
+
+        return tile;
+    }
+
+    it('every floor placement calls hazards.onItemLanded, and a saved return leaves nothing', () => {
+        const world = makeWorld({ players: 1 });
+
+        world.startDay(scaleLevel(world.level, 3) as ScaledLevel);
+
+        const keg = createItem(world, 'keg');
+
+        expect(placeOnFloor(world, keg, [3, 4])).toBe(true);
+        expect(spark(world, 3, 4, 'fizzle')).toBe('lit');
+        expect(keg.lit).toBe(true);
+
+        expect(placeOnFloor(world, keg, bin(world))).toBe(true);
+        expect(world.state.items.has(keg.id)).toBe(false);
+        expect(floorItemAt(world, bin(world))).toBeNull();
+    });
+
+    it('leaves an ordinary landing alone', () => {
+        const world = makeWorld({ players: 1 });
+
+        world.startDay(scaleLevel(world.level, 3) as ScaledLevel);
+
+        const keg = createItem(world, 'keg');
+
+        expect(placeOnFloor(world, keg, [6, 5])).toBe(true);
+        expect(spark(world, 6, 5, 'fizzle')).toBe('lit');
+        expect(placeOnFloor(world, keg, [7, 5])).toBe(true);
+        expect(floorItemAt(world, [7, 5])).toBe(keg);
+    });
 });
 
 describe('the items system hooks', () => {

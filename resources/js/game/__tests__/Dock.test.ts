@@ -1,4 +1,5 @@
-import type { DockLane, DockMg, Tile } from '@shared';
+import type { DockLane, DockMg, LayoutConfig, Tile } from '@shared';
+import type Phaser from 'phaser';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -14,6 +15,7 @@ import {
     truckHeadline,
 } from '../minigames/Dock';
 import {
+    BayWall,
     STROBE_FLASH_MS,
     bayLabel,
     flashOn,
@@ -27,6 +29,8 @@ import {
     sagPx,
     truckSlide,
 } from '../minigames/dock/TruckSprite';
+import type { Factory } from '../scenes/Factory';
+import { mmss } from '../ui/format';
 
 /**
  * The overlay's arithmetic, away from Phaser. Everything the dock draws is a
@@ -150,7 +154,8 @@ describe('truckHeadline', () => {
     it('counts the load and the time left while the truck is docked', () => {
         const loading = mg({ truck: { ...mg().truck, loaded: 3 } });
 
-        expect(truckHeadline(loading, 28)).toBe('TRUCK 3/8 · 00:12');
+        // Was 'TRUCK 3/8 · 00:12' — the bare number the bay wall exists to avoid.
+        expect(truckHeadline(loading, 28)).toBe('TRUCK 3/8 · LEAVES 00:12');
     });
 
     it('counts down to the next truck while it is away', () => {
@@ -180,7 +185,12 @@ describe('the legend', () => {
 
 describe('bayLabel', () => {
     it('counts the docked truck down to its departure', () => {
-        expect(bayLabel(mg(), 28)).toEqual({ text: '00:12', kind: 'countdown' });
+        expect(bayLabel(mg(), 28)).toEqual({ text: 'TRUCK LEAVES 00:12', kind: 'countdown' });
+    });
+
+    it('says what the clock is counting, so it reads from across the floor', () => {
+        expect(bayLabel(mg(), 28).text).toContain('TRUCK');
+        expect(bayLabel(mg(), 28).text).not.toBe(mmss(12));
     });
 
     it('counts an away or leaving truck up to the next arrival', () => {
@@ -193,6 +203,64 @@ describe('bayLabel', () => {
 
     it('shouts SLAM IT for as long as the tailgate window is open', () => {
         expect(bayLabel(mg({ tailgateUntil: 33 }), 32)).toEqual({ text: 'SLAM IT', kind: 'slam' });
+    });
+});
+
+/** A Phaser object that answers every call it is not asked about with itself. */
+function stub(target: Record<string, unknown>): Record<string, unknown> {
+    const proxy: Record<string, unknown> = new Proxy(target, {
+        get: (obj, prop) => (prop in obj ? obj[prop as string] : () => proxy),
+    });
+
+    return proxy;
+}
+
+/**
+ * The wall as it is painted, not as `bayLabel` returns it: the countdown is one
+ * pooled `Text` over the door, and a sentence nobody hangs on it is no use to a
+ * player halfway down the line.
+ */
+function wallText(state: DockMg, serverNow: number): string[] {
+    const written: { text: string; visible: boolean }[] = [];
+    const scene = stub({
+        add: stub({
+            text: () => {
+                const label = { text: '', visible: false };
+
+                written.push(label);
+
+                return stub({
+                    setText: (value: string) => {
+                        label.text = value;
+                    },
+                    setVisible: (value: boolean) => {
+                        label.visible = value;
+                    },
+                });
+            },
+            graphics: () => stub({}),
+            container: () => stub({}),
+        }),
+    });
+    const layout = { dockDoor: [22, 2, 4], props: { returnsPile: [19, 12] } };
+    const wall = new BayWall(
+        scene as unknown as Factory,
+        stub({}) as unknown as Phaser.GameObjects.Container,
+        layout as unknown as LayoutConfig,
+    );
+
+    wall.update(state, [], serverNow);
+
+    return written.filter((label) => label.visible).map((label) => label.text);
+}
+
+describe('the bay wall', () => {
+    it('hangs a noun and a stake over the door, never a bare clock', () => {
+        expect(wallText(mg(), 28)).toContain('TRUCK LEAVES 00:12');
+    });
+
+    it('still gives the tailgate window the whole label', () => {
+        expect(wallText(mg({ tailgateUntil: 33 }), 32)).toContain('SLAM IT');
     });
 });
 

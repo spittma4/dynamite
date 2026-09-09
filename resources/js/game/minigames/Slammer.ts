@@ -58,6 +58,7 @@ const PANEL = {
     minGaugePx: 140,
     needleW: 3,
     legendGap: 16,
+    footerGap: 8,
 } as const;
 
 /** The gauge sits centred against the chute keys rather than on their top edge. */
@@ -110,17 +111,59 @@ const GRACE_MS = 400;
 const HEAT_GLOW_FLOOR = 0.3;
 
 const TITLE = 'BOOM POWDER — THE SLAMMER';
-const LEGEND = '← ↑ → mash each once · hold SPACE · release on the gold · E floor a keg · ESC bail';
 
 /**
- * Functional labels with numbers rather than joke copy, so they stay here
- * instead of in `copy.json` (contracts §14).
+ * The always-on keybind row. The floor drop is off it deliberately: it was the
+ * only destination the legend named, and it is the one action the game charges
+ * you for — a keg on the floor is what a blast chains through (ADR 0008).
+ */
+export const LEGEND = '← ↑ → mash each once · hold SPACE · release on the gold · ESC bail';
+
+/**
+ * Functional labels rather than joke copy, so they stay here instead of in
+ * `copy.json` (contracts §14).
+ *
+ * One key per row, one action per row: the Esc binding used to be buried inside
+ * the E row, where nobody scanning a key column would find it. The walk leads,
+ * because it is the answer `ui/helpContent.ts` gives, and it names the paint
+ * the player will be standing on rather than only the stripes.
  */
 export const HANDS_LINES: readonly string[] = [
-    'E      put it down (0.3 s)',
-    'Space  throw it',
-    'Esc or E leaves (drops the combo)',
+    'WASD   walk it to Assembly — the striped zone',
+    'E      face the KEGS IN shelf there — E puts it down',
+    'Space  throw it two tiles — E catches',
+    'Esc    drop the groove, combo and all',
 ];
+
+/**
+ * The same four rows for a pair of hands holding something that is not a keg.
+ * `hands` is not a keg phase: the server flips it on any carried item
+ * (`game-server/src/sim/minigames/slammer.ts`), and `pickUp` and `tryCatch`
+ * will hand a joined operator a stick. Telling them to walk that to Assembly
+ * sends them to the wrong end of the factory.
+ */
+export const HANDS_LINES_ANY: readonly string[] = [
+    'WASD   walk it to the station that takes it',
+    'E      put it down where the floor lights up',
+    'Space  throw it two tiles — E catches',
+    'Esc    drop the groove, combo and all',
+];
+
+/** Which set of rows a full pair of hands gets, from what is actually in them. */
+export function handsLines(itemType: string): readonly string[] {
+    return itemType === 'keg' ? HANDS_LINES : HANDS_LINES_ANY;
+}
+
+/**
+ * The line that unblocks the factory. It used to live only on the hands panel,
+ * which the operator sees when the out tray hits its cap of six — so a session
+ * that made four kegs was never told, anywhere, that kegs have somewhere to go.
+ */
+export function trayFooter(onTray: number): string {
+    if (onTray <= 0) return '';
+
+    return `${onTray} on the tray · carry one to ASSEMBLY (E at KEGS OUT)`;
+}
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max);
@@ -178,7 +221,9 @@ export function outcomeLabel(outcome: SlammerOutcome, errorMs: number): string {
 
     if (outcome === 'dead_center') return 'DEAD CENTER';
 
-    if (outcome === 'prime') return 'PRIME BOOM';
+    // The Slammer used to congratulate a gold release with a word no other
+    // surface says: the Jig calls the same keg PRIME and the help teaches PRIME.
+    if (outcome === 'prime') return 'PRIME KEG';
 
     const off = Math.abs(Math.round(errorMs));
 
@@ -391,6 +436,8 @@ class SlammerOverlay implements MinigameOverlay {
     private paintedGauge = '';
     private paintedChutes = '';
     private paintedVerdict = '';
+    private paintedFooter = '';
+    private carriedType = '';
 
     private gauge: Phaser.GameObjects.Graphics | null = null;
     private needle: Phaser.GameObjects.Graphics | null = null;
@@ -399,7 +446,10 @@ class SlammerOverlay implements MinigameOverlay {
     private verdict: Phaser.GameObjects.Text | null = null;
     private okWindow: Phaser.GameObjects.Text | null = null;
     private combo: Phaser.GameObjects.Text | null = null;
+    private legend: Phaser.GameObjects.Text | null = null;
+    private footer: Phaser.GameObjects.Text | null = null;
     private hands: Phaser.GameObjects.Container | null = null;
+    private handsRows: Phaser.GameObjects.Text[] = [];
 
     mount(ctx: OverlayContext): void {
         this.ctx = ctx;
@@ -481,26 +531,35 @@ class SlammerOverlay implements MinigameOverlay {
         );
         add(this.combo);
 
-        add(
-            scene.add.text(
-                PANEL.titleX,
-                PANEL.chuteY + PANEL.chutePx + PANEL.plungerGap + PANEL.legendGap,
-                LEGEND,
-                {
-                    fontFamily: 'monospace',
-                    fontSize: '11px',
-                    color: '#9a9aa4',
-                    wordWrap: { width: ctx.width - PANEL.titleX * 2 },
-                },
-            ),
+        this.legend = scene.add.text(
+            PANEL.titleX,
+            PANEL.chuteY + PANEL.chutePx + PANEL.plungerGap + PANEL.legendGap,
+            LEGEND,
+            {
+                fontFamily: 'monospace',
+                fontSize: '11px',
+                color: '#9a9aa4',
+                wordWrap: { width: ctx.width - PANEL.titleX * 2 },
+            },
         );
+        add(this.legend);
+
+        this.footer = scene.add.text(this.gaugeX, GAUGE_Y + PANEL.gaugeH + PANEL.footerGap, '', {
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            color: hex(COLOUR.dead),
+        });
+        this.footer.setVisible(false);
+        add(this.footer);
 
         this.hands = this.buildHandsPanel(ctx);
         add(this.hands);
     }
 
-    update(station: StationState, _me: PlayerState, serverNow: number): void {
+    update(station: StationState, me: PlayerState, serverNow: number): void {
         if (!this.ctx) return;
+
+        this.carriedType = this.typeOf(this.ctx, me.carrying);
 
         if (station.mg !== this.lastMg) {
             this.lastMg = station.mg;
@@ -547,7 +606,10 @@ class SlammerOverlay implements MinigameOverlay {
         this.verdict = null;
         this.okWindow = null;
         this.combo = null;
+        this.legend = null;
+        this.footer = null;
         this.hands = null;
+        this.handsRows = [];
         this.ctx = null;
         this.mg = null;
         this.lastMg = '';
@@ -564,6 +626,15 @@ class SlammerOverlay implements MinigameOverlay {
         this.paintedGauge = '';
         this.paintedChutes = '';
         this.paintedVerdict = '';
+        this.paintedFooter = '';
+        this.carriedType = '';
+    }
+
+    /** What is actually in the operator's hands, which the phase does not say. */
+    private typeOf(ctx: OverlayContext, itemId: string): string {
+        if (itemId === '') return '';
+
+        return ctx.state.items.get(itemId)?.type ?? '';
     }
 
     private applyMg(next: SlammerMg, serverNow: number): void {
@@ -658,8 +729,13 @@ class SlammerOverlay implements MinigameOverlay {
         const full = mg.phase === 'hands';
 
         this.hands?.setVisible(full);
+        // The legend describes a plunger that takes no input in this phase, and
+        // the four rows below need the band it sits in.
+        this.legend?.setVisible(!full);
         this.gauge?.setVisible(!full);
         this.needle?.setVisible(!full);
+        this.drawHandsRows(full);
+        this.drawFooter(station, full);
 
         this.drawChutes(mg, station);
         this.drawVerdict(mg, nowMs);
@@ -782,6 +858,26 @@ class SlammerOverlay implements MinigameOverlay {
         this.verdict?.setAlpha(this.frozenUntil > nowMs ? 1 : 0.45);
     }
 
+    /** The rows say what the thing in your hands is, not what the phase implies. */
+    private drawHandsRows(full: boolean): void {
+        if (!full) return;
+
+        const rows = handsLines(this.carriedType);
+
+        this.handsRows.forEach((row, i) => row.setText(rows[i] ?? ''));
+    }
+
+    private drawFooter(station: StationState, full: boolean): void {
+        const text = full ? '' : trayFooter(station.outputShelf.length);
+
+        if (text !== this.paintedFooter) {
+            this.paintedFooter = text;
+            this.footer?.setText(text);
+        }
+
+        this.footer?.setVisible(text !== '');
+    }
+
     private buildHandsPanel(ctx: OverlayContext): Phaser.GameObjects.Container {
         const scene = ctx.scene;
         const title = scene.add.text(0, 0, 'HANDS FULL', {
@@ -790,14 +886,19 @@ class SlammerOverlay implements MinigameOverlay {
             color: hex(COLOUR.dead),
             fontStyle: 'bold',
         });
-        const lines = HANDS_LINES.map((line, i) =>
+
+        this.handsRows = HANDS_LINES.map((line, i) =>
             scene.add.text(0, 30 + i * 18, line, {
                 fontFamily: 'monospace',
                 fontSize: '13px',
                 color: hex(UI.text),
             }),
         );
-        const panel = scene.add.container(this.gaugeX, PANEL.chuteY - 4, [title, ...lines]);
+
+        const panel = scene.add.container(this.gaugeX, PANEL.chuteY - 4, [
+            title,
+            ...this.handsRows,
+        ]);
 
         panel.setVisible(false);
 

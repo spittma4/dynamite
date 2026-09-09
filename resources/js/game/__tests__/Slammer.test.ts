@@ -1,8 +1,17 @@
-import { type SlammerHeatConfig, gaugeTopMs } from '@shared';
+import {
+    type PlayerState,
+    type SlammerHeatConfig,
+    type SlammerMg,
+    type StationState,
+    encodeMg,
+    gaugeTopMs,
+} from '@shared';
 import { describe, expect, it } from 'vitest';
 
 import {
     HANDS_LINES,
+    HANDS_LINES_ANY,
+    LEGEND,
     chuteFor,
     chuteLights,
     comboText,
@@ -19,8 +28,12 @@ import {
     outcomeLabel,
     predictCharge,
     readoutText,
+    handsLines,
+    slammerOverlay,
     tierShow,
+    trayFooter,
 } from '../minigames/Slammer';
+import type { OverlayContext } from '../minigames/types';
 
 /**
  * The overlay's decisions (F07 §Operator overlay). The client never judges an
@@ -112,7 +125,9 @@ describe('outcomeLabel', () => {
 
     it('names the two hits without a number', () => {
         expect(outcomeLabel('dead_center', 12)).toBe('DEAD CENTER');
-        expect(outcomeLabel('prime', -80)).toBe('PRIME BOOM');
+        // Was 'PRIME BOOM': a third name for the best keg, beside the Jig's
+        // 'PRIME KEG' and the help's 'a perfect keg'.
+        expect(outcomeLabel('prime', -80)).toBe('PRIME KEG');
     });
 
     it('signs the miss with the server-rounded error', () => {
@@ -367,10 +382,261 @@ describe('the readouts', () => {
         expect(comboText(26)).toBe('26×');
     });
 
-    it('tells the operator all three ways out of a full pair of hands', () => {
-        expect(HANDS_LINES).toHaveLength(3);
-        expect(HANDS_LINES.join(' ')).toContain('E');
+    it('gives the operator one key per row and one action per row', () => {
+        expect(HANDS_LINES).toHaveLength(4);
         expect(HANDS_LINES.join(' ')).toContain('Space');
         expect(HANDS_LINES.join(' ')).toContain('Esc');
+
+        for (const line of HANDS_LINES) expect(line.length).toBeLessThanOrEqual(60);
+    });
+
+    it('leads with walking the keg to Assembly, the way the help does', () => {
+        expect(HANDS_LINES[0]).toContain('Assembly');
+        expect(HANDS_LINES[0]).toContain('striped');
+    });
+
+    it('matches the walk to the paint the player will be standing on', () => {
+        expect(HANDS_LINES.join(' ')).toContain('KEGS IN');
+    });
+
+    it('never offers the floor, which is the one drop that feeds a fire', () => {
+        expect(HANDS_LINES.join(' ')).not.toContain('floor');
+        expect(HANDS_LINES.join(' ')).not.toContain('fuel');
+    });
+
+    it('keeps the always-on legend free of the floor drop too', () => {
+        expect(LEGEND).not.toContain('floor');
+        expect(LEGEND).toContain('ESC');
+    });
+});
+
+/**
+ * The server flips the phase to `hands` on *any* carried item, so a joined
+ * operator holding a stick was being told to walk it to Assembly and warned
+ * that floored kegs are fuel. The noun and the destination come off the item.
+ */
+describe('handsLines', () => {
+    it('names the keg walk when the thing in your hands is a keg', () => {
+        expect(handsLines('keg')).toBe(HANDS_LINES);
+    });
+
+    it('falls back to item-agnostic advice for anything else', () => {
+        expect(handsLines('stick')).toBe(HANDS_LINES_ANY);
+        expect(handsLines('')).toBe(HANDS_LINES_ANY);
+    });
+
+    it('never sends a stick to Assembly or calls it fuel', () => {
+        const lines = HANDS_LINES_ANY.join(' ');
+
+        expect(lines).not.toContain('Assembly');
+        expect(lines).not.toContain('KEGS IN');
+        expect(lines).not.toContain('fuel');
+    });
+
+    it('keeps the ways out of a full pair of hands on both versions', () => {
+        expect(HANDS_LINES_ANY).toHaveLength(HANDS_LINES.length);
+        expect(HANDS_LINES_ANY.join(' ')).toContain('Space');
+        expect(HANDS_LINES_ANY.join(' ')).toContain('Esc');
+    });
+});
+
+/**
+ * The haul instruction used to be gated on the out tray hitting its cap of six.
+ * A playtester made four kegs and was never once told they had somewhere to go.
+ */
+describe('trayFooter', () => {
+    it('says nothing while the tray is empty', () => {
+        expect(trayFooter(0)).toBe('');
+    });
+
+    it('counts what is waiting and names where it goes', () => {
+        expect(trayFooter(4)).toBe('4 on the tray · carry one to ASSEMBLY (E at KEGS OUT)');
+        expect(trayFooter(1)).toContain('1 on the tray');
+    });
+});
+
+/** A Phaser object that answers every call it is not asked about with itself. */
+function stub(target: Record<string, unknown>): Record<string, unknown> {
+    const proxy: Record<string, unknown> = new Proxy(target, {
+        get: (obj, prop) => (prop in obj ? obj[prop as string] : () => proxy),
+    });
+
+    return proxy;
+}
+
+/** One `Text` the panel made, what it last said, and whether it is showing. */
+interface PaintedText {
+    text: string;
+    visible: boolean;
+    obj: unknown;
+}
+
+/** One `Container` the panel made, what went in it, and whether it is showing. */
+interface PaintedPanel {
+    children: unknown[];
+    visible: boolean;
+}
+
+interface Painted {
+    texts: PaintedText[];
+    panels: PaintedPanel[];
+}
+
+/**
+ * The overlay mounted on a recording scene. Collecting every string the scene
+ * was ever asked to draw proves only that the advice was *built* — a panel that
+ * held none of it would still pass — so the container's children are recorded
+ * too and the assertions run against the one container that was made visible.
+ */
+function mountPanel(over: {
+    phase: SlammerMg['phase'];
+    tray?: number;
+    carrying?: string;
+    itemType?: string;
+}): Painted {
+    const painted: Painted = { texts: [], panels: [] };
+    const mg: SlammerMg = {
+        phase: over.phase,
+        mashed: [],
+        chargeStartAt: 0,
+        tCharge: 0,
+        okMs: 0,
+        heat: 0,
+        bandOffset: 0,
+        combo: 0,
+        tier: 0,
+        lastOutcome: '',
+        lastErrorMs: 0,
+        cfg: CFG,
+    };
+    const carrying = over.carrying ?? 'k-1';
+    const station = {
+        mg: encodeMg(mg),
+        state: 'running',
+        outputShelf: { length: over.tray ?? 0 },
+    } as unknown as StationState;
+    const ctx = stub({
+        scene: stub({
+            add: stub({
+                text: (_x: number, _y: number, value: unknown) => {
+                    const entry: PaintedText = {
+                        text: typeof value === 'string' ? value : '',
+                        visible: true,
+                        obj: null,
+                    };
+                    const obj = stub({
+                        setText: (next: string) => {
+                            entry.text = next;
+                        },
+                        setVisible: (next: boolean) => {
+                            entry.visible = next;
+                        },
+                    });
+
+                    entry.obj = obj;
+                    painted.texts.push(entry);
+
+                    return obj;
+                },
+                graphics: () => stub({}),
+                container: (_x: number, _y: number, children: unknown) => {
+                    const entry: PaintedPanel = {
+                        children: Array.isArray(children) ? children : [],
+                        visible: true,
+                    };
+
+                    painted.panels.push(entry);
+
+                    return stub({
+                        setVisible: (next: boolean) => {
+                            entry.visible = next;
+                        },
+                    });
+                },
+            }),
+        }),
+        container: stub({}),
+        width: 896,
+        height: 192,
+        stationId: 'boom_powder',
+        sessionId: 'A1',
+        state: {
+            items: new Map([[carrying, { type: over.itemType ?? 'keg' }]]),
+        },
+    }) as unknown as OverlayContext;
+
+    const overlay = slammerOverlay();
+
+    overlay.mount(ctx);
+    overlay.update(station, { carrying } as unknown as PlayerState, 10);
+
+    return painted;
+}
+
+/** The lines a player would actually be reading inside the visible panel. */
+function handsPanel(over: Parameters<typeof mountPanel>[0]): {
+    lines: string[];
+    shown: boolean;
+} {
+    const painted = mountPanel(over);
+    const panel = painted.panels.find((entry) => entry.visible);
+
+    if (!panel) return { lines: [], shown: false };
+
+    return {
+        shown: true,
+        lines: painted.texts
+            .filter((entry) => panel.children.includes(entry.obj))
+            .map((entry) => entry.text),
+    };
+}
+
+describe('the panel a full pair of hands gets', () => {
+    it('shows the walk-it-out lines the moment the keg lands in your hands', () => {
+        const panel = handsPanel({ phase: 'hands' });
+
+        expect(panel.shown).toBe(true);
+
+        for (const line of HANDS_LINES) expect(panel.lines).toContain(line);
+    });
+
+    it('keeps them off the panel while the plunger is still taking input', () => {
+        expect(handsPanel({ phase: 'mash' }).shown).toBe(false);
+    });
+
+    it('drops the keg wording for a stick, which does not go to Assembly', () => {
+        const panel = handsPanel({ phase: 'hands', itemType: 'stick' });
+
+        expect(panel.shown).toBe(true);
+        expect(panel.lines.join(' ')).not.toContain('Assembly');
+
+        for (const line of HANDS_LINES_ANY) expect(panel.lines).toContain(line);
+    });
+});
+
+/**
+ * The haul instruction is the sentence that unblocks the whole factory, so it
+ * cannot wait for the out tray to hit its cap: a session that made four kegs
+ * never saw it at all.
+ */
+describe('the footer under the gauge', () => {
+    const footerOf = (tray: number): PaintedText | undefined =>
+        mountPanel({ phase: 'mash', tray }).texts.find((entry) =>
+            entry.text.includes('on the tray'),
+        );
+
+    it('names the haul as soon as one keg is waiting, cap or no cap', () => {
+        const footer = footerOf(1);
+
+        expect(footer?.visible).toBe(true);
+        expect(footer?.text).toBe(trayFooter(1));
+    });
+
+    it('counts the four kegs the playtester never knew they had made', () => {
+        expect(footerOf(4)?.text).toContain('4 on the tray');
+    });
+
+    it('stays out of the way while the tray is empty', () => {
+        expect(footerOf(0)?.visible ?? false).toBe(false);
     });
 });

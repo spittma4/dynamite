@@ -162,7 +162,8 @@ export interface JigStickInit {
 export type JigEffect =
     | { e: 'beginCycle' }
     | { e: 'consume'; itemId: string }
-    | { e: 'destroyItem'; itemId: string }
+    /** `scrap` is material lost; without it the item became the next one along. */
+    | { e: 'destroyItem'; itemId: string; scrap?: true }
     | { e: 'stockCasing'; dents: number }
     | { e: 'createParts'; fuseLength: FuseLength; sessionId: string }
     | { e: 'partsToFloor'; itemId: string; tile: Tile }
@@ -709,11 +710,6 @@ function startPour(state: JigState, view: JigTickView, effects: JigEffect[]): vo
     };
     state.beatStartAt = startAt;
     state.keg.poursLeft--;
-
-    if (state.keg.poursLeft <= 0 && state.kegItemId !== '') {
-        effects.push({ e: 'destroyItem', itemId: state.kegItemId });
-        state.kegItemId = '';
-    }
 }
 
 function resolvePour(state: JigState, at: number, effects: JigEffect[]): void {
@@ -739,6 +735,14 @@ function resolvePour(state: JigState, at: number, effects: JigEffect[]): void {
     state.pourGrade = grade;
     state.last = { who: 'a', step: 'pour', grade, note, at };
     state.phase = 'parts';
+
+    // The keg is only spent once the pour that empties it lands: until then it
+    // is stock the day still owns, so a bail scraps it and the whistle bills it
+    // rather than the factory losing it for free.
+    if (state.keg !== null && state.keg.poursLeft <= 0 && state.kegItemId !== '') {
+        effects.push({ e: 'destroyItem', itemId: state.kegItemId });
+        state.kegItemId = '';
+    }
 }
 
 function enterKnots(state: JigState, view: JigTickView, rng: () => number): void {
@@ -1056,7 +1060,7 @@ function bail(state: JigState, effects: JigEffect[]): void {
         effects.push({ e: 'spill', tile: state.aTile });
 
         if (state.kegItemId !== '') {
-            effects.push({ e: 'destroyItem', itemId: state.kegItemId });
+            effects.push({ e: 'destroyItem', itemId: state.kegItemId, scrap: true });
             state.kegItemId = '';
         }
 

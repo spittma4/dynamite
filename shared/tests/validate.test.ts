@@ -253,6 +253,22 @@ describe('validateLevelConfig — the rules a JSON Schema cannot state', () => {
         expect(errorsOf(level).join('\n')).toMatch(/red_stick/);
     });
 
+    it('refuses a fractional price, because Laravel stores whole coin', () => {
+        const level = rawLevelFixture();
+        const economy = level.economy as { price: Record<string, number> };
+        economy.price.red_stick = 12.5;
+
+        expect(errorsOf(level).join('\n')).toMatch(/red_stick/);
+    });
+
+    it('refuses a fractional waste cost', () => {
+        const level = rawLevelFixture();
+        const economy = level.economy as { wasteCost: Record<string, number> };
+        economy.wasteCost.keg = 4.5;
+
+        expect(errorsOf(level).join('\n')).toMatch(/keg/);
+    });
+
     it('refuses breakpoints that do not climb', () => {
         const level = rawLevelFixture();
         const scaling = level.scaling as { breakpoints: { maxPlayers: number }[] };

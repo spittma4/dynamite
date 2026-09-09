@@ -44,7 +44,7 @@ export interface Pnl {
     coin: number;
 }
 
-/** `purchased` = kegs made; `shipped` = sticks that left on a truck. */
+/** `purchased` = kegs made; `shipped` = sticks loaded onto a truck. */
 export interface Materials {
     purchased: number;
     shipped: number;

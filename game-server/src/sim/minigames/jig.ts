@@ -28,6 +28,7 @@ import type {
     StationConfig,
     Tile,
 } from '../../shared';
+import { sparkRing } from '../hazards';
 import {
     addSpill,
     createItem,
@@ -223,18 +224,29 @@ function applyOne(ctx: StationCtx, effect: JigEffect): void {
 
     switch (effect.e) {
         case 'consume':
-            // The shelf is read a tick before the message that spends it; a slot
-            // that moved in between is not worth throwing a room away for.
-            if (ctx.inputShelf().some((item) => item.id === effect.itemId)) {
-                ctx.consume(effect.itemId);
-            }
+            // `run` builds the view and applies the effects in one synchronous
+            // call, so the shelf cannot move underneath a consume. If that ever
+            // stops being true, `ctx.consume` throwing is the cheapest way to
+            // hear about it: swallowing it would leave `kegsUsed` counting a keg
+            // that stayed on the shelf.
+            ctx.consume(effect.itemId);
 
             return;
 
-        case 'destroyItem':
+        case 'destroyItem': {
+            const item = world.state.items.get(effect.itemId);
+
+            // Only a bail scraps: every other destroy here is a conversion —
+            // the casing, the keg and the parts set become the stick, and
+            // billing them would tax the factory for the sticks it sells.
+            if (effect.scrap === true && item !== undefined) {
+                world.tally.scrap(item.type as ItemType);
+            }
+
             destroyItem(world, effect.itemId);
 
             return;
+        }
 
         case 'stockCasing':
             stockCasing(ctx, effect.dents);
@@ -279,11 +291,9 @@ function applyOne(ctx: StationCtx, effect: JigEffect): void {
 
         case 'spark': {
             // Contracts §10.5: the caller rolls, F10 picks the ring tile.
-            // TODO(F10): `hazards.sparkRing(world, ctx.cfg.id, 'crimpOnDented')`
-            // when the roll comes up.
-            const lit = world.rng.chance(world.level.hazards.sparks.crimpOnDented);
-
-            world.log(`${ctx.cfg.id}: crimp on a dented casing ${lit ? 'sparked' : 'held'}`);
+            if (world.rng.chance(world.level.hazards.sparks.crimpOnDented)) {
+                sparkRing(world, ctx.cfg.id, 'crimpOnDented');
+            }
 
             return;
         }

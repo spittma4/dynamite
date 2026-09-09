@@ -32,7 +32,7 @@ import type {
     ScaledLevel,
     StationState,
 } from '../../src/shared';
-import { createItem, giveToPlayer, shelfPush } from '../../src/sim/items';
+import { createItem, giveToPlayer, placeOnFloor, shelfPush } from '../../src/sim/items';
 import { activeOrderId, settleOrder } from '../../src/sim/orders';
 import { leave, onInteract, onMg, tick as stationsTick } from '../../src/sim/stations';
 import type { World } from '../../src/sim/World';
@@ -477,7 +477,7 @@ describe('pour', () => {
         expect(seated(0.4, false).targetAt).toBeCloseTo(100.4 + 8 * BEAT, 6);
     });
 
-    it('destroys the keg on its second pour', () => {
+    it('destroys the keg when its second pour lands, not when it starts', () => {
         const { state, targetAt } = seated();
 
         send(state, 'a1', 'pour', { at: targetAt });
@@ -487,8 +487,14 @@ describe('pour', () => {
 
         const second = tickJig(state, { now: targetAt + 0.05, shelf: [] });
 
-        expect(second).toContainEqual({ e: 'destroyItem', itemId: 'k-2' });
+        // The keg is stock until the pour that empties it lands: destroying it
+        // at the start of that pour leaves a bail or a whistle nothing to bill.
+        expect(kinds(second)).not.toContain('destroyItem');
         expect(state.keg?.poursLeft).toBe(0);
+
+        const landed = send(state, 'a1', 'pour', { at: state.pour?.targetAt ?? 0 });
+
+        expect(landed).toContainEqual({ e: 'destroyItem', itemId: 'k-2' });
     });
 
     it('fills to 1.0 on a Perfect or OK tap', () => {
@@ -1056,7 +1062,10 @@ describe('bail', () => {
         const effects = bail(state);
 
         expect(effects).toContainEqual({ e: 'spill', tile: [13, 9] });
-        expect(effects).toContainEqual({ e: 'destroyItem', itemId: 'k-2' });
+
+        // Half a keg walked out of the door: `scrap` is what tells the adapter
+        // to bill it, which a conversion's plain `destroyItem` never does.
+        expect(effects).toContainEqual({ e: 'destroyItem', itemId: 'k-2', scrap: true });
         expect(state.phase).toBe('pour');
         expect(state.pour).toBeNull();
         expect(state.keg).toBeNull();
@@ -1253,6 +1262,44 @@ function mg(world: World, id = 'assembly-a'): Record<string, unknown> {
 
 function sendMg(world: World, player: PlayerState, op: MgOp, v?: number | string): void {
     onMg(world, player, { stationId: 'assembly-a', op, t: world.state.clock * 1000, v });
+}
+
+/** B carrying a parts set onto the jig tile is what opens the knots. */
+function armCradle(world: World): void {
+    const parts = createItem(world, 'parts', { fuseLength: 'short' });
+
+    leave(world, playerOf(world, 'session-1'));
+    giveToPlayer(world, parts, 'session-1');
+    standOn(world, 'session-1', [14, 9]);
+    run(world, 0.1);
+}
+
+/**
+ * A keg pours twice, so the second stick is the one that empties it: this
+ * drives stick one and stops with that emptying pour still in flight.
+ */
+function onTheLastPour(): { world: World; a: PlayerState } {
+    const { world, a } = crewedJig();
+
+    shelveKeg(world);
+
+    for (let stick = 0; stick < 2; stick++) {
+        // The jig re-arms between phrases; seating inside that window is
+        // refused, so the second casing waits for it.
+        run(world, 2);
+        sendMg(world, a, 'seat', 0);
+        run(world, 0.1);
+
+        if (stick === 1) break;
+
+        const pour = mg(world).pour as { targetAt: number };
+
+        run(world, Math.max(0, pour.targetAt - world.state.clock) + 0.6);
+        armCradle(world);
+        run(world, 4);
+    }
+
+    return { world, a };
 }
 
 function shelveKeg(world: World, quality = 1): void {
@@ -1473,6 +1520,70 @@ describe('the jig adapter', () => {
         expect(world.tally.counts.defects).toBe(1);
     });
 
+    it('bills nothing for the casing and the keg a finished stick was made from', () => {
+        const { world, a } = crewedJig();
+
+        shelveKeg(world);
+
+        // Two sticks: the second pour is the one that drains the keg, so both
+        // conversions this feature makes — casing seated, keg emptied — happen.
+        for (let stick = 0; stick < 2; stick++) {
+            // The jig re-arms between phrases; seating inside that window is
+            // refused, so the second casing waits for it.
+            run(world, 2);
+            sendMg(world, a, 'seat', 0);
+            run(world, 0.1);
+
+            const pour = mg(world).pour as { targetAt: number };
+
+            run(world, Math.max(0, pour.targetAt - world.state.clock) + 0.6);
+            armCradle(world);
+            run(world, 4);
+        }
+
+        expect(stateOf(world, 'assembly-a').outputShelf.length).toBe(2);
+        expect([...world.state.items.values()].filter((it) => it.type === 'keg')).toEqual([]);
+
+        // The material became the stick. Billing it as waste would tax the
+        // factory for every stick it makes and then sells.
+        expect(world.tally.wastedByType).toMatchObject({ keg: 0, casing: 0 });
+    });
+
+    it('bills the day for the keg A walked away from mid-pour', () => {
+        const { world, a } = crewedJig();
+
+        shelveKeg(world);
+        sendMg(world, a, 'seat', 0);
+        run(world, 0.1);
+        leave(world, a);
+
+        expect(world.tally.wastedByType.keg).toBe(1);
+        expect(world.tally.destroyedByType.keg).toBe(0);
+    });
+
+    it('bills the day for the keg A walked away from on its last pour', () => {
+        const { world, a } = onTheLastPour();
+
+        expect(mg(world).phase).toBe('pour');
+
+        leave(world, a);
+
+        expect(world.tally.wastedByType.keg).toBe(1);
+        expect(world.tally.destroyedByType.keg).toBe(0);
+    });
+
+    it('leaves the keg standing as stock while its last pour is in flight', () => {
+        const { world } = onTheLastPour();
+
+        const kegs = [...world.state.items.values()].filter((item) => item.type === 'keg');
+
+        // The whistle bills what is still in the building, so the keg has to
+        // still be here until the pour that empties it actually lands — and it
+        // must not be scrapped as well, or the day pays for it twice.
+        expect(kegs).toHaveLength(1);
+        expect(world.tally.wastedByType.keg).toBe(0);
+    });
+
     it('re-opens the cycle for the A who picks an abandoned phrase back up', () => {
         const { world, a } = crewedJig();
         const st = stateOf(world, 'assembly-a');
@@ -1493,6 +1604,69 @@ describe('the jig adapter', () => {
 
         expect(station?.cycle).not.toBeNull();
         expect(mg(world).phase).toBe('pour');
+    });
+
+    it('sparks the Assembly ring when a crimp misses on a dented casing', () => {
+        const { world, a } = crewedJig();
+        const st = stateOf(world, 'assembly-a');
+
+        world.level.hazards.sparks.crimpOnDented = 1;
+
+        const fuel = createItem(world, 'keg');
+
+        expect(placeOnFloor(world, fuel, [11, 7])).toBe(true);
+
+        const casingId = st.inputShelf[0] ?? '';
+        const casing = world.state.items.get(casingId);
+
+        if (casing === undefined) throw new Error('no casing on the shelf');
+
+        casing.dents = 1;
+
+        shelveKeg(world);
+        sendMg(world, a, 'seat', 0);
+        run(world, 0.1);
+
+        const pour = mg(world).pour as { targetAt: number };
+
+        // Every window missed from here: the crimp closes with a loose cap, and
+        // a loose cap over a dented casing is what the ring catches.
+        run(world, Math.max(0, pour.targetAt - world.state.clock) + 0.6);
+        armCradle(world);
+        run(world, 6);
+
+        expect(fuel.lit).toBe(true);
+        expect(world.state.fuses.get(fuel.id)?.secondsLeft).toBeCloseTo(6);
+    });
+
+    it('holds the ring when the roll says the dented crimp held', () => {
+        const { world, a } = crewedJig();
+        const st = stateOf(world, 'assembly-a');
+
+        world.level.hazards.sparks.crimpOnDented = 0;
+
+        const fuel = createItem(world, 'keg');
+
+        expect(placeOnFloor(world, fuel, [11, 7])).toBe(true);
+
+        const casing = world.state.items.get(st.inputShelf[0] ?? '');
+
+        if (casing === undefined) throw new Error('no casing on the shelf');
+
+        casing.dents = 1;
+
+        shelveKeg(world);
+        sendMg(world, a, 'seat', 0);
+        run(world, 0.1);
+
+        const pour = mg(world).pour as { targetAt: number };
+
+        run(world, Math.max(0, pour.targetAt - world.state.clock) + 0.6);
+        armCradle(world);
+        run(world, 6);
+
+        expect(fuel.lit).toBe(false);
+        expect(world.state.fuses.size).toBe(0);
     });
 
     it('spills on A tile and destroys the keg when A bails mid-pour', () => {

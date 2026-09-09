@@ -1,6 +1,7 @@
+import type { LevelConfig, OrderState } from '@shared';
 import { describe, expect, it } from 'vitest';
 
-import { bookText, clockText, compareOrderIds } from '../ui/Hud';
+import { bookText, boardRow, clockText, compareOrderIds } from '../ui/Hud';
 
 const RUNNING = { phase: 'running', clock: 65, shiftSeconds: 600, players: 3, minPlayers: 3 };
 
@@ -66,5 +67,31 @@ describe('clockText — small crews', () => {
 
     it('still counts players toward the gate when the crew is short of the minimum', () => {
         expect(clockText({ ...lobby, players: 2, minPlayers: 3 }, false)).toContain('2/3');
+    });
+});
+
+/**
+ * The `Tab` board printed `OrderState.product` raw, so it read
+ * 'o-1  red_stick  0/7  open' — the recipe key, in snake_case, on a panel, and
+ * a fourth name for the object every other surface calls a stick.
+ */
+describe('boardRow', () => {
+    const RECIPES = {
+        keg: { station: 'boom_powder', inputs: {}, output: { type: 'keg', pours: 2 } },
+        red_stick: {
+            station: 'assembly',
+            inputs: { casing: 1 },
+            output: { type: 'stick', product: 'red_stick' },
+        },
+    } as unknown as LevelConfig['recipes'];
+
+    const ORDER = { product: 'red_stick', shipped: 0, qty: 7, status: 'open' } as OrderState;
+
+    it('names the product the way the floor signs name it', () => {
+        expect(boardRow('o-1', ORDER, RECIPES)).toBe('o-1  STICK  0/7  open');
+    });
+
+    it('never lets the recipe key itself reach the panel', () => {
+        expect(boardRow('o-1', ORDER, RECIPES)).not.toContain('red_stick');
     });
 });

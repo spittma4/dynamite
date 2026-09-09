@@ -1,4 +1,7 @@
 import { bubblesSystem } from './bubbles';
+import { reportSystem } from './day';
+import { grooveSystem } from './groove';
+import { hazardsSystem } from './hazards';
 import { itemsSystem } from './items';
 import { dockSystem } from './minigames/dock';
 import { movementSystem } from './movement';
@@ -22,5 +25,8 @@ export const SYSTEMS: System[] = [
     bubblesSystem,
     stationsSystem,
     itemsSystem,
+    hazardsSystem,
     dockSystem,
+    grooveSystem,
+    reportSystem,
 ];

@@ -1,4 +1,5 @@
 import { emote } from '../sim/bubbles';
+import { damagedStationUnder, tryBeginRepair, tryBeginStomp } from '../sim/hazards';
 import { onAction, onInteract } from '../sim/items';
 import { leave, onInteract as stationInteract, onMg } from '../sim/stations';
 import type { PlayerRuntime, World } from '../sim/World';
@@ -133,13 +134,15 @@ export const MESSAGE_HANDLERS: Record<ClientMsgName, MessageHandler> = {
     interact(ctx, payload): void {
         if (!isInteractMsg(payload)) return;
         if (onInteract(ctx.world, ctx.player, payload.t)) return;
+        if (stationInteract(ctx.world, ctx.player)) return;
 
-        stationInteract(ctx.world, ctx.player);
+        tryBeginRepair(ctx.world, ctx.sessionId, damagedStationUnder(ctx.world, ctx.player));
     },
 
     action(ctx, payload): void {
         if (!isActionMsg(payload)) return;
         if (onAction(ctx.world, ctx.player, payload.t)) return;
+        if (tryBeginStomp(ctx.world, ctx.sessionId)) return;
 
         stationAction(ctx, payload.t);
     },

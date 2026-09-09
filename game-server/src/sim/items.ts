@@ -9,6 +9,7 @@ import {
 import type { ItemType, PlayerState, StationState, StationType, Tile } from '../shared';
 import { beginSweep, beginUnjam, tickChores } from './chores';
 import type { ChoreTarget } from './chores';
+import { onItemLanded } from './hazards';
 import { dropItem } from './itemDrop';
 import { startThrow, tickFlights, tryCatch } from './itemThrow';
 import type { Flight } from './itemThrow';
@@ -191,34 +192,39 @@ export function floorItemAt(world: World, t: Tile): ItemState | null {
 }
 
 export function placeOnFloor(world: World, item: ItemState, t: Tile): boolean {
-    return putDown(world, item, t, '');
+    return putDown(world, item, t, '') !== 'blocked';
 }
+
+/**
+ * What became of an item that came to rest. `saved` is the blast bin: the item
+ * reached the tile and F10 took it from there, so it is off the floor and gone.
+ */
+type Landing = 'blocked' | 'placed' | 'saved';
 
 /**
  * `ignoreSessionId` is the one player whose feet do not block the tile: a
  * disconnect sets the item down where its carrier stood, and that carrier is
  * still standing there until the room removes them (contracts §11).
  */
-function putDown(world: World, item: ItemState, t: Tile, ignoreSessionId: string): boolean {
+function putDown(world: World, item: ItemState, t: Tile, ignoreSessionId: string): Landing {
     const [tx, ty] = t;
 
-    if (blockedForItems(world, tx, ty, item.lit)) return false;
+    if (blockedForItems(world, tx, ty, item.lit)) return 'blocked';
 
     const sitting = floorItemAt(world, t);
 
-    if (sitting !== null && sitting !== item) return false;
-    if (world.playersAt(tx, ty).some((held) => held !== ignoreSessionId)) return false;
+    if (sitting !== null && sitting !== item) return 'blocked';
+    if (world.playersAt(tx, ty).some((held) => held !== ignoreSessionId)) return 'blocked';
 
     detach(world, item);
     item.x = tx;
     item.y = ty;
     world.reindexItems();
 
-    // TODO(F10): every landing and floor put-down goes through here, so this is
-    // where `hazards.onItemLanded(world, item.id, tx, ty)` hooks in; a 'saved'
-    // return means F10 took the item (a blast bin) and the caller stops.
-
-    return true;
+    // Every landing and every floor put-down comes through here, so this is the
+    // one place F10 has to be asked (contracts §10.4). It is asked after the
+    // write, because a bin has to know which tile the item reached.
+    return onItemLanded(world, item.id, tx, ty) === 'saved' ? 'saved' : 'placed';
 }
 
 /** The ring is walked in `FACING_DIRS` order so the same drop always lands the same way. */
@@ -592,9 +598,12 @@ export function releaseCarried(world: World, sessionId: string): void {
 
     const tile = world.tileOf(player.x, player.y);
 
-    if (putDown(world, item, tile, sessionId)) return;
+    if (putDown(world, item, tile, sessionId) !== 'blocked') return;
 
-    if (!placeNear(world, item, tile)) destroyItem(world, item.id);
+    if (placeNear(world, item, tile)) return;
+
+    world.tally.scrap(item.type as ItemType);
+    destroyItem(world, item.id);
 }
 
 /** Movement emits these earlier in the same tick (contracts §11). */

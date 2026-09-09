@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { copy, rollDrop } from '../src/shared';
-import type { DropContext, FxKind, PlayerState, StationState, Tile } from '../src/shared';
+import { FACING_DIRS, copy, rollDrop, scaleLevel } from '../src/shared';
+import type {
+    DropContext,
+    FxKind,
+    PlayerState,
+    ScaledLevel,
+    StationState,
+    Tile,
+    ToastMsg,
+} from '../src/shared';
 import { createItem, floorItemAt, giveToPlayer, placeOnFloor } from '../src/sim/items';
 import { dropItem } from '../src/sim/itemDrop';
 import type { World } from '../src/sim/World';
@@ -32,6 +40,10 @@ function stationStateFor(world: World, id: string): StationState {
 
 function fxKinds(world: World): FxKind[] {
     return world.outbox.flatMap((out) => (out.name === 'fx' ? [out.payload.kind] : []));
+}
+
+function toasts(world: World): ToastMsg[] {
+    return world.outbox.flatMap((out) => (out.name === 'toast' ? [out.payload] : []));
 }
 
 /** Puts a player on a tile the way the tick does, index included. */
@@ -80,6 +92,31 @@ describe('kegs', () => {
         expect(keg.quality).toBeCloseTo(0.4);
     });
 
+    it('scraps a keg the crowded floor had nowhere to put, and bills the day', () => {
+        const world = makeWorld();
+
+        // Every tile `placeNear` can reach is taken, so the drop has nowhere to
+        // land: docs/17's "nothing free within two tiles and it is gone".
+        expect(placeOnFloor(world, createItem(world, 'keg'), [5, 7])).toBe(true);
+
+        for (let radius = 1; radius <= 2; radius++) {
+            for (const [dx, dy] of FACING_DIRS) {
+                placeOnFloor(world, createItem(world, 'casing'), [
+                    5 + dx * radius,
+                    7 + dy * radius,
+                ]);
+            }
+        }
+
+        const keg = createItem(world, 'keg');
+
+        dropItem(world, keg, [5, 7], [1, 0], '');
+
+        expect(world.state.items.has(keg.id)).toBe(false);
+        expect(fxKinds(world)).toContain('pfft');
+        expect(world.tally.wastedByType.keg).toBe(1);
+    });
+
     it('knocks over where it fell when a player is standing on the next tile', () => {
         const world = makeWorld({ players: 1 });
         const keg = createItem(world, 'keg');
@@ -112,10 +149,26 @@ describe('sticks', () => {
         expect(fxKinds(world)).toEqual(['fizzle']);
     });
 
-    // Acceptance: "each fizzle ... calls `hazards.spark` with cause `'fizzle'`"
-    // (F06). `sim/hazards.ts` arrives with F10; the TODO in `itemDrop.ts` is the
-    // wiring point, and this is the checklist entry that outlives it.
-    it.todo('a fizzle sparks the tile it happened on with cause fizzle');
+    it('sparks the tile it happened on, with no roll of its own', () => {
+        const world = makeWorld({ players: 1 });
+
+        world.startDay(scaleLevel(world.level, 3) as ScaledLevel);
+
+        const keg = createItem(world, 'keg');
+
+        expect(placeOnFloor(world, keg, [6, 7])).toBe(true);
+
+        const stick = createItem(world, 'stick');
+
+        world.level.carry.drop.stickFizzleChance = 1;
+        world.outbox.length = 0;
+
+        dropItem(world, stick, [6, 7], [1, 0], '');
+
+        expect(keg.lit).toBe(true);
+        expect(world.state.fuses.get(keg.id)?.secondsLeft).toBeCloseTo(6);
+        expect(toasts(world)).toEqual([{ text: copy.hazards.sparks.fizzle, kind: 'warn' }]);
+    });
 
     it('lands with one more dent when it does not fizzle', () => {
         const world = makeWorld();

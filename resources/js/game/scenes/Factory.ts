@@ -16,6 +16,7 @@ import Phaser from 'phaser';
 
 import { HUD_HEIGHT } from '../constants';
 import { Fx } from '../fx/Fx';
+import { createHazardsLayer } from '../hazards/HazardsLayer';
 import { stationViews } from '../minigames';
 import type { StationView } from '../minigames/types';
 import type { ServerClock } from '../net/ServerClock';
@@ -205,6 +206,7 @@ export class Factory extends Phaser.Scene {
         // line each here, in that order.
         createStationsLayer(this);
         createItemsLayer(this);
+        createHazardsLayer(this);
 
         // …and last, one view per station of a type a mini-game has registered.
         const views = new StationViewHost(this, this.containers.stations, stationViews);

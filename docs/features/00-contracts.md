@@ -9,7 +9,12 @@ so in its doc.** Where a feature doc and this file disagree, this file wins.
 v2.1 applied the re-check's 6 blockers + 10 majors: `ScaledLevel` without `players`, `Axis`/
 `peakWorkers`/`OrdersConfig` single-owner, `RunTally.destroyedByType`, `onMessage` `t` = raw ms,
 the stub rule for `sim/{stations,tally}.ts`, copy shipping in wave 1, test-file ownership, and the
-writer-table gaps. **This file wins over any feature doc.**
+writer-table gaps. **v2.2 (2026-09-09)** — `RunTally.wastedByType` + `scrap(type)` split the P&L's
+counter from the report's hazard lines, so scrapped material is billed as waste without being
+reported as an explosion or a fizzle (§9, §10.7). **v2.3 (2026-09-09)** — the money is integral by
+schema (`economy.price.*` and `economy.wasteCost.*` are `integer`, because Laravel rejects a
+fractional `pnl.profit`), `pnl.waste` bills every type the level prices, and `materials.shipped`
+counts sticks loaded onto a truck (§9, §10.7). **This file wins over any feature doc.**
 
 Design source: `docs/00`–`19` and `docs/decisions/`. This file is the implementation-level
 distillation for M0 + M1 (the MVP: Powder → Assembly → Dock, 3–6 players, one line). v2 absorbs
@@ -439,7 +444,7 @@ export interface StationReport { id: string; utilization: number }
 export interface PlayerReport { userId: string; name: string; utilization: number; label: PlayerLabel; topStation: string;
   bubbles: number; drops: number; sooted: number; fusesStomped: number; niceSaves: number; truckRides: number }
 export interface Pnl { revenue: number; waste: number; profit: number; multiplier: number; coin: number }   // profit, coin integers
-export interface Materials { purchased: number; shipped: number }   // purchased = kegs made; shipped = sticks that left on a truck
+export interface Materials { purchased: number; shipped: number }   // purchased = kegs made; shipped = sticks loaded onto a truck
 export interface ReportPayload { day; levelKey; grade: Grade; score; verdict: Verdict;
   ordersCompleted; ordersTotal; throughput; avgCycleSeconds; peakWip; wipTimeline: number[];
   kegsMade; kegsUsed; defects; rework; kegsExploded; fusesStomped; fizzles; niceSaves; truckRides;
@@ -451,11 +456,22 @@ Semantics: `throughput` = orders completed per 10 minutes of shift played
 (`round1(ordersCompleted × 600 / max(1, clockAtEnd))`); `avgCycleSeconds` = mean (completed − started)
 over completed orders; `wipTimeline` one sample per second from shift start; `kegsUsed` = kegs taken
 off an input shelf by the Jig; `kegsExploded` = `tally.destroyedByType.keg` (blast cause); `fizzles` = sticks
-destroyed by fizzle; `fusesStomped`/`niceSaves`/`truckRides` = sums over players; `rework`,
+destroyed by fizzle; **the hazard lines and the P&L read different counters** — `kegsExploded` and
+`fizzles` come from `destroyedByType` (a blast or a fizzle, and nothing else), while `pnl.waste` is
+what stood at the whistle plus `destroyedByType` plus `wastedByType`, so material scrapped by a
+wiped shelf, a truck ride or a bail is billed without inventing an explosion that never happened;
+every loss is counted under exactly one of the two, so the sum bills it once;
+`fusesStomped`/`niceSaves`/`truckRides` = sums over players; `rework`,
 `complaints` are 0 in M1; `cleanSweeps` = the number of times `grooveSystem`'s `cleanSweepStep`
 fired during the shift (F11 counts it and passes it to `gradeDay`); `startedAt`/`endedAt` ISO-8601 UTC; `seed` = the room's RNG
 seed; `factoryId` is sent as a string (Laravel's `integer` rule accepts it); `status` `abandoned` is
 posted when the room disposes while `running`.
+
+`pnl.profit` and `pnl.coin` are integers because Laravel's `StoreRunRequest` validates them as
+`integer` and rejects the whole run otherwise, so `economy.price.*` and `economy.wasteCost.*` are
+`integer` in `shared/src/config/schema.json`: a level cannot price a stick at 12.5 and lose the
+crew its day. `materials.shipped` counts sticks loaded onto a truck — the credit is booked as the
+crew loads it, so a truck still at the door when the shift ends counts what is aboard.
 
 `shared/src/sim/grade.ts` (F02): `gradeDay(i: GradeInputs, grading, day): DayGrade`, `letterFor`,
 `verdictFor(onTime, peakWip, grading, exploded)`, `profitAndLoss({ shipped, waste }: PnlInputs, economy, multiplier): Pnl`
@@ -800,8 +816,10 @@ export type TallyKey = 'kegsMade' | 'kegsUsed' | 'defects' | 'incidents';
 export type PlayerTallyKey = 'produced' | 'bubbles' | 'drops' | 'sooted' | 'fusesStomped' | 'niceSaves' | 'truckRides';
 export type DestroyCause = 'blast' | 'fizzle';
 export type ItemCounts = Record<ItemType, number>;
-export class RunTally { counts: Record<TallyKey, number>; destroyedByType: ItemCounts; players: Map<string, Record<PlayerTallyKey, number>>;
-  bump(key: TallyKey): void; bumpPlayer(userId: string, key: PlayerTallyKey): void; destroyed(type: ItemType, cause: DestroyCause): void; reset(): void }
+export class RunTally { counts: Record<TallyKey, number>; destroyedByType: ItemCounts; wastedByType: ItemCounts; players: Map<string, Record<PlayerTallyKey, number>>;
+  bump(key: TallyKey): void; bumpPlayer(userId: string, key: PlayerTallyKey): void; destroyed(type: ItemType, cause: DestroyCause): void;
+  scrap(type: ItemType): void;      // material lost to neither blast nor fizzle: bills `pnl.waste`, never a hazard line
+  reset(): void }
 // game-server/src/sim/metrics.ts (F11) — MetricsState kept in a module-level WeakMap<World, MetricsState>
 export function createMetrics(world: World): void;                  // reset at onStart
 export function snapshotMetrics(world: World): MetricsSnapshot;     // read by day.ts buildReport
@@ -818,6 +836,19 @@ export const reportSystem: System;   // { name: 'report', onStart: reset tally +
 Tally sites: `kegsMade` F05 `complete()`; `kegsUsed` F08 (last pour taken); `defects` F08 (`capLoose ||
 frayed || fill !== 1.0`); `produced` F05; `bubbles` F05; `drops` F06; `incidents`, `destroyed('keg','blast')`,
 `sooted`, `fusesStomped`, `niceSaves` F10; `destroyed('stick','fizzle')` F06; `truckRides` F09.
+`scrap(type)` sites — every `destroyItem` that loses material and is not already a `destroyed`:
+F10 `damageStation` (each item on both shelves, kegs excepted: they stay as fuel) and
+`onItemLanded`'s blast bin; F06 `dropItem` (nothing free within two tiles) and `releaseCarried`'s
+`placeNear` failure; F09 the truck rider's carried item; F08 `bail`'s half-used keg. Never scrapped,
+because nothing was lost: F09's stick loaded on a truck (revenue); F08's conversions — parts onto
+the cradle, the keg emptied by its last pour (destroyed when that pour *lands*, so a bail or the
+whistle still finds it standing), the casing seated — and its `stockCasing` overflow and
+`createParts` with hands full (both created and binned in the same call, so neither ever entered
+the factory); and any site that already called `destroyed`, which `pnl.waste` reads too.
+`pnl.waste` counts every item type and `profitAndLoss` bills what the level prices: a type with no
+`economy.wasteCost` entry costs nothing, and no type is dropped before it gets there.
+`JigEffect`'s `{ e: 'destroyItem'; itemId; scrap?: true }` carries the flag, because the pure jig
+funnels both kinds through one effect and the adapter cannot tell them apart from the call site.
 `GrooveSample`: `onTimeShipRate` = orders settled complete in the last 60 s ÷ trucks departed in that
 window, `avgShelfFullness` over stations with a cap > 0, `floorItemCount` = items with `holder === ''`,
 `reworkShelfCount 0`, starved/jammed counts from `state.stations`, `litFuseCount = state.fuses.size`.

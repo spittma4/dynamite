@@ -753,7 +753,7 @@
                     ],
                     "properties": {
                         "red_stick": {
-                            "type": "number",
+                            "type": "integer",
                             "minimum": 0
                         }
                     }
@@ -763,23 +763,23 @@
                     "additionalProperties": false,
                     "properties": {
                         "keg": {
-                            "type": "number",
+                            "type": "integer",
                             "minimum": 0
                         },
                         "casing": {
-                            "type": "number",
+                            "type": "integer",
                             "minimum": 0
                         },
                         "stick": {
-                            "type": "number",
+                            "type": "integer",
                             "minimum": 0
                         },
                         "crate": {
-                            "type": "number",
+                            "type": "integer",
                             "minimum": 0
                         },
                         "parts": {
-                            "type": "number",
+                            "type": "integer",
                             "minimum": 0
                         }
                     }

@@ -26,3 +26,6 @@ yarn-error.log
 # session review surfaces
 .lavish/
 .DS_Store
+
+# vitest cache
+**/node_modules/.vite/

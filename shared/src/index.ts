@@ -19,3 +19,4 @@ export * from './sim/orders';
 export * from './sim/dock';
 export * from './sim/slammer';
 export * from './sim/jig';
+export * from './sim/hazards';

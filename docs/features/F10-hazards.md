@@ -16,7 +16,7 @@ Kegs left on the floor and powder spilled on it are fuel, and every careless act
 - Fuses: 6 s keg fuse, 1.5 s chain fuse, spill-tile fuses, `FactoryState.fuses` mirror, `ItemState.lit`.
 - Stomp chore (`action` on a fuse tile, 1 s hold → pfft).
 - Blast: radius 1, chain propagation (floor kegs, spill tiles, adjacent shelf kegs), keg destroyed, spill → scorch, knockback 2 tiles + stun 2 s + sooted, `grooveEvents.blastKegs` per keg (F11 applies `groove.weights.blastKeg`; `groove.weights.litFuse` drains per lit fuse per second from `state.fuses.size`).
-- Chain accounting (3 s rolling window) → WHOOPS / INCIDENT (nearest station damaged, shelves emptied, 10 s repair hold) / EXPLODED (`world.requestEnd('exploded', 'exploded')`, or setback: every station damaged when `hazards.explosionEndsRound === false`).
+- Chain accounting (3 s rolling window) → WHOOPS / INCIDENT (nearest station damaged, its non-keg stock scrapped, 10 s repair hold) / EXPLODED (`world.requestEnd('exploded', 'exploded')`, or setback: every station damaged when `hazards.explosionEndsRound === false`).
 - DANGER beacon (`StationState.beacon = 'red'`, yielding back to `off` and never over-writing a module's `gold` below the line) and client hazard stripes around the pile.
 - Hot potato: a lit keg can be carried and thrown (F06 does the carrying); landing or being put down on a `layout.blastBins` tile → whump, keg gone, no chain, `grooveEvents.niceSaves++`, NICE SAVE banner; going off while held → blast centred on the holder; going off in flight → blast at the flight position.
 - Repair routing: F05 treats `damaged` as offline and the `interact` chain reaches `tryBeginRepair` on a damaged station's work tile (contracts §11).
@@ -224,9 +224,9 @@ Tile conventions from the contracts: an entity at `(x, y)` is on tile `tileOf(x,
 
 **6. Escalations** (`hazardsApply`):
 - `whoops`: `banner = 'WHOOPS'`, `bannerUntil = clock + hazards.bannerSeconds` (3).
-- `incident`: `banner = 'INCIDENT'`; `nearestUndamagedStation(stations, origin)` by Euclidean distance from the origin tile to `(anchorX, anchorY)`, ties by lowest station id; `null` (all damaged) → banner only. `damageStation(world, id)`: if the station is `jammed`, `stations.unjam(world, id)` first (F05 owns `jamUntil`); then `state = 'damaged'`, `progress = 0`, `items.destroyItem(world, itemId)` for every id on `inputShelf` and `outputShelf` (F06 empties the arrays), `stations.leave(world, player)` for every player with `stationId === id`, `tally.bump('incidents')`, `fx('blast', anchor, { size: 1 })`. `beacon` is untouched (the pile is still there).
+- `incident`: `banner = 'INCIDENT'`; `nearestUndamagedStation(stations, origin)` by Euclidean distance from the origin tile to `(anchorX, anchorY)`, ties by lowest station id; `null` (all damaged) → banner only. `damageStation(world, id)`: if the station is `jammed`, `stations.unjam(world, id)` first (F05 owns `jamUntil`); then `state = 'damaged'`, `progress = 0`, `items.destroyItem(world, itemId)` for every **non-keg** id on `inputShelf` and `outputShelf` (F06 empties the arrays), each one billed with `tally.destroyed(type, 'blast')` so `day.ts` still counts it as waste, `stations.leave(world, player)` for every player with `stationId === id`, `fx('blast', anchor, { size: 1 })`. Kegs on the shelves are **left where they are**: a keg is fuel wherever it stands, and doc 16's 9 + 6 = 15 is only reachable if an incident half way through a chain does not defuse the shelf beside it. `beacon` is untouched (the pile is still there), and `tally.bump('incidents')` belongs to the escalation, not to the station — one bump per escalation, so a setback that damages three machines is still one incident.
 - `exploded` with `explosionEndsRound === true` (`explosionAction` → `'endDay'`): `banner = 'EXPLODED'`, `sooted = true` for every player (each a `tally.bumpPlayer(userId, 'sooted')` on transition), `fx('blast', origin, { size: 3 })` (the client's white flash), then `world.requestEnd('exploded', 'exploded')` — consumed at the end of the tick by F03, which runs `onDayEnd` and `finishDay`. Remaining fuses stop mattering: `hazardsSystem.tick` no longer runs once `phase === 'ended'`.
-- `exploded` with `explosionEndsRound === false` (`'setback'`): `banner = 'EXPLODED'`, `fx('blast', origin, { size: 3 })`, `damageStation` for every station. Only players in blast areas are sooted. Remaining fuses keep burning and the chain continues; if a later chain crosses 10 again, the setback fires again. This is the Level 1 and Sandbox path (`endsOn: 'never'` changes nothing here — contracts §8: an explosion in Sandbox follows `explosionEndsRound`).
+- `exploded` with `explosionEndsRound === false` (`'setback'`): `banner = 'EXPLODED'`, `fx('blast', origin, { size: 3 })`, one `tally.bump('incidents')`, `damageStation` for every station. Only players in blast areas are sooted. Remaining fuses keep burning and the chain continues; if a later chain crosses 10 again, the setback fires again. This is the Level 1 and Sandbox path (`endsOn: 'never'` changes nothing here — contracts §8: an explosion in Sandbox follows `explosionEndsRound`).
 - Banner expiry: when `clock >= bannerUntil` and `banner` is one of F10's four values, F10 sets `banner = ''`. Other features clear their own.
 
 **7. DANGER beacon** (every tick, after blasts): for each station in `world.stations` with a non-empty `ring`, `dangerBeacon(st.beacon, ringFuel, cfg)` → `'red'` when `ringFuel >= dangerWarningAt × factoryExplosionThreshold` (0.5 × 10 = 5). Below the line it returns `'off'` only when the current value is `'red'`, leaving a module's `'gold'` alone; F07 re-asserts `gold` on its own tick, and because `hazardsSystem` ticks after `stationsSystem`, red wins within a tick (contracts §3). The client draws the red pulse at `layout.beaconPoles[stationId]` and, while any beacon is red, hazard stripes on every tile bordering a floor-fuel tile (floor keg or spill, derived from state — the client has no station config).
@@ -234,7 +234,7 @@ Tile conventions from the contracts: an entity at `(x, y)` is on tile `tileOf(x,
 **8. Hot potato and the Blast Bin** (`onItemLanded`, called by F06 for throw landings and floor put-downs):
 - `item.lit && isBlastBin(layout.blastBins, x, y)` → `'saved'`: delete the fuse (private + mirror), `items.destroyItem(world, itemId)`, `fx('whump', x, y)`, `world.grooveEvents.niceSaves++`, `tally.bumpPlayer(userId, 'niceSaves')` for the fuse's `lastHolder` when that player is still seated, `banner = 'NICE SAVE'`, `bannerUntil = clock + bannerSeconds`. No chain: the bin is sand.
 - `item.lit` elsewhere → `'landed'`; the fuse keeps its timer and now sits on the new tile (a lit keg thrown onto the pile chains normally on expiry; a lit keg put on a shelf blasts on the shelf tile and lights every keg on it).
-- Not lit → `'landed'`; a bin tile is ordinary floor for unlit items (an unlit keg in the bin is floor fuel like any other). The bin deliberately does **not** swallow unlit kegs: that would make dumping the surplus a disposal path and defang "stop making powder".
+- Not lit → `'landed'`. The bin deliberately does **not** swallow unlit kegs: that would make dumping the surplus a disposal path and defang "stop making powder". F06 goes one better and treats a bin as furniture to anything that is not on fire (`items.blockedForItems` refuses an unlit item the tile), so `onItemLanded` only ever sees an unlit item there through a direct call — the `'landed'` answer is the guard, not a route.
 - Going off while held: origin = the holder's tile, so the holder is knocked back opposite their facing, stunned and sooted, and `items.destroyItem` empties their hands. Catching a thrown lit keg is F06's catch with the fuse riding along.
 - Stomping requires standing on the fuse tile; shelf tiles are walls, so a lit keg on a shelf can only be grabbed, not stomped.
 
@@ -246,27 +246,27 @@ Tile conventions from the contracts: an entity at `(x, y)` is on tile `tileOf(x,
 
 ## Acceptance criteria
 
-- [ ] With one keg on the Powder floor ring and no spill, `sparkRing(world, 'powder-a', 'slammerRedline')` lights a fuse on that keg with `secondsLeft` 6 and `ItemState.lit === true`, emits `fx('fuse', …)` and a toast reading `copy.hazards.sparks.slammerRedline`.
-- [ ] `sparkRing` on an empty ring emits `fx('spark', …)` at the ring tile nearest the anchor and lights nothing.
-- [ ] A spark on a spill tile with no keg lights a `t-<tile>` fuse with `itemId === ''`.
-- [ ] A spark never lights a shelf keg.
-- [ ] A fuse lit at clock 10.00 blasts on the tick where clock reaches 16.00 (120 ticks at 50 ms), not before.
-- [ ] A station held `jammed` for 10 s with `sparks.jammedPer10s = 1` sparks its ring exactly once; at 20 s it has sparked twice; clearing the jam resets the accumulator.
-- [ ] Standing on a fuse tile and sending `action` sets `chore = 'stomp'`; standing still for 1 s removes the fuse, emits `fx('pfft', …)`, clears `lit`, and bumps that player's `fusesStomped` in `world.tally`. Moving before 1 s clears `chore` and the fuse keeps burning.
-- [ ] A blast lights a 1.5 s `chain: true` fuse on every floor keg, spill tile and shelf keg in the 3×3 around the origin and nothing at distance 2.
-- [ ] A line `keg · spill · spill · keg` blasts end to end: the far keg is destroyed 4.5 s after the first blast and both spill tiles are in `scorchTiles` and no longer in `spillTiles`.
-- [ ] A full 9-tile Powder ring beside an output shelf holding 6 kegs, sparked once, destroys 15 kegs and escalates to `exploded`.
-- [ ] Every player in the 3×3 is moved 2 tiles away from the origin (stopping before walls), has `stunnedUntil = clock + 2`, `sooted === true`, and keeps whatever they were carrying.
-- [ ] A keg going off in a player's hands blasts at that player's tile, knocks them back opposite their facing, and leaves their hands empty via `items.destroyItem`.
-- [ ] Each keg blast adds 1 to `world.grooveEvents.blastKegs` and calls `tally.destroyed('keg', 'blast')`; `state.fuses.size` equals the number of burning fuses; F10 never writes `state.groove`.
-- [ ] A chain of 1–3 kegs shows `banner = 'WHOOPS'` for 3 s; 4–9 shows `'INCIDENT'`, `tally.counts.incidents` is 1, and the nearest undamaged station becomes `damaged` with both shelves empty and its workers ejected through `stations.leave`; ≥ 10 shows `'EXPLODED'`.
-- [ ] Two keg blasts 3.0 s apart are one chain; 3.05 s apart are two chains.
-- [ ] With `explosionEndsRound: true`, reaching 10 kegs calls `world.requestEnd('exploded', 'exploded')` once and every player is sooted.
-- [ ] With `explosionEndsRound: false`, reaching 10 kegs damages every station, requests no end, and the day continues.
-- [ ] Holding `E` on a damaged station's work tile for 10 s (standing still, empty-handed) returns it to `idle`; `StationState.progress` rises 0 → 1 meanwhile; pressing `E` again mid-hold cancels.
-- [ ] `StationState.beacon` for Powder is `'red'` when its ring holds ≥ 5 floor fuel and returns to `'off'` below; a `'gold'` beacon below the line is left alone, and a beacon set to `'gold'` by the Slammer earlier in the same tick reads `'red'` after `hazardsSystem` ticks.
-- [ ] A lit keg landing on `layout.blastBins[0]` is removed with no blast, `fx('whump', …)`, `banner = 'NICE SAVE'`, `grooveEvents.niceSaves` 1 and that player's `niceSaves` tally 1; a lit keg landing elsewhere keeps its fuse; an unlit keg on the bin tile just lands.
-- [ ] `resetHazards` leaves no fuses, scorch, chores, damaged stations, red beacons, sooted players or F10 banner.
+- [x] With one keg on the Powder floor ring and no spill, `sparkRing(world, 'powder-a', 'slammerRedline')` lights a fuse on that keg with `secondsLeft` 6 and `ItemState.lit === true`, emits `fx('fuse', …)` and a toast reading `copy.hazards.sparks.slammerRedline`.
+- [x] `sparkRing` on an empty ring emits `fx('spark', …)` at the ring tile nearest the anchor and lights nothing.
+- [x] A spark on a spill tile with no keg lights a `t-<tile>` fuse with `itemId === ''`.
+- [x] A spark never lights a shelf keg.
+- [x] A fuse lit at clock 10.00 blasts on the tick where clock reaches 16.00 (120 ticks at 50 ms), not before.
+- [x] A station held `jammed` for 10 s with `sparks.jammedPer10s = 1` sparks its ring exactly once; at 20 s it has sparked twice; clearing the jam resets the accumulator.
+- [x] Standing on a fuse tile and sending `action` sets `chore = 'stomp'`; standing still for 1 s removes the fuse, emits `fx('pfft', …)`, clears `lit`, and bumps that player's `fusesStomped` in `world.tally`. Moving before 1 s clears `chore` and the fuse keeps burning.
+- [x] A blast lights a 1.5 s `chain: true` fuse on every floor keg, spill tile and shelf keg in the 3×3 around the origin and nothing at distance 2.
+- [x] A line `keg · spill · spill · keg` blasts end to end: the far keg is destroyed 4.5 s after the first blast and both spill tiles are in `scorchTiles` and no longer in `spillTiles`.
+- [x] A full 9-tile Powder ring beside an output shelf holding 6 kegs, sparked once, destroys 15 kegs and escalates to `exploded` (all fifteen in setback mode; an ending explosion stops the chain on the blast that crosses 10, which is the point at which the day is over anyway).
+- [x] Every player in the 3×3 is moved 2 tiles away from the origin (stopping before walls), has `stunnedUntil = clock + 2`, `sooted === true`, and keeps whatever they were carrying.
+- [x] A keg going off in a player's hands blasts at that player's tile, knocks them back opposite their facing, and leaves their hands empty via `items.destroyItem`.
+- [x] Each keg blast adds 1 to `world.grooveEvents.blastKegs` and calls `tally.destroyed('keg', 'blast')`; `state.fuses.size` equals the number of burning fuses; F10 never writes `state.groove`.
+- [x] A chain of 1–3 kegs shows `banner = 'WHOOPS'` for 3 s; 4–9 shows `'INCIDENT'`, `tally.counts.incidents` is 1, and the nearest undamaged station becomes `damaged` with both shelves empty and its workers ejected through `stations.leave`; ≥ 10 shows `'EXPLODED'`.
+- [x] Two keg blasts 3.0 s apart are one chain; 3.05 s apart are two chains.
+- [x] With `explosionEndsRound: true`, reaching 10 kegs calls `world.requestEnd('exploded', 'exploded')` once and every player is sooted.
+- [x] With `explosionEndsRound: false`, reaching 10 kegs damages every station, requests no end, and the day continues.
+- [x] Holding `E` on a damaged station's work tile for 10 s (standing still, empty-handed) returns it to `idle`; `StationState.progress` rises 0 → 1 meanwhile; pressing `E` again mid-hold cancels.
+- [x] `StationState.beacon` for Powder is `'red'` when its ring holds ≥ 5 floor fuel and returns to `'off'` below; a `'gold'` beacon below the line is left alone, and a beacon set to `'gold'` by the Slammer earlier in the same tick reads `'red'` after `hazardsSystem` ticks.
+- [x] A lit keg landing on `layout.blastBins[0]` is removed with no blast, `fx('whump', …)`, `banner = 'NICE SAVE'`, `grooveEvents.niceSaves` 1 and that player's `niceSaves` tally 1; a lit keg landing elsewhere keeps its fuse; an unlit keg is refused the bin tile by F06's `blockedForItems` and `onItemLanded` answers `'landed'` for one anyway.
+- [x] `resetHazards` leaves no fuses, scorch, chores, damaged stations, red beacons, sooted players or F10 banner.
 - [ ] In the browser: the fuse sparkle sits on the keg (and follows a carrier), the blast shows a ring, soot puff and screen shake, F04 draws the scorch marks the server appended, the beacon pulses red with stripes around the pile, F04's HUD shows the WHOOPS/INCIDENT/EXPLODED/NICE SAVE banner text, a damaged station shows *FILING INCIDENT REPORT* with a filling bar, and the factory explosion flashes white.
 
 ## Test plan
@@ -327,11 +327,12 @@ Server tests in `game-server/tests/hazards.test.ts`, all on `makeWorld({ players
 - a redline spark toasts `copy.hazards.sparks.slammerRedline` and lights the ring's fullest tile
 - it rolls `jammedPer10s` once per 10 s of continuous jam and resets when the jam clears
 - a blast destroys the keg through `items.destroyItem`, scorches through `items.removeSpill`, and writes `grooveEvents.blastKegs` and `tally.destroyed('keg','blast')`
-- an incident damages the nearest station, empties both shelves, ejects its workers via `stations.leave` and bumps `tally.counts.incidents`
+- an incident damages the nearest station, scraps the non-keg stock on both shelves (billed through `tally.destroyed`), leaves the kegs standing as fuel, ejects its workers via `stations.leave` and bumps `tally.counts.incidents` once
+- a full 9-tile ring beside a 6-keg output shelf, sparked once, walks WHOOPS → INCIDENT → EXPLODED, and destroys all fifteen kegs when the level plays the explosion as a setback
 - an explosion with `explosionEndsRound: true` calls `world.requestEnd('exploded','exploded')` exactly once; with `false` it damages every station and requests nothing
 - `tryBeginStomp` returns false while carrying, and the completed stomp bumps the player's `fusesStomped`
 - `tryBeginRepair` toggles, fills `StationState.progress`, and returns the station to `idle`
-- `onItemLanded` on a bin tile saves a lit keg (whump, banner, `grooveEvents.niceSaves`) and lands an unlit one
+- a lit keg put down or thrown into the bin through F06's own verbs is saved (whump, banner, `grooveEvents.niceSaves`, the carrier's `niceSaves` tally), one put down anywhere else keeps its fuse, and an unlit one is refused the tile
 - `resetHazards` (via `hazardsSystem.onStart`) clears fuses, scorch, chores, damage, red beacons and sooted players
 
 In-app verification (Sandbox level, `explosionEndsRound: false`, three browsers, `data-debug=1`):
@@ -339,7 +340,7 @@ In-app verification (Sandbox level, `explosionEndsRound: false`, three browsers,
 2. Redline a release. Confirm the sparkle on one keg, the "REDLINED THE SLAMMER" toast, and the Groove drain in the debug overlay. Stand on it and hold `Space`: sparkle dims, pfft at 1 s, fuse gone — screenshot the dimmed sparkle.
 3. Redline again; pick the lit keg up (`E`), walk two tiles, throw (`Space`) into the bin at `(3, 3)`. Confirm whump, confetti, NICE SAVE banner and the Groove bump — screenshot the banner.
 4. Redline again and do nothing. At 6 s: blast ring, soot puff, screen shake, players next to it thrown 2 tiles and black-faced, WHOOPS banner, chain sparkles on the neighbours, second and third blasts at 1.5 s intervals, scorch marks where spills were — screenshot mid-chain.
-5. Fill the ring (9) and the output shelf (6) and redline. Confirm INCIDENT at the 4th keg (nearest station shows DAMAGED + *FILING INCIDENT REPORT*, shelves empty, its workers back on the floor), then EXPLODED at the 10th with the white flash, every station damaged, play continuing. Hold `E` on a damaged station's work tile for 10 s and watch the bar fill — screenshot the bar at ~50%.
+5. Fill the ring (9) and the output shelf (6) and redline. Confirm INCIDENT at the 4th keg (nearest station shows DAMAGED + *FILING INCIDENT REPORT*, its workers back on the floor, the shelf kegs still standing), then EXPLODED at the 10th with the white flash, every station damaged, play continuing. Hold `E` on a damaged station's work tile for 10 s and watch the bar fill — screenshot the bar at ~50%.
 6. Switch to Level 2 (`explosionEndsRound: true`), repeat step 5: the day ends on the 10th keg, everyone is sooted, and the report shows verdict EXPLODED with `kegsExploded` ≥ 10 — screenshot the report.
 
 ## Tasks

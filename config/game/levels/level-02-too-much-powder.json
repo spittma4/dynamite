@@ -1,0 +1,207 @@
+{
+    "key": "level-02-too-much-powder",
+    "name": "Too Much Powder",
+    "notes": "The campaign baseline; levels 1, 3, 4 and Sandbox are this file with the ladder cells changed and nothing else. Numbers from docs/03 (cycles, curves, shelves), docs/04 (windows), docs/13 (groove, orders), docs/16 (hazards), docs/17 (carry), docs/18 (day, grading, economy) and docs/19 (the one-line breakpoint). The level exists to make somebody say 'Stop making powder.': a keg is two pours at 2.8 s while a stick eats half a keg every 6.0 s, so Powder outruns Assembly's demand more than four to one and the floor ring fills while the jig starves. orderBook is 10, not docs/18's 11 - with firstAt 20 and everySeconds 60 an eleventh truck would arrive at 620 s, past the 600 s whistle. qtyPerTruck is 7 on a 0.25 ramp, not docs/13's 8 on 0.5: a stick reaches the truck in one pair of hands at a time, so a book is a labour sum over the whole crew and not the jig's output, and 8 on a 0.5 ramp asked ten trucks for 100 sticks that six people cannot carry across this floor inside 600 s. The maxPlayers 3 breakpoint hands a crew at the floor of the range a shorter book on a smaller truck (ADR 0013) - three people have one spare pair of hands, not three. From this level on the explosion is a hard loss.",
+    "day": {
+        "shiftSeconds": 600,
+        "orderBook": 10,
+        "endsOn": "either",
+        "earlyFinishBonusPerMinute": 5,
+        "earlyFinishCap": 10
+    },
+    "players": { "min": 3, "max": 6 },
+    "layout": "one-line",
+    "groove": {
+        "start": 50,
+        "weights": {
+            "onTimeShip": 8,
+            "shelfFullness": -4,
+            "floorItem": -0.5,
+            "rework": -1,
+            "starved": -2,
+            "jammed": -1,
+            "litFuse": -3,
+            "fizzle": -2,
+            "niceSave": 3,
+            "blastKeg": -10,
+            "primeStick": 1,
+            "truckComplete": 10
+        },
+        "thresholds": { "onFire": 85, "groove": 70, "churn": 30, "meltdown": 10 },
+        "cleanSweep": { "holdSeconds": 3, "snapTo": 60, "cooldownSeconds": 90 }
+    },
+    "clipboardSeconds": 3,
+    "bpm": 150,
+    "windowFloorsMs": { "ok": 100, "perfect": 45 },
+    "carry": {
+        "slowdown": 0.2,
+        "throwTiles": 2,
+        "throwFlightSeconds": 0.5,
+        "catchOkMs": 150,
+        "catchPerfectMs": 75,
+        "drop": { "kegKnockOverOnHit": true, "stickFizzleChance": 0.3, "crateRattlyOnDrop": true },
+        "truckRideSeconds": 20,
+        "footprints": false
+    },
+    "stations": [
+        {
+            "id": "powder-a",
+            "type": "boom_powder",
+            "line": "a",
+            "joinMode": "press",
+            "anchor": [3, 2],
+            "workTiles": [[4, 5]],
+            "rackTiles": [],
+            "outputShelf": { "tile": [6, 3], "capacity": 6 },
+            "floorRing": {
+                "tiles": [
+                    [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1],
+                    [2, 2], [7, 2],
+                    [2, 3], [7, 3],
+                    [2, 4], [7, 4],
+                    [2, 5], [3, 5], [5, 5], [6, 5], [7, 5],
+                    [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6]
+                ]
+            },
+            "nominalSeconds": 2.8,
+            "floorSeconds": 1.4,
+            "staffing": { "1": 1.0, "2": 1.05, "3": 0.9, "4": 0.75 },
+            "churnSensitive": true,
+            "minigame": {
+                "heat": {
+                    "minChargeSeconds": 0.7,
+                    "maxChargeSeconds": 1.5,
+                    "okMsAtMaxCharge": 225,
+                    "okMsAtMinCharge": 105,
+                    "deadCenterMs": 50,
+                    "churnBandDrift": 0.08,
+                    "overholdMs": 500
+                },
+                "comboTiers": [10, 25, 50],
+                "overflowSpills": true,
+                "comboBannerSeconds": 2
+            }
+        },
+        {
+            "id": "assembly-a",
+            "type": "assembly",
+            "line": "a",
+            "joinMode": "press",
+            "anchor": [12, 6],
+            "workTiles": [[13, 8], [14, 8]],
+            "rackTiles": [[16, 8]],
+            "inputShelf": { "tile": [11, 7], "capacity": 8, "accepts": ["keg", "casing"] },
+            "outputShelf": { "tile": [13, 10], "capacity": 4 },
+            "floorRing": {
+                "tiles": [
+                    [10, 5], [11, 5], [12, 5], [13, 5], [14, 5], [15, 5], [16, 5], [17, 5],
+                    [10, 6], [17, 6],
+                    [10, 7], [16, 7], [17, 7],
+                    [10, 8], [11, 8], [12, 8], [15, 8], [17, 8],
+                    [10, 9], [11, 9], [12, 9], [13, 9], [14, 9], [15, 9], [16, 9], [17, 9],
+                    [10, 10], [11, 10], [14, 10], [15, 10], [16, 10], [17, 10],
+                    [10, 11], [11, 11], [12, 11], [13, 11], [14, 11], [15, 11], [16, 11], [17, 11]
+                ]
+            },
+            "nominalSeconds": 6.0,
+            "floorSeconds": 5.0,
+            "staffing": { "1": 0.6, "2": 1.0, "3": 1.15, "4": 1.1, "5": 0.95, "6": 0.8, "8": 0.5 },
+            "churnSensitive": false,
+            "minigame": {
+                "pour": {
+                    "beatsByQuality": { "1.0": 5, "0.7": 7, "0.4": 8 },
+                    "perfectMs": 60,
+                    "okMs": 140,
+                    "primeKegWindowMultiplier": 1.5
+                },
+                "knots": { "long": 3, "short": 2, "secondsPerKnot": 0.4, "perfectMs": 60, "okMs": 140 },
+                "crimp": { "clicks": 3, "clickSeconds": 0.2, "perfectMs": 80, "okMs": 200 },
+                "toss": { "arcSeconds": 0.5, "perfectMs": 120, "okMs": 250 },
+                "casings": { "stock": 3, "dentChance": 0.3 }
+            }
+        },
+        {
+            "id": "dock-a",
+            "type": "dock",
+            "line": "a",
+            "joinMode": "stand",
+            "anchor": [22, 1],
+            "workTiles": [[22, 4], [23, 4], [24, 4], [25, 4]],
+            "rackTiles": [],
+            "floorRing": {
+                "tiles": [
+                    [20, 1], [21, 1],
+                    [20, 2], [21, 2],
+                    [20, 3], [21, 3],
+                    [20, 4], [21, 4], [26, 4],
+                    [20, 5], [21, 5], [22, 5], [23, 5], [24, 5], [25, 5],
+                    [20, 6], [21, 6], [22, 6], [23, 6], [24, 6], [25, 6], [26, 6],
+                    [20, 7], [21, 7], [22, 7], [23, 7], [24, 7], [25, 7], [26, 7]
+                ]
+            },
+            "nominalSeconds": 1.0,
+            "floorSeconds": 1.0,
+            "staffing": { "1": 1.0, "2": 1.6, "3": 1.9, "4": 1.8, "5": 1.5, "6": 1.2, "8": 1.0 },
+            "churnSensitive": false,
+            "minigame": {
+                "beepHz": 1,
+                "perfectMs": 70,
+                "okMs": 180,
+                "tailgateWindowSeconds": 3,
+                "tailgateHoldSeconds": 0.5,
+                "leaveSeconds": 1.5
+            }
+        }
+    ],
+    "recipes": {
+        "keg": { "station": "boom_powder", "inputs": {}, "output": { "type": "keg", "pours": 2 } },
+        "red_stick": {
+            "station": "assembly",
+            "inputs": { "casing": 1, "pour": 1, "fuse": 1, "cap": 1 },
+            "output": { "type": "stick", "product": "red_stick" }
+        }
+    },
+    "orders": {
+        "firstAt": 20,
+        "everySeconds": 60,
+        "truckWaitSeconds": 20,
+        "mix": [{ "type": "red_stick", "weight": 10 }],
+        "qtyPerTruck": { "base": 7, "rampPerMinute": 0.25 }
+    },
+    "hazards": {
+        "fuseSeconds": 6,
+        "chainFuseSeconds": 1.5,
+        "blastRadius": 1,
+        "chainWindowSeconds": 3,
+        "sparks": { "slammerRedline": 1.0, "jammedPer10s": 0.5, "crimpOnDented": 0.3 },
+        "fuel": { "floorKeg": 1, "spillTile": 1, "shelfKeg": 1 },
+        "incidentThreshold": 4,
+        "factoryExplosionThreshold": 10,
+        "explosionEndsRound": true,
+        "dangerWarningAt": 0.5,
+        "stompSeconds": 1.0,
+        "stunSeconds": 2,
+        "knockbackTiles": 2,
+        "litKegCarry": true,
+        "repairSeconds": 10,
+        "bannerSeconds": 3
+    },
+    "grading": {
+        "weights": { "onTime": 50, "wip": 20, "quality": 15, "cycle": 15, "incident": -5, "heroCap": 10 },
+        "thresholds": { "A": 90, "B": 75, "C": 60, "D": 40 },
+        "targets": { "wip": 16, "cycleSeconds": 240 },
+        "multiplier": { "A": 1.5, "B": 1.25, "C": 1.0, "D": 0.75, "F": 0.5 },
+        "verdict": { "flow": 1.0, "smooth": 0.75, "fine": 0.5, "rough": 0.25 },
+        "advanceOn": "C"
+    },
+    "economy": {
+        "price": { "red_stick": 10 },
+        "wasteCost": { "keg": 4, "casing": 2, "stick": 6, "crate": 8 }
+    },
+    "scaling": {
+        "breakpoints": [
+            { "maxPlayers": 3, "lines": 1, "truckEverySeconds": 60, "orderBook": 8, "qtyPerTruck": { "base": 5, "rampPerMinute": 0.25 } },
+            { "maxPlayers": 6, "lines": 1, "truckEverySeconds": 60, "orderBook": 10 }
+        ]
+    }
+}

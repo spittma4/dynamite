@@ -1,5 +1,5 @@
 # F11 — Metrics, tally, Groove integration and the report card
-**Status:** [ ] Design reviewed · [ ] Implemented · [ ] Unit tests green · [ ] Verified in the running app
+**Status:** [x] Design reviewed · [x] Implemented · [x] Unit tests green · [ ] Verified in the running app
 **Owns:** `game-server/src/sim/tally.ts` · `game-server/src/sim/metrics.ts` · `game-server/src/sim/groove.ts` · `game-server/src/sim/day.ts` · `game-server/tests/tally.test.ts` · `game-server/tests/metrics.test.ts` · `game-server/tests/groove.test.ts` · `game-server/tests/report.test.ts` · `resources/js/game/scenes/Report.ts` · `resources/js/game/report/format.ts` · `resources/js/game/__tests__/report-format.test.ts`
 **Touches (one-line edits, listed exactly in §Files):** F03 `game-server/src/sim/systems.ts` (two `SYSTEMS` lines) · F04 `resources/js/game/main.ts` (one scene-list line)
 **Reads:** `docs/features/00-contracts.md` (§3, §4, §8, §9, §10.1, §10.7, §10.9, §11, §12, §13) · `docs/18-days-grades-and-payday.md` · `docs/10-metrics.md` · `docs/05-flow-mechanics.md` (Groove, Clean Sweep, Accounting, Bottleneck estimate) · `docs/16-hazards-and-explosions.md` (Metrics) · `docs/17-oops-carry-and-throw.md` (Metrics) · `docs/decisions/0008`, `0010`, `0012`
@@ -46,8 +46,8 @@ reloads into a fresh room on the day Laravel has advanced to.
 - The Laravel run store (`runs`, `run_players`, `StoreRun`, the internal route, the factory page's run
   history): **F01** (contract §5 "Run store").
 - Payday vote, purchases, `factory_upgrades`, Management's ribbon (M4).
-- Complaints from Hotfix returns, `rework`, returned items in waste, and clean sweeps in the grade
-  (M2 — F02's pure functions accept them; F11 feeds `0` per contract §9).
+- Complaints from Hotfix returns, `rework` and returned items in waste (M2 — F02's pure functions
+  accept them; F11 feeds `0` per contract §9).
 - Per-line utilization rows and the ten-row performance review above 6 players (M2).
 - Customer feedback stars (M2; needs Hotfixes). Reverb `DayEnded` broadcast (M4).
 - Rush-order revenue bonus (`economy.price.rushBonus`, M3).
@@ -126,11 +126,11 @@ export type DestroyCause = 'blast' | 'fizzle';
 export type ItemCounts = Record<ItemType, number>;                 // ItemType from @shared (keg|casing|stick|crate|parts)
 export class RunTally {
   counts: Record<TallyKey, number>;
-  destroyed: ItemCounts;                                           // by item type; the cause is validated, not stored
+  destroyedByType: ItemCounts;                                     // by item type; the cause is validated, not stored
   players: Map<string, Record<PlayerTallyKey, number>>;            // key = PlayerState.userId
   bump(key: TallyKey): void;
   bumpPlayer(userId: string, key: PlayerTallyKey): void;
-  destroyed(type: ItemType, cause: DestroyCause): void;            // see Contract change requested 1 — the name collides
+  destroyed(type: ItemType, cause: DestroyCause): void;            // bumps destroyedByType (Contract change requested 1)
   reset(): void;
 }
 ```
@@ -236,10 +236,12 @@ all three. Sites, by the system that owns the moment:
 | `bumpPlayer(userId, 'niceSaves')` | F10 | a lit keg lands in a Blast Bin |
 | `bumpPlayer(userId, 'truckRides')` | F09 | `departTruck` drives a player off from `layout.truckBay` |
 
-`kegsExploded = destroyed.keg` and `fizzles = destroyed.stick`: `'blast'` is the only cause that
-destroys a keg and `'fizzle'` the only one that destroys a stick, so the type counts are exact.
-`rework`, `complaints` and `cleanSweeps` have no M1 source; `buildReport` passes `0` and the report
-prints `Rework 0` (contract §9).
+`kegsExploded = destroyedByType.keg` and `fizzles = destroyedByType.stick`: `'blast'` is the only
+cause that destroys a keg and `'fizzle'` the only one that destroys a stick, so the counts are exact.
+`rework` and `complaints` have no M1 source; `buildReport` passes `0` and the report prints
+`Rework 0`. `cleanSweeps` does have one: `grooveSystem` counts every `cleanSweepStep` fire and
+`gradeInputsFor` reads it through `cleanSweepCount(world)`, so a clean sweep earns hero points in M1
+(contract §9).
 
 #### Metrics sampling (`metrics.ts`)
 
@@ -280,7 +282,7 @@ already written the schema for this tick (contract §11). Every tick (`dt = 0.05
 tally: `ordersCompleted` = orders with `status === 'complete'`; `ordersTotal = state.bookTotal`;
 `shipped = Σ orders[*].shipped`; `peakWip = max(wipTimeline)`;
 `avgCycleSeconds = round(mean(completedAt − startedAt))` over orders with both set, `0` when none;
-`complaints 0`; `incidents = tally.counts.incidents`; `cleanSweeps 0`;
+`complaints 0`; `incidents = tally.counts.incidents`; `cleanSweeps = cleanSweepCount(world)`;
 `niceSaves = Σ tally.players[*].niceSaves`; `bookDone = reason === 'book'`;
 `remainingSeconds = bookDone ? max(0, state.shiftSeconds − state.clock) : 0`;
 `exploded = reason === 'exploded'`.
@@ -329,18 +331,21 @@ Let `m = snapshotMetrics(world)`, `t = world.tally`, `L = world.level`, `elapsed
    `bubbles/drops/sooted/fusesStomped/niceSaves/truckRides` from `t.players` (zeros when never
    bumped). Sorted by `utilization` desc, then `firstSeenTick` asc.
 6. `{ score, grade, verdict, multiplier } = gradeDay(gradeInputsFor(world, reason), L.grading, L.day)`.
-7. `shippedByProduct[order.product] += order.shipped` over all orders. `waste = { keg, casing, stick,
+7. `shippedByProduct[order.product] += order.shipped` over the orders that shipped something — an
+   order still on `0` is skipped, so a product the level does not price cannot make `profitAndLoss`
+   throw and lose the whole shift. `waste = { keg, casing, stick,
    crate }` = at-close counts of `state.items` by type (held, shelved, on the floor, in flight — all
-   unshipped material; a half-used keg counts as a keg) **plus** `t.destroyed` by type. `parts` is
-   omitted: `economy.wasteCost` has no entry for it and `PnlInputs.waste` is `Partial`.
+   unshipped material; a half-used keg counts as a keg) **plus** `t.destroyedByType` by type.
+   `parts` is omitted: `economy.wasteCost` has no entry for it and `PnlInputs.waste` is `Partial`.
    `pnl = profitAndLoss({ shipped: shippedByProduct, waste }, L.economy,
    reason === 'exploded' || reason === 'abandoned' ? 0 : multiplier)` — F02 rounds `coin` and never
    returns a negative one.
 8. `materials = { purchased: t.counts.kegsMade, shipped: Σ orders[*].shipped }` (contract §9:
    purchased = kegs made, shipped = sticks that left on a truck — F09's `closeShift` departs a docked
    truck from its own `onDayEnd`, which runs before `reportSystem`'s).
-9. `kegsMade`, `kegsUsed`, `defects` from `t.counts`; `rework: 0`; `kegsExploded = t.destroyed.keg`;
-   `fizzles = t.destroyed.stick`; `fusesStomped`, `niceSaves`, `truckRides` summed over `t.players`.
+9. `kegsMade`, `kegsUsed`, `defects` from `t.counts`; `rework: 0`;
+   `kegsExploded = t.destroyedByType.keg`; `fizzles = t.destroyedByType.stick`; `fusesStomped`,
+   `niceSaves`, `truckRides` summed over `t.players`.
 10. `day = state.day`, `levelKey = state.levelKey`.
 
 #### `reportSystem`
@@ -405,45 +410,48 @@ The client never computes a grade, a verdict or a number; every figure is read f
 
 ## Acceptance criteria
 
-- [ ] `RunTally.bump`, `bumpPlayer` and `destroyed` create their slots lazily and `reset()` zeroes the
+- [x] `RunTally.bump`, `bumpPlayer` and `destroyed` create their slots lazily and `reset()` zeroes the
       counters, the destroyed record and the player map.
-- [ ] `StationState.utilization` equals the fraction of the last 600 ticks the station was `working`,
+- [x] `StationState.utilization` equals the fraction of the last 600 ticks the station was `working`,
       refreshed every 20 ticks; before 600 ticks the denominator is `totalTicks`.
-- [ ] The report's station utilization is the whole-shift `workingTicks / totalTicks`, rounded to two
+- [x] The report's station utilization is the whole-shift `workingTicks / totalTicks`, rounded to two
       places, one row per `level.stations` entry in level order.
-- [ ] A station `'starved'` for 84 ticks reports `starvedSeconds` 4; `'jammed'` reports into
+- [x] A station `'starved'` for 84 ticks reports `starvedSeconds` 4; `'jammed'` reports into
       `blockedSeconds`; `'damaged'` reports into neither.
-- [ ] `wipTimeline` has `floor(elapsed) + 1` entries, each the item count at that whole second, and
+- [x] `wipTimeline` has `floor(elapsed) + 1` entries, each the item count at that whole second, and
       `peakWip` is its maximum.
-- [ ] An order's cycle time is `completedAt − startedAt` in whole seconds and `avgCycleSeconds`
+- [x] An order's cycle time is `completedAt − startedAt` in whole seconds and `avgCycleSeconds`
       averages only completed orders (0 when none).
-- [ ] A player on a work tile of a `working` station accrues working seconds; on the floor they accrue
+- [x] A player on a work tile of a `working` station accrues working seconds; on the floor they accrue
       only present seconds; `PlayerState.utilization = working / present`, written once per second.
-- [ ] A player who leaves mid-shift keeps their accumulator and still appears in the report's
+- [x] A player who leaves mid-shift keeps their accumulator and still appears in the report's
       `players` array.
-- [ ] `state.score` is rewritten once per second from `gradeDay` and never by any other system.
-- [ ] The bottleneck is `bottleneckStation` over `utilization × mean input fullness`; a station with
+- [x] `state.score` is rewritten once per second from `gradeDay` and never by any other system.
+- [x] The bottleneck is `bottleneckStation` over `utilization × mean input fullness`; a station with
       `inputCap 0` is passed fullness 0 and is never chosen.
-- [ ] `grooveSystem` moves `state.groove` every tick from `grooveDelta` and leaves
+- [x] `grooveSystem` moves `state.groove` every tick from `grooveDelta` and leaves
       `world.grooveEvents` zeroed afterwards.
-- [ ] `GrooveSample.onTimeShipRate` is completions ÷ truck departures over the last 60 s and 0 when no
+- [x] `GrooveSample.onTimeShipRate` is completions ÷ truck departures over the last 60 s and 0 when no
       truck departed in the window.
-- [ ] A clean floor held for `groove.cleanSweep.holdSeconds` snaps `groove` up to `snapTo`, sets
+- [x] A clean floor held for `groove.cleanSweep.holdSeconds` snaps `groove` up to `snapTo`, sets
       `banner = 'CLEAN SWEEP'` for `hazards.bannerSeconds`, and does not fire again within
       `cooldownSeconds`.
-- [ ] `grooveSystem` leaves `banner` alone while `clock < bannerUntil`.
-- [ ] `buildReport` returns every `ReportPayload` key with the right type, players sorted by
+- [x] `grooveSystem` leaves `banner` alone while `clock < bannerUntil`.
+- [x] `buildReport` returns every `ReportPayload` key with the right type, players sorted by
       utilization desc then first seen, and per-player stomps/saves/rides summed into the totals.
-- [ ] `buildReport` derives `kegsExploded` from `destroyed.keg` and `fizzles` from `destroyed.stick`.
-- [ ] `buildReport` charges waste for items at close plus destroyed items by type and omits `parts`.
-- [ ] `buildReport` prices sticks on a truck that has not left as shipped revenue while the order is
+- [x] `buildReport` derives `kegsExploded` from `destroyedByType.keg` and `fizzles` from
+      `destroyedByType.stick`.
+- [x] `buildReport` charges waste for items at close plus destroyed items by type and omits `parts`.
+- [x] `buildReport` leaves a product nobody shipped out of `shipped`, so an unpriced product only
+      reaches `profitAndLoss` when it actually earned revenue.
+- [x] `buildReport` prices sticks on a truck that has not left as shipped revenue while the order is
       still incomplete.
-- [ ] `reportSystem.onStart` resets the tally and the metrics; `onDayEnd` calls `world.setReport` with
+- [x] `reportSystem.onStart` resets the tally and the metrics; `onDayEnd` calls `world.setReport` with
       the reason F03 passed; on a Sandbox level it sets no report.
-- [ ] `throughput` is `round1(ordersCompleted × 600 / max(1, clock))`.
+- [x] `throughput` is `round1(ordersCompleted × 600 / max(1, clock))`.
 - [ ] The Report scene shows both columns, the grade letter, the P&L lines, the bold kegs made/used
       line, the sparkline, the bottleneck line and the hazards/oops lines from the payload alone.
-- [ ] `hazardLines` omits a segment whose count is 0 and the bubbles line when nobody bubbled.
+- [x] `hazardLines` omits a segment whose count is 0 and the bubbles line when nobody bubbled.
 - [ ] NEXT DAY is shown to every player; it leaves the room and reloads the page. BACK TO FACTORY
       leaves the room and navigates to `factoryUrl`.
 
@@ -549,7 +557,7 @@ with `shiftSeconds` 90 for speed)
       `report.test.ts` tests green.
 - [ ] 10. `day.ts`: `reportSystem` (`onStart`, `tick`, `onDayEnd`, the Sandbox branch); append its line
       last in `systems.ts` — the remaining `report.test.ts` tests green.
-- [ ] 11. `resources/js/game/report/format.ts` + `__tests__/report-format.test.ts` green under
+- [x] 11. `resources/js/game/report/format.ts` + `__tests__/report-format.test.ts` green under
       `npm run test:client`.
 - [ ] 12. `resources/js/game/scenes/Report.ts`: header, both columns, station block, sparkline, hazard
       lines; register `ReportScene` in `main.ts`. In-app verification steps 3–5 with screenshots.
@@ -562,10 +570,6 @@ with `shiftSeconds` 90 for speed)
   system F11 does not own. If a site is missed the report shows 0 for that line and no F11 test can
   catch it — only the in-app steps. Each owning feature carries the bump in its own acceptance
   criteria (contract §10.7).
-- **Clean sweeps do not score in M1.** Contract §9 says `cleanSweeps` is 0 in M1, so `buildReport`
-  passes 0 to `gradeDay`; F02's `cleanSweepStep` note says "the server counts it for the grade". F11
-  follows the contract: in M1 a clean sweep is a Groove snap and a banner, not hero points. If it
-  should score, §9 changes first and `grooveSystem` starts counting.
 - **`state.score` in Sandbox is noise.** `bookTotal` is 0, so `onTime` is 0 and the running score sits
   low. Nothing reads it there (no report, no run row); the debug overlay is the only surface.
 - **Sandbox runs unbounded.** `wipTimeline` grows one number per second (3.6 k an hour) and is never
@@ -581,12 +585,10 @@ with `shiftSeconds` 90 for speed)
 
 **Contract change requested**
 
-1. **§10.7 `RunTally` cannot compile as written.** The class declares both a field
+1. **§10.7 `RunTally` cannot compile as written — accepted.** The class declared both a field
    `destroyed: ItemCounts` and a method `destroyed(type, cause): void`; TypeScript rejects the
    duplicate member name. The method name is baked into F06 (§10.4) and F10 (§10.5) call sites, so the
-   cheaper fix is to rename the field: `destroyedByType: ItemCounts`. F11 will use whichever name §10.7
-   settles on; until then this doc keeps the contract's spelling verbatim and `buildReport` reads the
-   field.
+   field was renamed. §9 and §10.7 now say `destroyedByType: ItemCounts` and `tally.ts` implements it.
 2. **§8 `Copy.report` placeholder names are not pinned.** F11 renders `report.topPerformer` and
    `report.materials` through `fill(...)`. It fills `{name}` and `{station}` in the first and
    `{purchased}` and `{shipped}` in the second; §8 lists the keys but not their placeholders, so F12's

@@ -1,8 +1,17 @@
-import type { StationType, BannerKey, FactoryState, PlayerState, ToastMsg } from '@shared';
+import type {
+    StationType,
+    BannerKey,
+    FactoryState,
+    LevelConfig,
+    OrderState,
+    PlayerState,
+    ToastMsg,
+} from '@shared';
 import type Phaser from 'phaser';
 
 import { HUD_HEIGHT, TOAST_MAX, TOAST_MS } from '../constants';
 import type { Connection } from '../net/connection';
+import { productLabel } from '../render/dropTargets';
 import { BANNER_COLOURS, TOAST_COLOURS, UI, lineColour } from '../render/palette';
 import { HELP_HINT, helpSections } from './helpContent';
 import type { Factory } from '../scenes/Factory';
@@ -68,6 +77,19 @@ export function compareOrderIds(a: string, b: string): number {
     if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
 
     return a.localeCompare(b);
+}
+
+/**
+ * One row of the `Tab` board. `OrderState.product` is a recipe key, and printed
+ * raw the board read 'o-1  red_stick  0/7  open' — snake_case dev-speak, and a
+ * name for the finished stick that appears on no other surface.
+ */
+export function boardRow(
+    id: string,
+    order: Pick<OrderState, 'product' | 'shipped' | 'qty' | 'status'>,
+    recipes: LevelConfig['recipes'],
+): string {
+    return `${id}  ${productLabel(order.product, recipes)}  ${order.shipped}/${order.qty}  ${order.status}`;
 }
 
 function css(colour: number): string {
@@ -211,12 +233,10 @@ export class Hud {
 
         const state = this.conn.state;
         const width = Math.min(420, this.scene.floorWidth - 64);
+        const recipes = this.scene.levelConfig.recipes;
         const rows = [...state.orders.entries()]
             .sort(([a], [b]) => compareOrderIds(a, b))
-            .map(
-                ([id, order]) =>
-                    `${id}  ${order.product}  ${order.shipped}/${order.qty}  ${order.status}`,
-            );
+            .map(([id, order]) => boardRow(id, order, recipes));
         const height = 56 + rows.length * 16;
         const panel = this.scene.add.container(
             (this.scene.floorWidth - width) / 2,

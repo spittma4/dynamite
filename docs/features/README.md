@@ -41,7 +41,7 @@ Epic: **EL-173**.
 | F08 | EL-181 | The Jig | 4 | `F08-jig.md` | ⏳ |
 | F09 | EL-182 | The Dock, orders, truck | 4 | `F09-dock.md` | ⏳ |
 | F10 | EL-183 | Hazards: fuel, sparks, fuses, chains, explosion, beacon, hot potato | 5 | `F10-hazards.md` | ☐ |
-| F11 | EL-184 | Day loop, metrics, report card + P&L, run storage, Report scene | 5 | `F11-day-report-grade.md` | ☐ |
+| F11 | EL-184 | Day loop, metrics, report card + P&L, run storage, Report scene | 5 | `F11-day-report-grade.md` | ⏳ tally, metrics, Groove, `buildReport`/`reportSystem` and the Report scene all landed — 58 server + 18 client vitest cases green, both typechecks clean; only the in-app pass (report card in a browser, NEXT DAY into day 2) is outstanding |
 | F12 | EL-185 | Levels 1–4 + Sandbox, layout, copy, validation, level select, PLAYTEST.md | **1** (copy) / 5 (levels) | `F12-levels-sandbox.md` | ⏳ copy slice ✅ 2026-09-05 — `copy.json` + `copy.ts` + barrel line, 17 vitest cases green, `shared` typecheck clean; levels + layout + Laravel + PLAYTEST.md remain in wave 5 |
 | — | EL-173 | Integration playtest, tuning, MVP checklist | 6 | plan | ☐ |
 
