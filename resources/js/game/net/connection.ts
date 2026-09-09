@@ -74,6 +74,25 @@ export function closeDetail(code: number): string {
     return `code ${code}`;
 }
 
+/**
+ * Turn a join failure into something that names the actual cause. Colyseus reaches the
+ * matchmaker over HTTP, so a game server that is not running surfaces as a bare
+ * `TypeError: Failed to fetch` — which reads like the ticket failed when it did not.
+ */
+export function describeJoinFailure(error: unknown, mount: MountData): string {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    if (reason.startsWith('ticket:')) return `the ticket request failed (${reason})`;
+
+    if (/failed to fetch|networkerror|connection refused/i.test(reason)) {
+        const host = mount.wsUrl.replace(/^wss?:\/\//, '') || 'the game server';
+
+        return `the game server at ${host} is not reachable — start it with \`cd game-server && npm run dev\``;
+    }
+
+    return reason;
+}
+
 export async function fetchTicket(mount: MountData): Promise<TicketResponse> {
     const response = await fetch(mount.ticketUrl, {
         method: 'POST',

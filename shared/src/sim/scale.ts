@@ -34,6 +34,10 @@ export function scaleLevel(level: LevelConfig, players: number): ScaledLevel {
         lines: ['a'],
         layout: breakpoint.layout ?? level.layout,
         day: { ...level.day, orderBook: breakpoint.orderBook },
-        orders: { ...level.orders, everySeconds: breakpoint.truckEverySeconds },
+        orders: {
+            ...level.orders,
+            everySeconds: breakpoint.truckEverySeconds,
+            qtyPerTruck: breakpoint.qtyPerTruck ?? level.orders.qtyPerTruck,
+        },
     };
 }

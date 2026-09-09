@@ -26,7 +26,9 @@ const DEV_LEVEL: LevelConfig = {
         earlyFinishCap: 10,
     },
     players: {
-        min: 3,
+        // Solo is the taster: one person can feel the loop out. The real game — the
+        // crowding, the "stop making powder", the bottleneck argument — needs 3+.
+        min: 1,
         max: 6,
     },
     layout: 'mvp-small',
@@ -339,6 +341,15 @@ const DEV_LEVEL: LevelConfig = {
     },
     scaling: {
         breakpoints: [
+            {
+                // Small crew: a shorter book and slower trucks, so one pair of hands can
+                // actually finish a day instead of drowning in an eight-order book.
+                maxPlayers: 2,
+                lines: 1,
+                truckEverySeconds: 90,
+                orderBook: 4,
+                qtyPerTruck: { base: 3, rampPerMinute: 0 },
+            },
             {
                 maxPlayers: 6,
                 lines: 1,

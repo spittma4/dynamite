@@ -19,13 +19,13 @@ describe('clockText', () => {
 
     it('tells the host how to start the shift', () => {
         expect(clockText({ ...RUNNING, phase: 'lobby', players: 2 }, true)).toBe(
-            'LOBBY · 2/3 players · ENTER starts the shift',
+            'LOBBY · 2/3 players · ENTER starts the shift · best with 3+',
         );
     });
 
     it('tells everyone else who they are waiting for', () => {
         expect(clockText({ ...RUNNING, phase: 'lobby', players: 2 }, false)).toBe(
-            'LOBBY · 2/3 players · waiting for the host',
+            'LOBBY · 2/3 players · waiting for the host · best with 3+',
         );
     });
 
@@ -50,5 +50,21 @@ describe('compareOrderIds', () => {
     it('falls back to string order for an id that carries no number', () => {
         expect(compareOrderIds('order-a', 'order-b')).toBeLessThan(0);
         expect(compareOrderIds('o-4', 'o-4')).toBe(0);
+    });
+});
+
+describe('clockText — small crews', () => {
+    const lobby = { phase: 'lobby' as const, clock: 0, shiftSeconds: 600, players: 1, minPlayers: 1 };
+
+    it('nudges toward a full crew when the shift can start under-staffed', () => {
+        expect(clockText(lobby, true)).toMatch(/best with 3/i);
+    });
+
+    it('does not nag once three have shown up', () => {
+        expect(clockText({ ...lobby, players: 3 }, true)).not.toMatch(/best with 3/i);
+    });
+
+    it('still counts players toward the gate when the crew is short of the minimum', () => {
+        expect(clockText({ ...lobby, players: 2, minPlayers: 3 }, false)).toContain('2/3');
     });
 });

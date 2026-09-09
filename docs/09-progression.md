@@ -20,6 +20,9 @@ to each other**. That sentence is the level's acceptance test.
 A level is a **day**. Grade **C or better** unlocks the next; D or F repeats the day
 (*"MANAGEMENT WOULD LIKE TO SEE IMPROVEMENT"*). See [18](18-days-grades-and-payday.md).
 
+**Solo (ADR 0013)** — Level 1 and Sandbox accept a single player as a taster; levels 2–4
+require 3 because they are about coordination and crowding. The lobby says "Best with 3+".
+
 **Sandbox** — any level, no timer, no grade, debug overlay on, all upgrades free. For tuning and for
 playing with friends who just want to make a mess.
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { scaleLevel } from '../src/sim/scale';
+
 import {
     validateLayoutConfig,
     validateLevelConfig,
@@ -504,3 +506,56 @@ describe('validateLevelOnLayout', () => {
         expect(validateLevelOnLayout(level, layout).join('\n')).toMatch(/casing-a/);
     });
 });
+
+describe('small-crew levels', () => {
+    it('accepts players.min 1 on a normal level when a breakpoint covers a small crew', () => {
+        const level = soloLevel();
+        const result = validateLevelConfig(level);
+
+        expect(errorsOf(level)).toEqual([]);
+        expect(result.ok).toBe(true);
+    });
+
+    it('rejects players.min 1 when no breakpoint is tuned for a small crew', () => {
+        const level = soloLevel();
+        level.scaling.breakpoints = [
+            { maxPlayers: 6, lines: 1, truckEverySeconds: 60, orderBook: 8 },
+        ];
+
+        expect(errorsOf(level).join(' ')).toMatch(/tuned for a small crew|maxPlayers/i);
+        expect(validateLevelConfig(level).ok).toBe(false);
+    });
+
+    it('lets a breakpoint override qtyPerTruck so a solo book is reachable', () => {
+        const level = soloLevel();
+        const checked = validateLevelConfig(level);
+
+        if (!checked.ok) throw new Error(`fixture invalid: ${checked.errors.join(', ')}`);
+
+        const scaled = scaleLevel(checked.value, 1);
+
+        expect(scaled.orders.qtyPerTruck.base).toBe(3);
+        expect(scaled.day.orderBook).toBe(4);
+        expect(scaled.orders.everySeconds).toBe(90);
+    });
+});
+
+/** A level declaring solo play, with a breakpoint tuned for one or two players. */
+function soloLevel(): LevelConfig {
+    const level = structuredClone(levelFixture()) as LevelConfig;
+
+    level.players = { min: 1, max: 6 };
+    level.scaling.breakpoints = [
+        {
+            maxPlayers: 2,
+            lines: 1,
+            truckEverySeconds: 90,
+            orderBook: 4,
+            qtyPerTruck: { base: 3, rampPerMinute: 0 },
+        },
+        { maxPlayers: 6, lines: 1, truckEverySeconds: 60, orderBook: 8 },
+    ];
+    level.day.orderBook = 4;
+
+    return level;
+}

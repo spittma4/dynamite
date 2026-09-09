@@ -15,6 +15,7 @@ truck cadence. At 10 the core lesson becomes cross-team: *"Line B, stop — QA i
 
 | P | Lines | Powder · Casing · Assembly | QA lamps | Packing benches | Dock lanes | Truck every | Order book |
 |---|---|---|---|---|---|---|---|
+| **1–2** *(taster)* | 1 | 1 each | 1 | 2 | 4 | 90 s | 4 (3 sticks/truck) |
 | **3–6** | 1 | 1 each | 1 | 2 | 4 | 60 s | 11 |
 | **7–10** | 2 | 2 each (A, B) | 2 | 3 | 6 | 45 s | 20 |
 
@@ -43,6 +44,15 @@ super-linear. That is the "keep it doable" lever — bigger crowds get slightly 
 | Break-room tile cluster (All Hands needs room for 10) | One vote per player, one purchase per Payday |
 | Chaos event weights (Standup at 10 is funnier; keep it 5 s) | Clipboard, Groove weights |
 | | Explosion chain threshold (10 — per pile; two piles means two chances) |
+
+## At 1–2 — the taster (ADR 0013)
+
+Level 1 and Sandbox open to a single player so someone can feel the loop out without
+scheduling two friends. It is a **different game solo**: nobody to say "stop making powder"
+to, so the trap becomes self-directed time management. The book drops to 4 orders, trucks
+come every 90 s and carry 3 sticks, so one pair of hands can finish a day. Levels 2–4 stay
+at `players.min: 3` — they are *about* coordination and crowding, and teach nothing alone.
+The lobby says **"Best with 3+"**.
 
 ## At 3
 

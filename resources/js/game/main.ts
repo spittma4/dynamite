@@ -5,7 +5,7 @@ import { EMOTE_MIN_INTERVAL_MS, HUD_HEIGHT } from './constants';
 import { Keys } from './input/Keys';
 import { Host } from './minigames/Host';
 import { type MountData, readMount } from './mount';
-import { Connection, nextInputSeq } from './net/connection';
+import { Connection, describeJoinFailure, nextInputSeq } from './net/connection';
 import { Boot } from './scenes/Boot';
 import { Factory, type FactoryConn } from './scenes/Factory';
 import { Debug } from './ui/Debug';
@@ -34,9 +34,7 @@ async function boot(): Promise<void> {
     try {
         conn = await Connection.join(mount);
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-
-        status.textContent = `COULDN'T CLOCK IN — ${reason} — reload to retry`;
+        status.textContent = `COULDN'T CLOCK IN — ${describeJoinFailure(error, mount)}`;
         status.style.color = '#d9463d';
 
         return;

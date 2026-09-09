@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { closeDetail, fetchTicket, nextInputSeq, reconnectKey } from '../net/connection';
+import { closeDetail, describeJoinFailure, fetchTicket, nextInputSeq, reconnectKey } from '../net/connection';
 import type { MountData } from '../mount';
 
 const MOUNT: MountData = {
@@ -84,5 +84,27 @@ describe('nextInputSeq', () => {
         // The server drops any input whose seq went backwards, so a fresh page
         // may not restart the count on a seat that already applied 812.
         expect(nextInputSeq(0, 812)).toBe(813);
+    });
+});
+
+describe('describeJoinFailure', () => {
+    const wsMount: MountData = { ...MOUNT, wsUrl: 'ws://127.0.0.1:2567' };
+
+    it('names the game server when the connection is refused', () => {
+        const msg = describeJoinFailure(new TypeError('Failed to fetch'), wsMount);
+
+        expect(msg).toContain('127.0.0.1:2567');
+        expect(msg).toMatch(/game server/i);
+    });
+
+    it('does not blame the game server when the ticket itself failed', () => {
+        const msg = describeJoinFailure(new Error('ticket: HTTP 403'), wsMount);
+
+        expect(msg).toContain('403');
+        expect(msg).not.toMatch(/game server is not running/i);
+    });
+
+    it('passes an unrecognised error through', () => {
+        expect(describeJoinFailure(new Error('room is full'), wsMount)).toContain('room is full');
     });
 });

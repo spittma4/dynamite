@@ -340,7 +340,7 @@ movement? bpm windowFloorsMs carry stations recipes orders hazards grading scori
   explosion follows `explosionEndsRound`, no `report`, no `POST /internal/runs`, the room disposes
   when the last client leaves.
 - `players: { min, max }`: `min ≥ 1` allowed only when `endsOn === 'never'`, else `min ≥ 3`; `max ≤ 10`; `min ≤ max`.
-  `players.min` is the start gate (connected players).
+  `players.min` is the start gate (may be 1 — see ADR 0013 — but only when a `scaling.breakpoints` entry has `maxPlayers <= 2`; `validateLevelConfig` enforces it) (connected players).
 - `groove: { start, weights: { onTimeShip, shelfFullness, floorItem, rework, starved, jammed, litFuse, fizzle, niceSave, blastKeg, primeStick, truckComplete? }, thresholds: { onFire, groove, churn, meltdown }, cleanSweep: { holdSeconds, snapTo, cooldownSeconds } }`.
   Every Groove impulse lives in `groove.weights` — there is no `hazards.niceSaveGroove`,
   `hazards.blastGroovePerKeg`, `carry.drop.fizzleGroove` or `scoring.grooveOnComplete`.
@@ -387,7 +387,9 @@ Scaling (`shared/src/sim/scale.ts`): `breakpointFor(level, players): ScalingBrea
 with `maxPlayers >= players`; `scaleLevel(level, players): ScaledLevel` where
 `ScaledLevel = LevelConfig & { breakpoint: ScalingBreakpoint; lines: Line[] }` =
 `{ ...level, breakpoint, lines, stations (expanded per line), layout: breakpoint.layout ?? level.layout,
-day: { ...level.day, orderBook: breakpoint.orderBook }, orders: { ...level.orders, everySeconds: breakpoint.truckEverySeconds } }`.
+day: { ...level.day, orderBook: breakpoint.orderBook }, orders: { ...level.orders, everySeconds: breakpoint.truckEverySeconds, qtyPerTruck: breakpoint.qtyPerTruck ?? level.orders.qtyPerTruck } }`.
+`ScalingBreakpoint` carries an optional `qtyPerTruck: { base, rampPerMinute }` — small crews need
+smaller trucks, not just fewer (ADR 0013).
 The `config` reply's `level` is `world.level`: the unscaled level with §13 defaults applied while
 `phase === 'lobby'`, the `ScaledLevel` once `phase === 'running'` — the client re-sends `config`
 on the lobby→running flip and replaces `conn.config`. `world.level` is a `ScaledLevel` after `start`; consumers read `level.day.orderBook` and

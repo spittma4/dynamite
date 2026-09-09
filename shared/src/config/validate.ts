@@ -195,10 +195,22 @@ function checkDayAndPlayers(level: LevelConfig, errors: string[]): void {
         );
     }
 
-    const floor = sandbox ? 1 : 3;
+    // A level may invite small crews (players.min below 3) only if it is tuned for them:
+    // the order book and truck cadence have to come down too, or a solo player is handed a
+    // book they cannot finish. Sandbox has no book at all, so it needs no breakpoint.
+    if (players.min < 3 && !sandbox) {
+        const smallCrew = level.scaling.breakpoints.some((b) => b.maxPlayers <= 2);
 
-    if (players.min < floor) {
-        errors.push(`players.min: needs at least ${floor} on this level`);
+        if (!smallCrew) {
+            errors.push(
+                'players.min: below 3 needs a scaling breakpoint with maxPlayers <= 2, ' +
+                    'tuned for a small crew',
+            );
+        }
+    }
+
+    if (players.min < 1) {
+        errors.push('players.min: needs at least 1');
     }
 
     if (players.min > players.max) {

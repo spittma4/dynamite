@@ -322,6 +322,11 @@ export interface ScalingBreakpoint {
     truckEverySeconds: number;
     orderBook: number;
     layout?: string;
+    /**
+     * Small crews need smaller trucks, not just fewer of them. Omitted breakpoints keep the
+     * level's own `orders.qtyPerTruck`.
+     */
+    qtyPerTruck?: { base: number; rampPerMinute: number };
 }
 
 export interface ScalingConfig {

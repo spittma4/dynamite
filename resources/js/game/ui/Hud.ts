@@ -28,6 +28,9 @@ export interface ClockView {
     minPlayers: number;
 }
 
+/** The crew size the factory is designed around; below it the lobby nudges (ADR 0013). */
+const BEST_CREW = 3;
+
 /**
  * The clock is the phase line until the shift is actually running, and counts
  * elapsed rather than remaining in Sandbox, where the day never ends.
@@ -37,8 +40,11 @@ export function clockText(view: ClockView, isHost: boolean): string {
 
     if (view.phase === 'lobby') {
         const tail = isHost ? 'ENTER starts the shift' : 'waiting for the host';
+        // Solo and duo are the taster (ADR 0013) — playable, but say so, so nobody
+        // mistakes a one-person shift for the game the factory was designed around.
+        const hint = view.players < BEST_CREW ? ` · best with ${BEST_CREW}+` : '';
 
-        return `LOBBY · ${view.players}/${view.minPlayers} players · ${tail}`;
+        return `LOBBY · ${view.players}/${view.minPlayers} players · ${tail}${hint}`;
     }
 
     if (view.shiftSeconds === 0) return mmss(view.clock);
