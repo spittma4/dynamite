@@ -20,6 +20,8 @@ export interface KeyEvents {
     emote: (kind: EmoteKind) => void;
     /** `Tab` held opens the order board and releasing it closes it. */
     board: (open: boolean) => void;
+    /** `H` toggles the help panel. */
+    help: () => void;
     debug: () => void;
     start: () => void;
     overlayKey: (key: OverlayKey, down: boolean, repeat: boolean) => void;
@@ -111,6 +113,10 @@ export class Keys {
 
         keyboard.on('keydown-ENTER', (e: KeyboardEvent) => {
             if (!e.repeat) this.emit('start');
+        });
+
+        keyboard.on('keydown-H', (e: KeyboardEvent) => {
+            if (!e.repeat) this.emit('help');
         });
 
         keyboard.on('keydown-BACKTICK', (e: KeyboardEvent) => {

@@ -1,3 +1,4 @@
+import type { StationType } from '@shared';
 import { INPUT_HEARTBEAT_MS, TILE_PX, type PlayerState } from '@shared';
 import Phaser from 'phaser';
 
@@ -101,6 +102,7 @@ function wire(factory: Factory, mount: MountData, conn: Connection): void {
 
     let seq = 0;
     let lastEmoteMs = -EMOTE_MIN_INTERVAL_MS;
+    let helpOpen = false;
     let lastPhase = conn.state.phase;
 
     const sendInput = (): void => {
@@ -139,6 +141,14 @@ function wire(factory: Factory, mount: MountData, conn: Connection): void {
         conn.send('emote', { kind });
     });
     keys.on('board', (open) => hud.board(open));
+    keys.on('help', () => {
+        helpOpen = !helpOpen;
+
+        const me = conn.state.players.get(conn.sessionId);
+        const station = me?.stationId ? conn.state.stations.get(me.stationId) : undefined;
+
+        hud.help(helpOpen, (station?.type as StationType | undefined) ?? null);
+    });
     keys.on('debug', () => debug.toggle());
     keys.on('start', () => {
         if (conn.state.phase === 'lobby') conn.send('start', {});

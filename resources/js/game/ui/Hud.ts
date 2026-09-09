@@ -1,9 +1,10 @@
-import type { BannerKey, FactoryState, PlayerState, ToastMsg } from '@shared';
+import type { StationType, BannerKey, FactoryState, PlayerState, ToastMsg } from '@shared';
 import type Phaser from 'phaser';
 
 import { HUD_HEIGHT, TOAST_MAX, TOAST_MS } from '../constants';
 import type { Connection } from '../net/connection';
 import { BANNER_COLOURS, TOAST_COLOURS, UI, lineColour } from '../render/palette';
+import { HELP_HINT, helpSections } from './helpContent';
 import type { Factory } from '../scenes/Factory';
 import { mmss } from './format';
 import { grooveBand } from './grooveBand';
@@ -94,12 +95,22 @@ export class Hud {
     private local: string | null = null;
     private localColour = 0xf2d33b;
     private boardPanel: Phaser.GameObjects.Container | null = null;
+    private helpPanel: Phaser.GameObjects.Container | null = null;
 
     constructor(
         private readonly scene: Factory,
         private readonly conn: Connection,
     ) {
         const width = scene.floorWidth;
+
+        // Nobody finds a help key they were never told about.
+        scene.add
+            .text(10, HUD_HEIGHT + scene.floorHeight - 16, HELP_HINT, {
+                fontFamily: 'monospace',
+                fontSize: '11px',
+                color: '#7a7d82',
+            })
+            .setDepth(5);
 
         this.band = scene.add.graphics();
         this.band.fillStyle(UI.hudBackground, 1);
@@ -240,6 +251,93 @@ export class Hud {
 
         this.scene.layers.overlay.add(panel);
         this.boardPanel = panel;
+    }
+
+    /**
+     * `H` help. The station the player is standing at leads, because the
+     * mini-games are the part that cannot be guessed from the floor.
+     */
+    help(open: boolean, station: StationType | null): void {
+        this.helpPanel?.destroy(true);
+        this.helpPanel = null;
+
+        if (!open) return;
+
+        const sections = helpSections(station);
+        const width = Math.min(560, this.scene.floorWidth - 48);
+        // Height is finalised after the rows are laid out, since wrapping decides it.
+        const lines = sections.reduce((n, s) => n + s.rows.length + 2, 0);
+        const height = 44 + lines * 16;
+        const panel = this.scene.add.container(
+            (this.scene.floorWidth - width) / 2,
+            Math.max(8, (this.scene.floorHeight - height) / 2),
+        );
+        const background = this.scene.add.graphics();
+
+        background.fillStyle(UI.panel, 0.95);
+        background.fillRoundedRect(0, 0, width, height, 8);
+        background.lineStyle(2, lineColour('a'), 1);
+        background.strokeRoundedRect(0, 0, width, height, 8);
+
+        const parts: Phaser.GameObjects.GameObject[] = [
+            background,
+            this.scene.add.text(16, 12, 'HOW THIS WORKS', {
+                fontFamily: 'monospace',
+                fontSize: '14px',
+                color: css(UI.text),
+                fontStyle: 'bold',
+            }),
+        ];
+
+        let y = 40;
+
+        for (const section of sections) {
+            parts.push(
+                this.scene.add.text(16, y, section.title, {
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    color: css(lineColour('a')),
+                    fontStyle: 'bold',
+                }),
+            );
+            y += 18;
+
+            for (const [key, what] of section.rows) {
+                const description = this.scene.add.text(168, y, what, {
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                    color: '#bbbbbb',
+                    wordWrap: { width: width - 184 },
+                });
+
+                parts.push(
+                    this.scene.add.text(24, y, key, {
+                        fontFamily: 'monospace',
+                        fontSize: '11px',
+                        color: css(UI.text),
+                    }),
+                    description,
+                );
+
+                // A wrapped description is taller than one line, so step by what
+                // was actually rendered or the next row lands on top of it.
+                y += Math.max(16, description.height + 4);
+            }
+
+            y += 8;
+        }
+
+        // Redraw the background now that the wrapped rows have settled the real height.
+        background.clear();
+        background.fillStyle(UI.panel, 0.95);
+        background.fillRoundedRect(0, 0, width, y + 8, 8);
+        background.lineStyle(2, lineColour('a'), 1);
+        background.strokeRoundedRect(0, 0, width, y + 8, 8);
+        panel.setY(Math.max(8, (this.scene.floorHeight - (y + 8)) / 2));
+
+        panel.add(parts);
+        this.scene.layers.overlay.add(panel);
+        this.helpPanel = panel;
     }
 
     update(state: FactoryState, me: PlayerState | undefined, serverNow: number): void {
