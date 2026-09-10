@@ -28,7 +28,7 @@ station, visibly slower, by walking to the rack for parts and carrying them back
 - A's phrase driven by the server clock at `bpm` 150 (0.4 s/beat): SEAT (picker with dents, binds
   `orderId` from `activeOrderId`), POUR (5/7/8 beats by keg quality, ±60/±140 ms, ×1.5 with a prime keg,
   weak 0.6 / overfill 1.2 + spill), KNOTS (long 3 / short 2, lanes from the seeded RNG, ±60/±140 ms,
-  2+ missed → `frayed`), CRIMP (three 0.2 s clicks, tap on the third, ±80/±200 ms, miss → `capLoose`,
+  2+ missed → `frayed`), CRIMP (a 0.4 s lead-in then three 0.4 s clicks, tap on the third, ±80/±180 ms, miss → `capLoose`,
   a `crimpOnDented` roll on a dented casing through F10).
 - PRIME STICK: clean seat + Perfect pour from a 1.0 keg + all knots Perfect + Perfect crimp →
   `fx chime`, station-local brass flash, `grooveEvents.primeSticks++`, `ItemState.prime = true`.
@@ -172,7 +172,7 @@ export interface JigConfig {                                   // StationConfig.
   bpm: number;                                                 // level.bpm
   pour: { beatsByQuality: Record<string, number>; perfectMs: number; okMs: number; primeKegWindowMultiplier: number };
   knots: { long: number; short: number; secondsPerKnot: number; perfectMs: number; okMs: number };
-  crimp: { clicks: number; clickSeconds: number; perfectMs: number; okMs: number };
+  crimp: { clicks: number; leadSeconds: number; clickSeconds: number; perfectMs: number; okMs: number };
   toss: { arcSeconds: number; perfectMs: number; okMs: number };
   casings: { stock: number; dentChance: number };               // §13 default { stock: 3, dentChance: 0.3 }
   kegPours: number;                                             // recipes.keg.output.pours
@@ -256,7 +256,7 @@ export function pourWindow(cfg: JigConfig['pour'], primeKeg: boolean): JigWindow
 export function nextBeat(clock: number, beatSeconds: number): number
 export function laneSequence(rng: () => number, count: number): JigLane[]
 export function knotTimes(startAt: number, count: number, secondsPerKnot: number): number[]
-export function crimpClicks(lastKnotAt: number, clicks: number, clickSeconds: number): number[]
+export function crimpClicks(lastKnotAt: number, clicks: number, leadSeconds: number, clickSeconds: number): number[]
 export function isFrayed(grades: JigGrade[]): boolean
 export function isPrimeStick(s: { dents: number; pourGrade: JigGrade | ''; kegQuality: number; knotGrades: JigGrade[]; crimpGrade: JigGrade }): boolean
 export function deriveAisleTile(rack: Tile, jig: Tile): Tile
@@ -292,8 +292,8 @@ already has §13's default applied by `validateLevelConfig`):
 | `minigame.knots.long / short` | 3 / 2 | knots per fuse length |
 | `minigame.knots.secondsPerKnot` | 0.4 | knot spacing (one beat) |
 | `minigame.knots.perfectMs / okMs` | 60 / 140 | knot window |
-| `minigame.crimp.clicks / clickSeconds` | 3 / 0.2 | ratchet clicks |
-| `minigame.crimp.perfectMs / okMs` | 80 / 200 | crimp window |
+| `minigame.crimp.clicks / leadSeconds / clickSeconds` | 3 / 0.4 / 0.4 | ratchet lead-in and spacing |
+| `minigame.crimp.perfectMs / okMs` | 80 / 180 | crimp window (EL-186: `okMs < clickSeconds/2`, so click 2 can never score) |
 | `minigame.toss.arcSeconds` | 0.5 | swing duration; the judged moment is `swingStartAt + arcSeconds` |
 | `minigame.toss.perfectMs / okMs` | 120 / 250 | toss window |
 | `minigame.casings` | `{ stock: 3, dentChance: 0.3 }` (§13 default; level files may omit it) | the feeder's target casing count and dent probability |
@@ -413,7 +413,7 @@ docs/04's "A taps `E`" becomes a 0.5 s wait).
    B fetches again.
 
 **A — CRIMP.**
-1. `crimpClickAt = crimpClicks(knotAt[n − 1], cfg.crimp.clicks, cfg.crimp.clickSeconds)` =
+1. `crimpClickAt = crimpClicks(knotAt[n − 1], cfg.crimp.clicks, cfg.crimp.leadSeconds, cfg.crimp.clickSeconds)` =
    `[last + 0.2, last + 0.4, last + 0.6]`, `beatStartAt = knotAt[n − 1]`. The phase flips as soon as the
    last knot is judged (at the latest 0.34 s after its beat, before click 3 at 0.6 s). A `crimp` op that
    arrives while `phase === 'knots'` is ignored.
@@ -586,7 +586,7 @@ panel, the B panel or a read-only spectator panel from `mg.a` / `mg.b` / `ctx.se
 - [ ] Knot lanes are reproduced by the seed; a long set schedules 3 knots at +0.4/+0.8/+1.2 s, a short
       set 2; a wrong-lane or early tap consumes the knot as a miss; a knot auto-misses 0.34 s after its
       beat; two or more misses set `frayed`.
-- [ ] The crimp is judged against the third click (±80/±200 ms); a miss sets `capLoose`; on a dented
+- [ ] The crimp is judged against the third click (±80/±180 ms); a miss sets `capLoose`; on a dented
       casing it rolls `hazards.sparks.crimpOnDented` and calls `sparkRing(world, 'assembly-a',
       'crimpOnDented')`, on a clean one it does not.
 - [ ] The finished stick has `quality`, `prime`, `dents`, `fuseLength`, `fill`, `capLoose`, `frayed`,
@@ -644,7 +644,7 @@ Unit (`shared/tests/jig.test.ts`, vitest, a stub `rng` and hand-built `JigTickVi
   against its beat · it misses a wrong-lane tap · it consumes a knot on an early tap · it auto-misses a
   knot 0.34 s after its beat · it frays on two misses and not on one.
 - crimp: it schedules three clicks 0.2 s apart after the last knot · it judges the tap against the third
-  click ±80/±200 · it ignores a crimp op while knots are pending · a miss sets capLoose · a miss on a
+  click ±80/±180 · it ignores a crimp op while knots are pending · a miss sets capLoose · a miss on a
   dented casing emits spark · a miss on a clean casing does not.
 - stick: it builds the stick with the casing dents, keg quality, cradle fuse length, fill, capLoose and
   frayed · it emits complete with `perfect` false for an ordinary stick and clears the jig · it emits
@@ -764,3 +764,23 @@ Everything F08 needs is in the contracts v2 except these three, which the contra
    table says "`kegsUsed` F08 (last pour taken)". F08 implements §9's definition — one bump when the keg
    leaves the shelf, not when its last pour is used — so `Materials.purchased`/`kegsUsed` counts kegs,
    not pours.
+
+## EL-186 — the crimp retune (2026-09-09)
+
+The crimp shipped as three 0.2 s clicks judged against the third with a ±200 ms OK window, and
+it was unplayable for two compounding reasons. There was no anticipation beat: `crimpClicks`
+started its loop one `clickSeconds` after the last knot, so the first click arrived 200 ms after
+the beat the player was still resolving while the knots got a full 400 ms. And `judge` is
+symmetric, so ±200 ms around the third click opened the window exactly on the *second* click —
+tapping the wrong one scored OK.
+
+`crimp.leadSeconds` is now a required key and `crimpClicks` takes it as its own parameter,
+because the gap *before* the ratchet and the gap *inside* it are different design problems that
+were only ever the same number by accident. All five levels ship
+`{ clicks: 3, leadSeconds: 0.4, clickSeconds: 0.4, perfectMs: 80, okMs: 180 }`.
+
+The root cause was a hole in ADR 0009: `validateLevelConfig` floor-checked tolerance windows and
+no tempo field at all, so a level could be physically impossible and still validate. Three rules
+close it (`docs/features/F14-difficulty-tuning.md` has the derivations) — a spacing floor, a
+coupling rule `okMs < spacing / 2` so an OK window can never reach a neighbouring mark, and a
+lead-in rule so a window cannot open before its own cue.

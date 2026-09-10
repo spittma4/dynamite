@@ -593,3 +593,34 @@ with `shiftSeconds` 90 for speed)
    `report.materials` through `fill(...)`. It fills `{name}` and `{station}` in the first and
    `{purchased}` and `{shipped}` in the second; §8 lists the keys but not their placeholders, so F12's
    wording and this list have to agree.
+
+## Waste accounting — the counters split (contracts v2.2, 2026-09-09)
+
+This doc above describes ONE destroy counter. There are now two, and the split is load-bearing.
+
+`wasteOf` originally charged the P&L from `destroyedByType`, which is bumped at only two of the
+ten `destroyItem` call sites — so material vaporised anywhere else was billed to nobody, and an
+incident could make the day *more* profitable. The obvious fix, bumping `destroyed(type, cause)`
+at the other sites, is wrong: §9 defines `kegsExploded = destroyedByType.keg` and
+`fizzles = destroyedByType.stick`, so a wiped shelf would print `Fizzles: 4` for an incident in
+which nothing fizzled.
+
+So `RunTally` gained `wastedByType: ItemCounts` and `scrap(type)` alongside `destroyedByType`,
+and `wasteOf` sums both:
+
+- **The hazard lines** (`kegsExploded`, `fizzles`) read `destroyedByType`, which only a blast or
+  a fizzle bumps.
+- **The P&L** reads both, so every loss is billed exactly once under exactly one of them.
+
+Scrapped (material lost): a damaged station's shelf wipe, an item with nowhere free to land, a
+disconnect's carried item, the truck rider's cargo, the Jig's bailed half-used keg, and a keg
+swallowed by the Blast Bin — that last one matters, because leaving it free made the bin a
+waste-erasing disposal chute.
+
+**Not scrapped**, and this is the one that would do real damage: the Jig's conversions — parts
+onto the cradle, a keg drained by its last pour, a casing seated. That material becomes the
+stick. Charging it would bill the factory for every stick it successfully sells, quietly making
+a flawless shift unprofitable. Because the Jig funnels conversions and the bail keg through one
+generic effect, `JigEffect` carries a `scrap?: true` discriminator that only `bail` sets.
+
+Contracts §9 and §10.7 are authoritative; see also `docs/features/F10-hazards.md`.

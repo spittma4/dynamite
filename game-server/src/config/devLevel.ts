@@ -31,7 +31,7 @@ const DEV_LEVEL: LevelConfig = {
         min: 1,
         max: 6,
     },
-    layout: 'mvp-small',
+    layout: 'one-line',
     groove: {
         start: 50,
         weights: {
@@ -362,7 +362,7 @@ const DEV_LEVEL: LevelConfig = {
 };
 
 const DEV_LAYOUT: LayoutConfig = {
-    key: 'mvp-small',
+    key: 'one-line',
     width: 28,
     height: 18,
     walls: [

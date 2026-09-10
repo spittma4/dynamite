@@ -35,18 +35,25 @@
 - Room filtering: `filterBy(['factoryId'])` when defining the room so one room per factory.
 - Schema fields marked `.fullStateOnly()` are only sent at join; set them in `onCreate`.
 
-## Restart the server after any `shared/` or `config/game/` change
+## Do not start a game server — the owner runs one
 
-`tsx` does not watch, and `schema.json`, the level JSON and the compiled sim rules are all
-read into memory once at boot. A server left running across a config or schema change keeps
-validating against the copy it loaded, so the disk, the tests and the DB can all be correct
-while the game refuses to start.
+Sam keeps `cd game-server && npm run dev` in a terminal tab. Starting a second one fights for
+:2567 and doubles the memory. Check first (`lsof -nP -iTCP:2567 -sTCP:LISTEN`) and use the one
+that is there. If it needs restarting, ask — do not kill a process you did not start.
+
+## `tsx watch` does not reload a JSON change
+
+`npm run dev` is `tsx watch src/index.ts`, and `game-server/src/shared.ts` re-exports
+`../../shared/src/index` by relative path, so `.ts` edits under `shared/` do reload.
+`shared/src/config/schema.json` is a JSON import and was observed NOT to reload: a server left
+running across a `schema.json` edit kept validating against the copy it booted with.
 
 The symptom is a join failure naming a key that plainly exists:
 `COULDN'T CLOCK IN — /stations/1/minigame/crimp/leadSeconds: is not a key this schema knows`.
-Nothing in any suite catches it — every test imports the current files.
+Nothing in any suite catches it, because every test imports the current files. Restarting the
+server clears it.
 
-After touching `shared/src/**` or `config/game/**`: kill whatever holds :2567 and restart
-`cd game-server && npm run dev`. If the change was to a level or layout, run
-`php artisan game:levels:sync` too — the `levels` table holds seeded copies, and a room built
-from a stale row serves the old numbers even after a restart.
+If the change was to a level or layout, run `php artisan game:levels:sync` too — the `levels`
+table holds seeded copies, and a room built from a stale row serves the old numbers even after
+a restart. That sync is also how a fresh level reaches an already-running server, which is why
+a stale schema and a fresh level can collide in exactly the way above.

@@ -424,7 +424,7 @@ on the lobby→running flip and replaces `conn.config`. `world.level` is a `Scal
 and `state.players.size`. Laravel keeps one layout per level in M1.
 
 Level files (F12): `level-01-basic-flow`, `level-02-too-much-powder` (baseline), `level-03-the-bottleneck`,
-`level-04-too-many-helpers`, `sandbox` (`endsOn 'never'`, `players.min 1`); layout `mvp-small`.
+`level-04-too-many-helpers`, `sandbox` (`endsOn 'never'`, `players.min 1`); layout `one-line`.
 Levels 2 and 4 ship `orderBook 10` so the last truck leaves before `shiftSeconds − truckWaitSeconds`.
 
 Copy (`shared/src/copy.ts`, F12): `config/game/copy.json` is the single source of joke text.

@@ -367,3 +367,19 @@ In-app verification (Sandbox level, `explosionEndsRound: false`, three browsers,
 **Contract change requested** (edits to `docs/features/00-contracts.md`):
 
 1. §10.4 does not say when an F06 chore (`unjam`, `sweep`) ends. F10 assumes a hold cancels when the player is moved or stunned, because a blast knockback does both and F10 will not write `chore` values it does not own. If F06's holds do not cancel themselves, the contracts need either that rule under §10.4 or an exported `items.cancelChore(world, player)` for F10 to call.
+
+## Waste accounting (contracts v2.2, 2026-09-09)
+
+`damageStation`'s shelf wipe used to bump `tally.destroyed(type, 'blast')`, which is the counter
+§9 reads for `kegsExploded` and `fizzles` — so an incident that emptied an output shelf reported
+sticks as having fizzled when nothing had. It now calls `tally.scrap(type)`, which feeds the P&L
+without touching the hazard lines. `onItemLanded`'s Blast Bin scraps too: a keg the sand eats was
+bought and never sold, and leaving it untallied made the bin a way to erase waste.
+
+`applyBlast` is deliberately unchanged. `BlastResult.kegs` is `0 | 1` and `resolveBlast` emits
+exactly one `destroyItem` — the keg whose fuse burned down — which `destroyed('keg', 'blast')`
+already bills; a chain of four kegs is four separate blasts. An earlier review claimed one bump
+per blast regardless of count and it was wrong; the regression test added while checking passed
+against unmodified code and was kept.
+
+See `docs/features/F11-day-report-grade.md` for the full split.

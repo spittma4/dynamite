@@ -13,7 +13,7 @@ tunable lives here. If you find yourself hard-coding a number in the sim, it bel
   "day": { "shiftSeconds": 600, "orderBook": 11, "endsOn": "either" },   // see 18 — grading, economy, payday blocks too
   "players": { "min": 3, "max": 10 },
   "scaling": { /* see 19 — breakpoints by player count; stations below are the one-line template */ },
-  "layout": "mvp-small",                       // tilemap key in resources/js/game/maps/
+  "layout": "one-line",                       // tilemap key in resources/js/game/maps/
   "groove": {
     "start": 50,
     "weights": { "onTimeShip": 8, "shelfFullness": -4, "floorItem": -0.5,

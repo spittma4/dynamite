@@ -1,3 +1,7 @@
+import type { LevelConfig } from './config/types';
+import type { Banner } from './schema/types';
+import type { SparkCause } from './sim/hazards';
+
 import copyJson from '../../config/game/copy.json';
 
 /**
@@ -6,28 +10,8 @@ import copyJson from '../../config/game/copy.json';
  * their own top-level section here and to the JSON; nobody edits another's.
  */
 
-// TODO(F02): swap for `import type { Banner } from './schema/types';` and
-// `export type BannerKey = Exclude<Banner, ''>;` once the schema lands.
-// The union below is `FactoryState.banner` (contracts §3) minus the empty string.
-export type BannerKey =
-    | 'WHOOPS'
-    | 'INCIDENT'
-    | 'EXPLODED'
-    | 'NICE SAVE'
-    | 'CLEAN SWEEP'
-    | 'HOT STREAK'
-    | 'TAILGATE';
-
-// TODO(F10): swap for `import type { SparkCause } from './sim/hazards';`
-// (contracts §1 — copy ships in wave 1, so the union is local until F10 arrives).
-type SparkCause = 'slammerRedline' | 'jammed' | 'fizzle' | 'crimpOnDented';
-
-// TODO(F02): swap for `Pick<LevelConfig, 'copy'>` from './config/types' once it
-// exists. A `LevelConfig` satisfies this shape structurally, so the callers in
-// wave 2 need no change.
-interface LevelClipboardOverride {
-    copy?: { clipboard: string[] };
-}
+/** `FactoryState.banner` (contracts §3) minus the empty string, which names no line. */
+export type BannerKey = Exclude<Banner, ''>;
 
 export interface Copy {
     clipboard: string[];
@@ -58,7 +42,7 @@ export const copy: Copy = copyJson;
  * A level may ship its own clipboard lines; an absent or empty list means it
  * gets the global ones, so a station always has a line to draw.
  */
-export function clipboardLines(level: LevelClipboardOverride): string[] {
+export function clipboardLines(level: Pick<LevelConfig, 'copy'>): string[] {
     const own = level.copy?.clipboard;
 
     return own !== undefined && own.length > 0 ? own : copy.clipboard;

@@ -18,7 +18,7 @@
     },
     "stations": {
         "needHands": "NEED HANDS",
-        "needParts": "NEED PARTS"
+        "needParts": "NOTHING TO WORK ON"
     },
     "emotes": {
         "stop": "STOP",
