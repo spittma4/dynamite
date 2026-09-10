@@ -78,3 +78,15 @@ npm run build                       # must include resources/js/game/main.ts
 
 Never run a bare `vitest` (it watches forever) and never boot the game server from an
 automated agent — see `.ai/rules/dynamite.md`.
+
+## When the game rejects a level that looks fine on disk
+
+`php artisan game:levels:sync --check`
+
+The `levels` table holds seeded copies of the files in `config/game/levels/`, and admin edits go
+to the table, so the two are allowed to differ and syncing is deliberate. That means a re-laid
+floor can ship on disk while the running game keeps building rooms from the old geometry — with
+every test green, because every suite reads the files and none reads the database.
+
+The check writes nothing and names each stale level. `php artisan game:levels:sync` takes the
+files; keep the table instead if the difference is an admin edit you meant.

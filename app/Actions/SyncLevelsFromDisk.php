@@ -49,6 +49,66 @@ class SyncLevelsFromDisk
     }
 
     /**
+     * Which stored levels a running game would build rooms from that the files no
+     * longer agree with. Reads only: the table is allowed to diverge, because admin
+     * edits land there, so this answers the question and repairs nothing.
+     *
+     * @return list<string>
+     *
+     * @throws InvalidLevelFile
+     */
+    public function drift(): array
+    {
+        $stale = [];
+
+        foreach ($this->readAll() as $level) {
+            $stored = Level::where('key', $level['key'])->first();
+
+            if ($stored === null) {
+                $stale[] = $level['key'];
+
+                continue;
+            }
+
+            $same = $this->canonical($stored->config) === $this->canonical($level['config'])
+                && $this->canonical($stored->layout) === $this->canonical($level['layout'])
+                && $stored->name === $level['config']->name;
+
+            if (! $same) {
+                $stale[] = $level['key'];
+            }
+        }
+
+        return $stale;
+    }
+
+    /**
+     * Postgres stores these as `jsonb`, which reorders object keys, so the stored
+     * copy and the file are never byte-identical even when nothing has changed.
+     * Sorting keys all the way down is what makes the comparison about content.
+     */
+    private function canonical(mixed $value): string
+    {
+        return (string) json_encode($this->sortKeys($value));
+    }
+
+    private function sortKeys(mixed $value): mixed
+    {
+        if ($value instanceof stdClass) {
+            $value = (array) $value;
+            ksort($value);
+
+            return array_map($this->sortKeys(...), $value);
+        }
+
+        if (is_array($value)) {
+            return array_map($this->sortKeys(...), $value);
+        }
+
+        return $value;
+    }
+
+    /**
      * @return list<array{key: string, config: stdClass, layout: stdClass}>
      */
     private function readAll(): array

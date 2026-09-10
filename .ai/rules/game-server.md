@@ -57,3 +57,10 @@ If the change was to a level or layout, run `php artisan game:levels:sync` too â
 table holds seeded copies, and a room built from a stale row serves the old numbers even after
 a restart. That sync is also how a fresh level reaches an already-running server, which is why
 a stale schema and a fresh level can collide in exactly the way above.
+
+**`php artisan game:levels:sync --check` answers "is my database behind the files?"** It writes
+nothing, names each stale level and exits 1. Nothing in any suite can answer that question â€”
+every test reads the JSON files, and a test database is not the one the game is playing from.
+Run it after any change under `config/game/`, and when the game rejects a config that looks
+correct on disk. The table is *allowed* to diverge (admin edits land there), so the check
+reports and never repairs.
