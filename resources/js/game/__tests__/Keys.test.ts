@@ -115,6 +115,47 @@ describe('Keys', () => {
         expect(keys.intent).toEqual({ dx: 0, dy: 0 });
     });
 
+    /**
+     * F18's three keys. Without them the mute and the volume are four public
+     * methods nobody can reach, and a player the soundscape overloads has no
+     * recourse but muting the whole browser tab — which loses every cue at once.
+     */
+    it('toggles the mute on M, once per press', () => {
+        const keys = makeKeys();
+        let presses = 0;
+
+        keys.on('mute', () => (presses += 1));
+
+        down('M');
+        down('M', true);
+
+        expect(presses).toBe(1);
+    });
+
+    it('steps the volume down on the open bracket and up on the closed one', () => {
+        const keys = makeKeys();
+        const deltas: number[] = [];
+
+        keys.on('volume', (delta) => deltas.push(delta));
+
+        down('OPEN_BRACKET');
+        down('CLOSED_BRACKET');
+
+        expect(deltas).toEqual([-1, 1]);
+    });
+
+    it('repeats the volume while a bracket is held, because holding it is the point', () => {
+        const keys = makeKeys();
+        const deltas: number[] = [];
+
+        keys.on('volume', (delta) => deltas.push(delta));
+
+        down('CLOSED_BRACKET');
+        down('CLOSED_BRACKET', true);
+
+        expect(deltas).toEqual([1, 1]);
+    });
+
     it('does not repeat an emote while the arrow is held', () => {
         const keys = makeKeys();
         const emotes: EmoteKind[] = [];

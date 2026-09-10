@@ -10,6 +10,7 @@ import {
 } from '@shared';
 import { describe, expect, it } from 'vitest';
 
+import { CUES } from '../audio/cues';
 import { PRIME_KEG } from '../nouns';
 import { KEGS_OUT } from '../render/dropTargets';
 import {
@@ -26,16 +27,25 @@ import {
     keyPlan,
     localAfterPhase,
     localMashStale,
+    BAND_BOOK_AHEAD_MS,
+    REJECT_FLASH_MS,
+    SIGHT_SPAN_PX,
+    VERDICT_DELAY_MS,
+    chuteColour,
+    mashCue,
     needleLive,
     needleStartMs,
     needleX,
     outcomeLabel,
     predictCharge,
     readoutText,
+    releaseCue,
     handsLines,
     handsLinesAny,
     handsLinesKeg,
+    slamSound,
     slammerOverlay,
+    slammerPulses,
     tierShow,
     trayFooter,
 } from '../minigames/Slammer';
@@ -227,6 +237,198 @@ describe('gaugeGeometry', () => {
             expect((g?.lateX ?? 0) + (g?.lateW ?? 0)).toBeLessThanOrEqual(WIDE);
             expect(g?.targetX).toBeLessThanOrEqual(WIDE);
         }
+    });
+
+    /**
+     * The one judgement whose visual is genuinely not equivalent. On the real
+     * panel the scale is 0.229 px/ms, so the judged ±50 ms gold is 23 px wide
+     * and a 3 px needle crosses it in under six frames at 60 fps — against the
+     * crimp's 87 px and the dock's 121 px, both of which are honestly playable
+     * by eye. The sights give the eye something to aim *between* without
+     * overstating the window: widening the strip itself would be a claim about
+     * the judgement that the server does not honour.
+     */
+    describe('the gold sights', () => {
+        /** `gaugeW` on the shipped 896 px panel: min(round(896 × 0.6), …). */
+        const PANEL_PX = 538;
+
+        it('spans further than the judged strip when the strip is a few frames wide', () => {
+            const g = gaugeGeometry(1, 150, 0, CFG, PANEL_PX);
+
+            expect(g?.deadW).toBeLessThan(SIGHT_SPAN_PX);
+            expect(g?.sightW).toBe(SIGHT_SPAN_PX);
+        });
+
+        it('stays centred on the true target, which is what is judged', () => {
+            const g = gaugeGeometry(1, 150, 0, CFG, PANEL_PX);
+
+            expect((g?.sightX ?? 0) + (g?.sightW ?? 0) / 2).toBeCloseTo(g?.targetX ?? 0, 6);
+        });
+
+        it('never narrows a gold strip that is already wider than the span', () => {
+            const g = gaugeGeometry(1, 150, 0, CFG, WIDE);
+
+            expect(g?.deadW).toBeGreaterThan(SIGHT_SPAN_PX);
+            expect(g?.sightW).toBe(g?.deadW);
+        });
+
+        it('stays inside the gauge at both ends', () => {
+            for (const g of [
+                gaugeGeometry(0.05, 105, 0, CFG, PANEL_PX),
+                gaugeGeometry(3, 400, 0.08, CFG, PANEL_PX),
+            ]) {
+                expect(g?.sightX).toBeGreaterThanOrEqual(0);
+                expect((g?.sightX ?? 0) + (g?.sightW ?? 0)).toBeLessThanOrEqual(PANEL_PX);
+            }
+        });
+    });
+});
+
+/**
+ * The Slammer by ear (F18). Releasing on a gold hairline is an eye-tracking
+ * task the moment the sound is missing, and the three moments that matter are
+ * all known the instant the server confirms the charge — so they are booked as
+ * tick, TOCK, tick rather than watched for.
+ */
+describe('mashCue', () => {
+    it('ticks the first two chutes and accents the one that arms the plunger', () => {
+        expect(mashCue(1)).toBe('tick');
+        expect(mashCue(2)).toBe('tick');
+        expect(mashCue(3)).toBe('tickAccent');
+    });
+});
+
+describe('slammerPulses', () => {
+    const AT = 5000;
+
+    it('marks the band’s leading edge and the gold, and stops there', () => {
+        const pulses = slammerPulses(AT, 1, 150, 0);
+
+        expect(pulses.map((pulse) => pulse.cue)).toEqual(['bandEdge', 'gold']);
+        expect(pulses.map((pulse) => pulse.at)).toEqual([5.85, 6]);
+    });
+
+    /**
+     * The trailing edge was booked up to `BAND_BOOK_AHEAD_MS` early, and the
+     * shipped `okMsAtMinCharge` is 105 — so on a hot charge the closing tick
+     * went onto the AudioContext timeline 15 ms *before* the gold moment, and a
+     * scheduled voice cannot be taken back. Every dead-centre release therefore
+     * grew a stray tick 105 ms later, about a needle that had already frozen.
+     * The closing edge only ever tells you something you can no longer act on.
+     */
+    it('books nothing after the gold, so a clean release grows no stray tick', () => {
+        const target = (AT + 1000) / 1000;
+
+        for (const okMs of [CFG.okMsAtMinCharge, CFG.okMsAtMaxCharge]) {
+            for (const pulse of slammerPulses(AT, 1, okMs, 0)) {
+                expect(pulse.at, `${okMs}`).toBeLessThanOrEqual(target);
+            }
+        }
+    });
+
+    it('books the leading edge far enough ahead to be a tick at all', () => {
+        // The horizon has to reach the *leading* edge on the tightest window
+        // the levels ship, or the tick the player acts on is never booked.
+        expect(BAND_BOOK_AHEAD_MS).toBeGreaterThanOrEqual(CFG.okMsAtMinCharge);
+    });
+
+    it('books against the local clock the needle runs on, in seconds', () => {
+        const [first] = slammerPulses(AT, 1, 150, 0);
+
+        // `needleStart` is a `performance.now()` stamp; the pulse has to be on
+        // the same base or the TOCK lands where the needle is not.
+        expect((first?.at ?? 0) * 1000).toBeCloseTo(AT + 1000 - 150, 6);
+    });
+
+    it('puts the gold on the band the server published, drift and all', () => {
+        const [, gold] = slammerPulses(AT, 1.5, 225, 0.08);
+
+        expect((gold?.at ?? 0) * 1000).toBeCloseTo(AT + 1620, 6);
+    });
+
+    it('has nothing to mark before a charge has a climb time', () => {
+        expect(slammerPulses(AT, 0, 0, 0)).toHaveLength(0);
+    });
+});
+
+describe('releaseCue', () => {
+    it('gives the gold its own confirmation, apart from a plain band hit', () => {
+        expect(releaseCue('dead_center')).toBe('perfect');
+        expect(releaseCue('prime')).toBe('ok');
+        expect(releaseCue('dead_center')).not.toBe(releaseCue('prime'));
+    });
+
+    it('calls both ways of missing the band a miss', () => {
+        expect(releaseCue('late')).toBe('miss');
+        expect(releaseCue('early')).toBe('miss');
+    });
+
+    it('says nothing about a machine that has not judged anything yet', () => {
+        expect(releaseCue('')).toBeNull();
+    });
+});
+
+describe('slamSound', () => {
+    /**
+     * Prime and ordinary used to differ by gain alone — 1.0 against 0.65 — which
+     * is the first distinction a room with two other people shouting destroys.
+     * They differ by pitch now: `thunkBig` is 70 → 32 Hz under `thunk`'s 90 → 45.
+     */
+    it('lands the plunger deeper for the gold than for the band', () => {
+        expect(slamSound('dead_center')).toBe('thunkBig');
+        expect(slamSound('prime')).toBe('thunk');
+        expect(CUES.thunkBig.voices[0]?.freq).toBeLessThan(CUES.thunk.voices[0]?.freq ?? 0);
+    });
+
+    /**
+     * `clink` meant two unrelated things: "you put something down" and "you
+     * released early and made a dud". Different lessons need different sounds.
+     */
+    it('tells an early release from an item set down on a shelf', () => {
+        expect(slamSound('late')).toBe('pfft');
+        expect(slamSound('early')).toBe('dud');
+        expect(slamSound('early')).not.toBe('clink');
+    });
+
+    it('is silent until there is a release to be silent about', () => {
+        expect(slamSound('')).toBeNull();
+    });
+
+    /**
+     * The operator's verdict and the floor's hopper fire on the same patch. For
+     * a late release that is two sawtooths five semitones apart started
+     * together, which is heard as one muddy buzz rather than as two facts.
+     */
+    it('leaves room for the hopper before the operator verdict lands', () => {
+        const hopper = CUES.pfft.voices[0];
+
+        expect(VERDICT_DELAY_MS).toBeGreaterThanOrEqual(
+            (hopper?.attackMs ?? 0) + (hopper?.holdMs ?? 0),
+        );
+    });
+});
+
+/**
+ * The refused chute. `mashed` does not change on a repeat or a fourth press, so
+ * no light moved and `drawChutes` early-returned on an unchanged key — leaving
+ * the spill, which arrives a round trip later at the hopper, as the only thing
+ * that taught "three is enough". That made it the one input in the three
+ * mini-games with no visual answer at the moment of the press.
+ */
+describe('chuteColour', () => {
+    it('flashes a refused chute red whether or not it was already lit', () => {
+        expect(chuteColour(true, true)).toBe(SLAMMER_COLOURS.late);
+        expect(chuteColour(false, true)).toBe(SLAMMER_COLOURS.late);
+    });
+
+    it('leaves an accepted chute on the lit and unlit colours', () => {
+        expect(chuteColour(true, false)).toBe(SLAMMER_COLOURS.chuteLit);
+        expect(chuteColour(false, false)).toBe(SLAMMER_COLOURS.chuteOff);
+    });
+
+    it('holds the flash long enough to be seen and short enough to be a flash', () => {
+        expect(REJECT_FLASH_MS).toBeGreaterThanOrEqual(100);
+        expect(REJECT_FLASH_MS).toBeLessThanOrEqual(300);
     });
 });
 

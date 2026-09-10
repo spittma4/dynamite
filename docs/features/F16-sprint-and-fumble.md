@@ -1370,3 +1370,13 @@ Slice labels say which of F16a–d each change unblocks.
    never `sprinting`, because `stationId !== ''` with `joinMode === 'press'` already freezes movement;
    F16's gate mirrors the `pressed()` condition at `game-server/src/sim/movement.ts:31-35` rather than
    re-deriving it.
+
+## F18 audio (2026-09-10)
+
+F18 shipped the client's one `AudioContext` before this feature was built, so
+`render/fumbleAudio.ts` keeps its file and loses its context: it becomes a caller of
+`gameAudio.play('warn')` and `gameAudio.play('alarm', distanceGain)` rather than a synthesiser.
+Deciding *which* crewmate is in which band, and how loud they should be from here, is genuinely
+F16's knowledge and stays in F16's file. The `warn` and `alarm` cues are already in
+`audio/cues.ts` at the frequencies this doc specifies, and F16's contract change asking for an
+audio primitive is satisfied by F18's engine.

@@ -70,6 +70,10 @@ function floorSection(throwTiles: number): HelpSection {
             ['Esc', 'Leave the station. You lose the cycle you were part-way through.'],
             ['Tab', `The ${ORDER_BOARD.toLowerCase()}.`],
             shoutRow(),
+            // F18's three keys. They are also the gesture that unlocks the
+            // audio, so a player who finds this row can always reach the sound
+            // even if they have not touched anything else yet.
+            ['M · [ ]', 'M mutes the sound. [ and ] move the volume. The top band shows the level.'],
             ['H', 'Close this help.'],
         ],
     };
@@ -103,7 +107,10 @@ const STATIONS: Record<StationType, HelpSection> = {
             ['← →  then Space', 'Seat a casing. The Jig stocks its own, so one is always waiting. Dented ones can never be perfect.'],
             ['Space', 'Pour: tap as the fill reaches the mark. A damp or dud keg pours slower.'],
             ['← or →', 'Knots: tap the lane each knot arrives on as it hits the eyelet.'],
-            ['Space', 'Crimp: tap on the third ratchet click.'],
+            // Lead with the channel everyone has. The panel is showing a needle
+            // crossing a gold band 87 px wide; "the third ratchet click" named
+            // an event only a hearing player can count.
+            ['Space', 'Crimp: tap as the needle reaches the third click line.'],
             [
                 'At the rack',
                 `A ${FUSE_SET.toLowerCase()}: ← short · → long · hold Space to fetch and swing · release to toss it to A's cradle.`,
@@ -114,7 +121,12 @@ const STATIONS: Record<StationType, HelpSection> = {
         title: 'The Dock',
         rows: [
             ['E', 'Set the stick you are carrying down on your ramp lane.'],
-            ['Space', 'Shove — on the beep. Listen for it; the bay light flashes too.'],
+            // 'Listen for it' is an instruction a deaf player cannot follow, and
+            // the visual it offered instead — the bay strobe — is a 120 ms flash
+            // that *starts* on the beep, so it carries no anticipation at all.
+            // The marker is the better channel: a full second of lead-in across
+            // bands drawn to the server's own windows.
+            ['Space', 'Shove as the marker crosses the centre line. It beeps on it too.'],
             // Was 'the crate'. Nothing in the game ever makes a crate: `laneStatus`
             // reports STALLED for a stick, and the sign on the lane says STICKS.
             ['Missed it?', 'The stick stalls half way. Shove again on the next beep.'],

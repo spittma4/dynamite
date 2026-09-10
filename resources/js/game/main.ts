@@ -2,16 +2,18 @@ import type { StationType } from '@shared';
 import { INPUT_HEARTBEAT_MS, TILE_PX, type PlayerState } from '@shared';
 import Phaser from 'phaser';
 
+import { gameAudio, unlockOnGesture } from './audio/Audio';
 import { EMOTE_MIN_INTERVAL_MS, HUD_HEIGHT } from './constants';
 import { Keys } from './input/Keys';
 import { Host } from './minigames/Host';
 import { type MountData, readMount } from './mount';
 import { Connection, describeJoinFailure, nextInputSeq } from './net/connection';
+import { SHOUT_EVENT } from './render/Avatars';
 import { Boot } from './scenes/Boot';
 import { Factory, type FactoryConn } from './scenes/Factory';
 import { ReportScene } from './scenes/Report';
 import { Debug } from './ui/Debug';
-import { Hud } from './ui/Hud';
+import { Hud, nudgeUnmutes } from './ui/Hud';
 
 /**
  * The Vite entry (contracts §6). It connects first and starts Phaser second, so
@@ -58,6 +60,12 @@ async function boot(): Promise<void> {
         },
         scene: [Boot, Factory, ReportScene],
     });
+
+    // F18's one line outside its own directory. Every cue in the client is a
+    // silent no-op until a real gesture reaches `unlock()`, and the failure is
+    // invisible: a context built without one starts `suspended` and drops every
+    // `start()` with no exception and no console warning.
+    unlockOnGesture(window, gameAudio);
 
     game.registry.set('mount', mount);
     // The scene reads the seat through `FactoryConn`, and the registry is
@@ -149,10 +157,26 @@ function wire(factory: Factory, mount: MountData, conn: Connection): void {
 
         hud.help(helpOpen, (station?.type as StationType | undefined) ?? null);
     });
+    keys.on('mute', () => {
+        gameAudio.toggleMute();
+        hud.sound(gameAudio.settings());
+    });
+    keys.on('volume', (delta) => {
+        if (nudgeUnmutes(gameAudio.settings().muted, delta)) gameAudio.setMuted(false);
+
+        gameAudio.nudgeVolume(delta);
+        hud.sound(gameAudio.settings());
+    });
     keys.on('debug', () => debug.toggle());
     keys.on('start', () => {
         if (conn.state.phase === 'lobby') conn.send('start', {});
     });
+
+    // A crew-mate's shout, mirrored off the world layer onto the strip a player
+    // inside a mini-game overlay is already reading (F18).
+    const onShout = (word: string): void => hud.shout(word);
+
+    factory.events.on(SHOUT_EVENT, onShout);
 
     const unsubscribes = [
         conn.on('fx', (m) => factory.fx.play(m)),
@@ -203,6 +227,7 @@ function wire(factory: Factory, mount: MountData, conn: Connection): void {
 
         conn.room.onReconnect.remove(onReconnect);
         factory.events.off(Phaser.Scenes.Events.POST_UPDATE, onPostUpdate);
+        factory.events.off(SHOUT_EVENT, onShout);
         host.destroy();
     });
 }

@@ -421,3 +421,20 @@ Apply in the v2.2 pass. **F13 asks for nothing on account of the two dials.** It
     - F02's row — Touches column gains F13: `messages.ts`, `schema/PlayerState.ts`, `schema/types.ts`.
     - F03's row (which lists `rooms/` and `sim/World.ts`) — `rooms/crew.ts` is F13's; Touches column gains F13: `World.ts` (three edits), `handlers.ts`, `FactoryRoom.ts`, `laravel/api.ts`, `tests/helpers/world.ts`.
     - F04's row (which lists `ui/`) — the six `ui/` files above are F13's; Touches column gains F13: `main.ts`, `mount.ts`, `net/connection.ts`, `ui/helpContent.ts`.
+
+## F18 audio, and what it means for this doc (2026-09-10)
+
+F18 shipped audio in M1, ahead of this doc's settings panel, so two lines here are already out
+of date:
+
+- The Out-of-scope line excluding "music and SFX beyond F07's Slammer audio" now means **music
+  only**. Every cue the game makes is F18's table, shipped and owned.
+- `volume` and `muted` have a consumer from M1. F18 reads and writes exactly those two keys out
+  of this doc's own `dynamite.settings` blob, through a merge that preserves `reducedMotion`,
+  `colourSafe` and `uiScale`, and keeps its reader and writer private to `audio/Audio.ts`. So
+  F13's arrival is a deletion of that private pair, not a migration.
+
+F13 still owns `settingsStore.ts`, `SettingsPanel.ts` and the `PlayerSettings` type. Until it
+lands, the controls are keys: `M` mutes, `[` and `]` move the level, and the HUD's top band
+shows it. When the panel arrives those keys should stay — a mute you have to open a menu for is
+a mute nobody reaches in time.

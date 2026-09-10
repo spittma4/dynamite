@@ -1,11 +1,13 @@
 import {
     MAX_INPUT_BACKDATE_S,
     type AssemblyMinigame,
+    type JigGrade,
     type JigMg,
     type PlayerState,
     type PourConfig,
     type StationState,
     type TossConfig,
+    crimpClicks,
 } from '@shared';
 import { describe, expect, it } from 'vitest';
 
@@ -14,6 +16,7 @@ import { FUSE_SET, HANDS_FULL } from '../nouns';
 import {
     AISLE_BODY,
     CASINGS_COMING,
+    CLICK_FLASH_SECONDS,
     CRADLE_FULL,
     CRADLE_LABEL,
     JIG_COLOURS,
@@ -30,16 +33,20 @@ import {
     blockColour,
     beatMarks,
     casingDings,
+    clickFlash,
     closeAt,
     fractionIn,
     fuseLabel,
+    gradeCue,
     isFrozen,
     jigOverlay,
+    jigPulses,
     knotMarkers,
     laneFor,
     moveCursor,
     parseJigMg,
     phaseSpan,
+    phraseKey,
     pickerBlock,
     pickerCarrying,
     popFor,
@@ -642,6 +649,111 @@ describe('fuseLabel', () => {
     });
 });
 
+/**
+ * The phrase as a rhythm (F18). The crimp is the reason this exists: three
+ * static click lines at 2.5 Hz ask a player to count with their eyes, and the
+ * fix is not a louder line — it is that the knots, the lead and the clicks are
+ * already one unbroken 150 bpm grid, so the third click is the sixth pulse of a
+ * bar you have been hearing for two seconds.
+ */
+describe('jigPulses', () => {
+    it('ticks every beat of the pour and accents the mark itself', () => {
+        const pour = { startAt: 10, targetAt: 12, beats: 5, primeKeg: false };
+        const pulses = jigPulses(mg({ phase: 'pour', pour, beatStartAt: 10 }));
+
+        expect(pulses.map((pulse) => pulse.cue)).toEqual([
+            'tick',
+            'tick',
+            'tick',
+            'tick',
+            'tick',
+            'tickAccent',
+        ]);
+        expect(pulses[5]?.at).toBeCloseTo(pour.targetAt, 9);
+    });
+
+    it('ticks the knots without accenting any of them — they are the grid', () => {
+        const pulses = jigPulses(mg({ phase: 'knots', knotAt: [10.4, 10.8, 11.2] }));
+
+        expect(pulses).toEqual([
+            { at: 10.4, cue: 'tick' },
+            { at: 10.8, cue: 'tick' },
+            { at: 11.2, cue: 'tick' },
+        ]);
+    });
+
+    it('accents the click the crimp is judged against and no other', () => {
+        const pulses = jigPulses(mg({ phase: 'crimp', crimpClickAt: [11.6, 12, 12.4] }));
+
+        expect(pulses).toEqual([
+            { at: 11.6, cue: 'tick' },
+            { at: 12, cue: 'tick' },
+            { at: 12.4, cue: 'tickAccent' },
+        ]);
+    });
+
+    it('joins the knots and the clicks into one unbroken grid', () => {
+        const knots = [10.4, 10.8, 11.2];
+        const clicks = crimpClicks(11.2, CFG.crimp.clicks, CFG.crimp.leadSeconds, CFG.crimp.clickSeconds);
+        const phrase = [
+            ...jigPulses(mg({ phase: 'knots', knotAt: knots })),
+            ...jigPulses(mg({ phase: 'crimp', crimpClickAt: clicks })),
+        ];
+        const gaps = phrase.slice(1).map((pulse, i) => pulse.at - (phrase[i]?.at ?? 0));
+
+        expect(phrase).toHaveLength(6);
+
+        for (const gap of gaps) expect(gap).toBeCloseTo(60 / 150, 9);
+
+        expect(phrase[5]?.cue).toBe('tickAccent');
+    });
+
+    it('has nothing to say in the phases with no beat in them', () => {
+        expect(jigPulses(mg({ phase: 'seat' }))).toHaveLength(0);
+        expect(jigPulses(mg({ phase: 'parts' }))).toHaveLength(0);
+        expect(jigPulses(mg({ phase: 'pour', pour: null }))).toHaveLength(0);
+        expect(jigPulses(mg({ phase: 'crimp', crimpClickAt: [] }))).toHaveLength(0);
+    });
+});
+
+describe('phraseKey', () => {
+    it('is the same through a phrase, so the beats are booked once', () => {
+        const first = mg({ phase: 'knots', beatStartAt: 10, knotIndex: 0 });
+        const later = mg({ phase: 'knots', beatStartAt: 10, knotIndex: 2 });
+
+        expect(phraseKey(later)).toBe(phraseKey(first));
+    });
+
+    it('changes when the jig moves to a new phase or a new cycle', () => {
+        const knots = mg({ phase: 'knots', beatStartAt: 10 });
+
+        expect(phraseKey(mg({ phase: 'crimp', beatStartAt: 11.2 }))).not.toBe(phraseKey(knots));
+        expect(phraseKey(mg({ phase: 'knots', beatStartAt: 20 }))).not.toBe(phraseKey(knots));
+    });
+});
+
+describe('gradeCue', () => {
+    it('gives each grade its own confirmation, so the difference is learnable', () => {
+        expect(gradeCue('perfect')).toBe('perfect');
+        expect(gradeCue('ok')).toBe('ok');
+        expect(gradeCue('miss')).toBe('miss');
+        expect(new Set(['perfect', 'ok', 'miss'].map((g) => gradeCue(g as JigGrade))).size).toBe(3);
+    });
+});
+
+describe('clickFlash', () => {
+    it('lights a click as the needle reaches it and lets go again', () => {
+        expect(clickFlash(10, 9.9)).toBe(false);
+        expect(clickFlash(10, 10)).toBe(true);
+        expect(clickFlash(10, 10 + CLICK_FLASH_SECONDS / 2)).toBe(true);
+        expect(clickFlash(10, 10 + CLICK_FLASH_SECONDS * 2)).toBe(false);
+    });
+
+    it('flashes for less than a beat, so two clicks are never lit at once', () => {
+        expect(CLICK_FLASH_SECONDS).toBeLessThan(CFG.crimp.clickSeconds);
+    });
+});
+
 describe('jigOverlay', () => {
     it('captures the arrows and consumes nothing before it is mounted', () => {
         const overlay = jigOverlay();
@@ -1091,6 +1203,33 @@ describe('the words the jig uses for its own state', () => {
         expect(popFor({ who: 'b', step: 'toss', grade: 'miss', note: 'body', at: 0 })?.text).toContain(
             AISLE_BODY,
         );
+    });
+});
+
+/**
+ * The crimp's visual half of F18's constraint: no cue is the only channel it
+ * arrives on. A tick on the third click is no use to a muted player if the
+ * panel still only draws three identical lines, so the clicks are counted on
+ * screen and the one the tap is judged against is named.
+ */
+describe('the crimp panel counts the clicks', () => {
+    const crimp = (now: number): string[] =>
+        panelText(
+            mg({ phase: 'crimp', beatStartAt: 11.2, crimpClickAt: [11.6, 12, 12.4] }),
+            [{ id: 'k-1', type: 'keg' }],
+            { now },
+        );
+
+    it('numbers every click, so the third is a count and not a guess', () => {
+        const lines = crimp(11.3);
+
+        expect(lines).toContain('1');
+        expect(lines).toContain('2');
+        expect(lines).toContain('3');
+    });
+
+    it('still says which click the tap is judged against', () => {
+        expect(crimp(11.3)).toContain('CRIMP ON THE THIRD CLICK');
     });
 });
 

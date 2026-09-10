@@ -3,6 +3,7 @@ import type Phaser from 'phaser';
 import { describe, expect, it } from 'vitest';
 
 import {
+    DOCK_COLOURS,
     DOCK_LEGEND,
     TAILGATE_PROMPT,
     bandHalfFraction,
@@ -10,15 +11,20 @@ import {
     dockKeyAction,
     laneStatus,
     localLane,
+    shoveCue,
     sweepFraction,
     tailgateOpen,
     truckHeadline,
 } from '../minigames/Dock';
 import {
     BayWall,
+    GOING_FLASH_HZ,
+    LEAVING_WARN_SECONDS,
+    SLAM_FLASH_HZ,
     STROBE_FLASH_MS,
     bayLabel,
     flashOn,
+    leavingSoon,
     returnsCount,
     strobeOn,
 } from '../minigames/dock/BayWall';
@@ -29,6 +35,8 @@ import {
     sagPx,
     truckSlide,
 } from '../minigames/dock/TruckSprite';
+import { JIG_COLOURS } from '../minigames/Jig';
+import { SLAMMER_COLOURS } from '../minigames/Slammer';
 import type { Factory } from '../scenes/Factory';
 import { mmss } from '../ui/format';
 
@@ -183,6 +191,53 @@ describe('the legend', () => {
     });
 });
 
+/**
+ * One colour language across the three timing panels, and one channel per fact.
+ *
+ * The dock had the vocabulary inverted: its best zone was green and its merely
+ * acceptable one amber, the exact reverse of what the player learned at the Jig
+ * and the Slammer twenty seconds earlier. A hearing player recovers from that
+ * through the `perfect`/`ok` cues; a deaf or colour-limited one has only the
+ * colour, and the colour was lying. And the marker was pure white over a pure
+ * white target line, so the one visual carrying the judged instant vanished at
+ * the instant it was judged.
+ */
+describe('the dock colour vocabulary', () => {
+    function rgb(colour: number): { r: number; g: number; b: number } {
+        return { r: (colour >> 16) & 255, g: (colour >> 8) & 255, b: colour & 255 };
+    }
+
+    /** Gold: red and green together, well clear of blue. */
+    function isGold(colour: number): boolean {
+        const { r, g, b } = rgb(colour);
+
+        return r > b * 2 && g > b * 2 && Math.abs(r - g) < 80;
+    }
+
+    function isGreen(colour: number): boolean {
+        const { r, g, b } = rgb(colour);
+
+        return g > r * 1.5 && g > b;
+    }
+
+    it('paints Perfect gold and OK green, the way both other panels do', () => {
+        expect(isGold(DOCK_COLOURS.perfect)).toBe(true);
+        expect(isGreen(DOCK_COLOURS.ok)).toBe(true);
+    });
+
+    it('agrees with the Jig and the Slammer rather than having a house style', () => {
+        expect(isGold(JIG_COLOURS.perfect)).toBe(true);
+        expect(isGold(SLAMMER_COLOURS.dead)).toBe(true);
+        expect(isGreen(JIG_COLOURS.ok)).toBe(true);
+        expect(isGreen(SLAMMER_COLOURS.good)).toBe(true);
+    });
+
+    it('keeps the marker off the colour of the line it has to be read against', () => {
+        expect(DOCK_COLOURS.marker).not.toBe(DOCK_COLOURS.target);
+        expect(JIG_COLOURS.needle).not.toBe(JIG_COLOURS.text);
+    });
+});
+
 describe('bayLabel', () => {
     it('counts the docked truck down to its departure', () => {
         expect(bayLabel(mg(), 28)).toEqual({ text: 'TRUCK LEAVES 00:12', kind: 'countdown' });
@@ -203,6 +258,45 @@ describe('bayLabel', () => {
 
     it('shouts SLAM IT for as long as the tailgate window is open', () => {
         expect(bayLabel(mg({ tailgateUntil: 33 }), 32)).toEqual({ text: 'SLAM IT', kind: 'slam' });
+    });
+
+    /**
+     * "A truck about to leave" had no escalation in either channel: a truck with
+     * 3 s left and two empty slots rendered identically to one with 18 s left
+     * apart from the digits, and the only dock cue was a 1 Hz beep that is the
+     * same at t-18 as at t-2. The player whose decision the deadline governs is
+     * the one halfway down the floor carrying a stick.
+     */
+    it('escalates the last few seconds into a kind of its own', () => {
+        const leaves = mg().truck.leavesAt;
+
+        expect(bayLabel(mg(), leaves - LEAVING_WARN_SECONDS - 0.1).kind).toBe('countdown');
+        expect(bayLabel(mg(), leaves - LEAVING_WARN_SECONDS + 0.1).kind).toBe('going');
+        expect(bayLabel(mg(), leaves - 1).text).toContain('TRUCK');
+    });
+
+    it('leaves the slam prompt outranking it, since only that one can still be acted on', () => {
+        const leaves = mg().truck.leavesAt;
+
+        expect(bayLabel(mg({ tailgateUntil: leaves }), leaves - 1).kind).toBe('slam');
+    });
+
+    /**
+     * The countdown is a number that changes every second, not a word you read
+     * once, so it does the shouting at half the slam prompt's rate: at 4 Hz the
+     * digits a player is running the floor to read are dark half the time.
+     */
+    it('flashes the last seconds slower than the slam prompt, so the digits stay readable', () => {
+        expect(GOING_FLASH_HZ).toBeLessThan(SLAM_FLASH_HZ);
+        expect(GOING_FLASH_HZ).toBeGreaterThan(0);
+    });
+
+    it('says nothing urgent about a truck that is not there to be loaded', () => {
+        const away = mg({ truck: { ...mg().truck, phase: 'away', arrivesAt: 80 } });
+
+        expect(leavingSoon(away, 79)).toBe(false);
+        expect(leavingSoon(mg(), 39)).toBe(true);
+        expect(leavingSoon(mg(), 30)).toBe(false);
     });
 });
 
@@ -368,6 +462,44 @@ describe('truckSlide', () => {
 
     it('holds the truck still when it joined mid-departure and never saw the flip', () => {
         expect(truckSlide('leaving', 40.75, 20, null, 1.5)).toBe(0);
+    });
+});
+
+/**
+ * What the dock sounds like when a shove lands (F18). `mg` carries no verdict
+ * of its own — the server spends it as an `fx` at the crate — so the overlay
+ * reads the two things it *does* publish: the lane clearing, and the slot lamp
+ * the truck just lit.
+ */
+describe('shoveCue', () => {
+    it('confirms a THUD from the P the truck just wrote on its slot lamps', () => {
+        expect(shoveCue(lane('s-1'), lane(''), '', 'P')).toBe('perfect');
+    });
+
+    it('confirms a scrape from an O', () => {
+        expect(shoveCue(lane('s-1'), lane(''), 'P', 'PO')).toBe('ok');
+    });
+
+    it('calls a stalled crate a miss, which is what it costs', () => {
+        expect(shoveCue(lane('s-1'), lane('s-1', true), '', '')).toBe('miss');
+    });
+
+    it('stays quiet once a stalled lane is only still stalled', () => {
+        expect(shoveCue(lane('s-1', true), lane('s-1', true), '', '')).toBeNull();
+    });
+
+    it('stays quiet for a lane the leaving truck emptied rather than took', () => {
+        expect(shoveCue(lane('s-1'), lane(''), 'PO', 'PO')).toBeNull();
+    });
+
+    it('stays quiet for a lane that was restocked, and for one that never moved', () => {
+        expect(shoveCue(lane(''), lane('s-2'), '', '')).toBeNull();
+        expect(shoveCue(lane('s-1'), lane('s-1'), '', '')).toBeNull();
+    });
+
+    it('stays quiet when the player is standing on no lane at all', () => {
+        expect(shoveCue(undefined, undefined, '', 'P')).toBeNull();
+        expect(shoveCue(lane('s-1'), undefined, '', 'P')).toBeNull();
     });
 });
 

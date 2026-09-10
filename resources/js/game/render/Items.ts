@@ -3,6 +3,8 @@ import Phaser from 'phaser';
 
 import { UI } from './palette';
 import { type KegLook, kegLook } from './stationGlyphs';
+import { gameAudio } from '../audio/Audio';
+import type { CueName } from '../audio/cues';
 import type { Factory, FactoryConn } from '../scenes/Factory';
 
 /**
@@ -86,6 +88,34 @@ export type ItemPlacement =
     | { kind: 'flight' }
     | { kind: 'tile'; x: number; y: number }
     | { kind: 'held'; sessionId: string };
+
+/**
+ * One item, as the local pair of hands is concerned with it (F18). Three states
+ * is the whole vocabulary because only three transitions make a sound, and
+ * `away` deliberately lumps the floor, a shelf and somebody else's hands
+ * together: from here they are all "not mine".
+ */
+export type HandState = 'away' | 'flight' | 'mine';
+
+export function handStateOf(placement: ItemPlacement, sessionId: string): HandState {
+    if (placement.kind === 'flight') return 'flight';
+
+    return placement.kind === 'held' && placement.sessionId === sessionId ? 'mine' : 'away';
+}
+
+/**
+ * What a change of hands sounds like. A catch is kept apart from a pick-up
+ * because they are different achievements — one is a throw that worked — and a
+ * throw leaving your hands gets nothing: the arc is already the loudest thing
+ * on screen.
+ */
+export function handCue(from: HandState, to: HandState): CueName | null {
+    if (from === to) return null;
+
+    if (to === 'mine') return from === 'flight' ? 'catch' : 'grab';
+
+    return from === 'mine' && to === 'away' ? 'clink' : null;
+}
 
 export function itemSkin(look: ItemLook): ItemSkin {
     const keg = look.type === 'keg' ? kegLook(look.quality, look.prime) : null;
@@ -438,7 +468,10 @@ class CarrierView {
 class ItemsLayer {
     private readonly root: Phaser.GameObjects.Container;
     private readonly overhead: Phaser.GameObjects.Container;
-    private readonly sprites = new Map<string, { item: ItemState; sprite: ItemSprite }>();
+    private readonly sprites = new Map<
+        string,
+        { item: ItemState; sprite: ItemSprite; hand: HandState }
+    >();
     private readonly carriers = new Map<string, CarrierView>();
     private readonly flights = new StartTimes();
     private readonly chores = new StartTimes();
@@ -467,7 +500,7 @@ class ItemsLayer {
         const flightSeconds = this.scene.levelConfig.carry.throwFlightSeconds;
 
         for (const [id, entry] of this.sprites) {
-            this.drawItem(id, entry.item, entry.sprite, nowMs, serverNow, flightSeconds);
+            this.drawItem(id, entry, nowMs, serverNow, flightSeconds);
         }
 
         this.drawCarriers(conn.state, serverNow);
@@ -495,7 +528,18 @@ class ItemsLayer {
     private add(id: string, item: ItemState): void {
         if (this.destroyed || this.sprites.has(id)) return;
 
-        this.sprites.set(id, { item, sprite: new ItemSprite(this.scene, this.root) });
+        const state = this.scene.conn.state;
+
+        this.sprites.set(id, {
+            item,
+            sprite: new ItemSprite(this.scene, this.root),
+            // Seeded from where the item already is, so joining a shift with a
+            // keg in your hands is not a pick-up you never made.
+            hand: handStateOf(
+                placementOf(item, (sessionId) => state.players.has(sessionId)),
+                this.scene.conn.sessionId,
+            ),
+        });
     }
 
     private remove(id: string): void {
@@ -506,14 +550,22 @@ class ItemsLayer {
 
     private drawItem(
         id: string,
-        item: ItemState,
-        sprite: ItemSprite,
+        entry: { item: ItemState; sprite: ItemSprite; hand: HandState },
         nowMs: number,
         serverNow: number,
         flightSeconds: number,
     ): void {
+        const { item, sprite } = entry;
         const state = this.scene.conn.state;
         const placement = placementOf(item, (sessionId) => state.players.has(sessionId));
+        const hand = handStateOf(placement, this.scene.conn.sessionId);
+        const cue = handCue(entry.hand, hand);
+
+        entry.hand = hand;
+
+        // Off the placement rather than off `carrying`, because the placement is
+        // the only thing that knows a full pair of hands came out of the air.
+        if (cue !== null) gameAudio.play(cue);
 
         if (placement.kind === 'flight') {
             const t = flightProgress(

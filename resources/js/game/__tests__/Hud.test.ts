@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { boardTitle, bookText, clockText, showsBook } from '../ui/Hud';
+import { boardTitle, bookText, clockText, nudgeUnmutes, showsBook, soundReadout } from '../ui/Hud';
 import { HELP_HINT } from '../ui/helpContent';
 import { ORDER_BOARD } from '../nouns';
 
@@ -108,5 +108,41 @@ describe('clockText — small crews', () => {
 
     it('still counts players toward the gate when the crew is short of the minimum', () => {
         expect(clockText({ ...lobby, players: 2, minPlayers: 3 }, false)).toContain('2/3');
+    });
+});
+
+/**
+ * The readout is the visual counterpart for the audio control itself — the only
+ * way a muted player can tell that the key did anything (F18 §5).
+ */
+describe('soundReadout', () => {
+    it('prints the level as a percentage the volume keys can land on exactly', () => {
+        expect(soundReadout({ volume: 0.7, muted: false })).toBe('SOUND 70%');
+        expect(soundReadout({ volume: 0, muted: false })).toBe('SOUND 0%');
+        expect(soundReadout({ volume: 1, muted: false })).toBe('SOUND 100%');
+    });
+
+    it('says off rather than a number while muted, because the number is not what is true', () => {
+        expect(soundReadout({ volume: 0.7, muted: true })).toBe('SOUND OFF');
+    });
+});
+
+/**
+ * F18c left this policy to the surface that has a readout to explain it with.
+ * Turning it up is a request to hear something, so it un-mutes; turning it down
+ * is not, so it leaves the mute alone and only moves the stored level.
+ */
+describe('nudgeUnmutes', () => {
+    it('un-mutes when a muted player asks for more', () => {
+        expect(nudgeUnmutes(true, 1)).toBe(true);
+    });
+
+    it('leaves a muted player muted when they turn it down', () => {
+        expect(nudgeUnmutes(true, -1)).toBe(false);
+    });
+
+    it('has nothing to do when the sound is already on', () => {
+        expect(nudgeUnmutes(false, 1)).toBe(false);
+        expect(nudgeUnmutes(false, -1)).toBe(false);
     });
 });

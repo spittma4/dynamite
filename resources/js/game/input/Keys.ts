@@ -22,6 +22,10 @@ export interface KeyEvents {
     board: (open: boolean) => void;
     /** `H` toggles the help panel. */
     help: () => void;
+    /** `M` toggles the mute (F18). */
+    mute: () => void;
+    /** `[` and `]`, as −1 and +1 steps of F18's twentieth-of-full grid. */
+    volume: (delta: number) => void;
     debug: () => void;
     start: () => void;
     overlayKey: (key: OverlayKey, down: boolean, repeat: boolean) => void;
@@ -118,6 +122,16 @@ export class Keys {
         keyboard.on('keydown-H', (e: KeyboardEvent) => {
             if (!e.repeat) this.emit('help');
         });
+
+        keyboard.on('keydown-M', (e: KeyboardEvent) => {
+            if (!e.repeat) this.emit('mute');
+        });
+
+        // The brackets repeat on purpose: twenty presses cross the whole range,
+        // and holding one is how a player actually crosses it. `M` does not —
+        // a held mute key would flap the sound on and off at the repeat rate.
+        keyboard.on('keydown-OPEN_BRACKET', () => this.emit('volume', -1));
+        keyboard.on('keydown-CLOSED_BRACKET', () => this.emit('volume', 1));
 
         keyboard.on('keydown-BACKTICK', (e: KeyboardEvent) => {
             if (this.debugEnabled && !e.repeat) this.emit('debug');

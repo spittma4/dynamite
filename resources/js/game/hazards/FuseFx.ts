@@ -1,6 +1,8 @@
 import { TILE_PX, tileKey } from '@shared';
 import type Phaser from 'phaser';
 
+import { gameAudio } from '../audio/Audio';
+import { Metronome } from '../audio/tracks';
 import type { Factory } from '../scenes/Factory';
 
 /**
@@ -18,6 +20,14 @@ import type { Factory } from '../scenes/Factory';
 export const FUSE_URGENT_SECONDS = 2;
 export const FUSE_HZ = 8;
 export const FUSE_URGENT_HZ = 16;
+/**
+ * The audible hiss (F18). It keeps the sparkle's doubling — the warning is the
+ * change of rate, not the rate — at a quarter of it, because 8 pulses a second
+ * is a tone and what a player has to hear from across the floor is a rhythm
+ * that suddenly gets faster.
+ */
+export const FUSE_HISS_HZ = 2;
+export const FUSE_HISS_URGENT_HZ = 4;
 /** Never all the way out: a fuse that blinks off reads as one that went out. */
 export const SPARKLE_MIN_ALPHA = 0.35;
 export const SPARKLE_PX = 3.5;
@@ -81,6 +91,35 @@ export function fuseHz(secondsLeft: number): number {
     return secondsLeft < FUSE_URGENT_SECONDS ? FUSE_URGENT_HZ : FUSE_HZ;
 }
 
+export function hissPeriodSeconds(secondsLeft: number): number {
+    return 1 / (secondsLeft < FUSE_URGENT_SECONDS ? FUSE_HISS_URGENT_HZ : FUSE_HISS_HZ);
+}
+
+/**
+ * The period the floor hisses at, or `null` for nothing worth hissing about.
+ *
+ * It folds only over the fuses that drew a sparkle. A fuse at `x < 0` is one the
+ * server has taken off the map — into a truck, a hopper, a bin — and
+ * `fuseAnchor` calls it `hidden`; counting one of those set the rate of the only
+ * cue whose whole meaning is its rate while every sparkle a player could see was
+ * still calm. The warning is the change of rate, so the rate has to be about
+ * something visible.
+ */
+export function visibleHissPeriod(
+    fuses: FuseSource,
+    carrierOf: (itemId: string) => string,
+): number | null {
+    let shortest = Number.POSITIVE_INFINITY;
+
+    fuses.forEach((fuse) => {
+        if (fuseAnchor(fuse, carrierOf(fuse.itemId)).kind === 'hidden') return;
+
+        shortest = Math.min(shortest, fuse.secondsLeft);
+    });
+
+    return Number.isFinite(shortest) ? hissPeriodSeconds(shortest) : null;
+}
+
 export function sparkleAlpha(secondsLeft: number, nowMs: number): number {
     const phase = (nowMs / 1000) * 2 * Math.PI * fuseHz(secondsLeft);
 
@@ -119,6 +158,13 @@ export function stompTiles(players: PlayerSource): Set<string> {
 
 export class FuseSparkles {
     private readonly graphics: Phaser.GameObjects.Graphics;
+    /**
+     * One hiss for the floor, not one per fuse: a chain of five burning kegs is
+     * one emergency, and five overlapping hisses would say less than one.
+     */
+    private readonly hiss = new Metronome('hiss');
+    /** Bound once: `visibleHissPeriod` takes it every frame. */
+    private readonly carrierLookup = (itemId: string): string => this.carrierOf(itemId);
     private lit = false;
 
     constructor(
@@ -138,6 +184,7 @@ export class FuseSparkles {
         if (state.fuses.size === 0) {
             if (this.lit) {
                 g.clear();
+                this.hiss.reset();
                 this.lit = false;
             }
 
@@ -172,6 +219,15 @@ export class FuseSparkles {
             g.fillStyle(tint, alpha * 0.3);
             g.fillCircle(at.x, tip, SPARKLE_PX * 2);
         });
+
+        // The shortest *visible* fuse sets the rate, because it is the one that
+        // decides how long the floor has and the one a player can watch. `nowMs`
+        // is the clock the sparkle is drawn on, and the hiss marks no judged
+        // moment, so there is nothing here for the server clock to keep it in
+        // step with.
+        const period = visibleHissPeriod(state.fuses, this.carrierLookup);
+
+        if (period !== null) this.hiss.book(0, period, nowMs / 1000, gameAudio);
     }
 
     destroy(): void {

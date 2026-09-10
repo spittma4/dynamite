@@ -28,15 +28,23 @@ import {
     whumpFx,
 } from '../hazards/BlastFx';
 import {
+    ALARM_BURST,
+    BEACON_PEAK_AT,
+    BEACON_PERIOD,
     DANGER_COLOURS,
+    alarmPulsesLeft,
     anyRedBeacon,
+    beaconCue,
     floorFuelTiles,
     hazardStripeTiles,
     pulseAlpha,
     pulseRadius,
 } from '../hazards/DangerBeacon';
+import type { FuseRow, FuseSource } from '../hazards/FuseFx';
 import {
     FUSE_COLOURS,
+    FUSE_HISS_HZ,
+    FUSE_HISS_URGENT_HZ,
     FUSE_HZ,
     FUSE_URGENT_HZ,
     SPARKLE_MIN_ALPHA,
@@ -44,9 +52,11 @@ import {
     cordLength,
     fuseAnchor,
     fuseHz,
+    hissPeriodSeconds,
     sparkleAlpha,
     sparkleTint,
     stompTiles,
+    visibleHissPeriod,
 } from '../hazards/FuseFx';
 import { REPAIR_BAR_W, damagedStations, repairFill } from '../hazards/RepairSign';
 import { createHazardsLayer } from '../hazards/HazardsLayer';
@@ -86,6 +96,18 @@ describe('fuseHz', () => {
         expect(fuseHz(2.1)).toBe(FUSE_HZ);
         expect(fuseHz(1.9)).toBe(FUSE_URGENT_HZ);
         expect(fuseHz(0)).toBe(FUSE_URGENT_HZ);
+    });
+});
+
+describe('hissPeriodSeconds', () => {
+    it('keeps the sparkle’s own doubling at a rate an ear can count', () => {
+        expect(hissPeriodSeconds(6)).toBeCloseTo(1 / FUSE_HISS_HZ, 9);
+        expect(hissPeriodSeconds(1.9)).toBeCloseTo(1 / FUSE_HISS_URGENT_HZ, 9);
+        expect(FUSE_HISS_URGENT_HZ / FUSE_HISS_HZ).toBe(FUSE_URGENT_HZ / FUSE_HZ);
+    });
+
+    it('pulses slowly enough to be heard as a rhythm rather than a tone', () => {
+        expect(FUSE_HISS_URGENT_HZ).toBeLessThan(FUSE_HZ);
     });
 });
 
@@ -261,6 +283,109 @@ describe('pulseAlpha and pulseRadius', () => {
     it('grows the lamp with the same breath', () => {
         expect(pulseRadius(0)).toBeGreaterThan(0);
         expect(pulseRadius(0.25)).not.toBe(pulseRadius(0));
+    });
+});
+
+describe('the beacon’s alarm beat', () => {
+    it('falls on the lamp’s brightest moment, so the pulse and the sound are one event', () => {
+        expect(pulseAlpha(BEACON_PEAK_AT)).toBeCloseTo(0.5, 6);
+        expect(pulseAlpha(BEACON_PEAK_AT)).toBeGreaterThan(pulseAlpha(BEACON_PEAK_AT + 0.1));
+        expect(pulseAlpha(BEACON_PEAK_AT)).toBeGreaterThan(pulseAlpha(BEACON_PEAK_AT - 0.1));
+    });
+
+    it('repeats on the lamp’s own period', () => {
+        expect(pulseAlpha(BEACON_PEAK_AT + BEACON_PERIOD)).toBeCloseTo(
+            pulseAlpha(BEACON_PEAK_AT),
+            6,
+        );
+    });
+});
+
+/**
+ * The hiss reports on the fuses that drew something, not on every row in
+ * `state.fuses`. The fold used to run *above* the `hidden` guard, so a lit keg
+ * that had gone off the map — into a truck, a hopper, or a bin — still set the
+ * floor's hiss rate. That made the one cue whose whole meaning is its rate
+ * double from 2 Hz to 4 Hz with nothing at all changing on screen: the sparkle
+ * is drawn per fuse, and a hidden fuse has no sparkle.
+ */
+describe('visibleHissPeriod', () => {
+    function fuses(...rows: FuseRow[]): FuseSource {
+        return { forEach: (fn) => rows.forEach(fn) };
+    }
+
+    const onFloor = { itemId: 'k-1', x: 3, y: 4, secondsLeft: 5 };
+    const offMap = { itemId: 'k-2', x: -1, y: -1, secondsLeft: 1 };
+
+    it('hisses at the shortest fuse a player can see', () => {
+        expect(visibleHissPeriod(fuses(onFloor), () => '')).toBeCloseTo(1 / FUSE_HISS_HZ, 9);
+        expect(
+            visibleHissPeriod(fuses(onFloor, { ...onFloor, itemId: 'k-3', secondsLeft: 1 }), () => ''),
+        ).toBeCloseTo(1 / FUSE_HISS_URGENT_HZ, 9);
+    });
+
+    it('ignores a fuse that has gone off the map, which draws no sparkle', () => {
+        expect(visibleHissPeriod(fuses(onFloor, offMap), () => '')).toBeCloseTo(
+            1 / FUSE_HISS_HZ,
+            9,
+        );
+    });
+
+    it('keeps quiet when every fuse is hidden', () => {
+        expect(visibleHissPeriod(fuses(offMap), () => '')).toBeNull();
+        expect(visibleHissPeriod(fuses(), () => '')).toBeNull();
+    });
+
+    it('counts a carried fuse, which is drawn on the hands that hold it', () => {
+        expect(visibleHissPeriod(fuses({ ...offMap, itemId: 'k-4' }), () => 'A1')).toBeCloseTo(
+            1 / FUSE_HISS_URGENT_HZ,
+            9,
+        );
+    });
+});
+
+/**
+ * The alarm is an event, not a drone. `dangerBeacon` returns 'red' on a fuel
+ * *level*, and level-02 is designed so the pile grows — so a metronome running
+ * for as long as a pole is red ran for minutes, at more than twice the gain of
+ * the lit-fuse `hiss` it is guaranteed to co-occur with, on a 1.5 Hz grid
+ * incommensurate with the jig's 2.5 Hz. The lamp and the stripes are already
+ * drawn and they carry the standing state on their own.
+ */
+describe('alarmPulsesLeft', () => {
+    it('spends a burst on the crossing into red', () => {
+        expect(alarmPulsesLeft(false, true, 0)).toBe(ALARM_BURST);
+    });
+
+    it('counts down rather than re-arming while the pole stays red', () => {
+        expect(alarmPulsesLeft(true, true, 2)).toBe(2);
+        expect(alarmPulsesLeft(true, true, 0)).toBe(0);
+    });
+
+    it('goes quiet the moment nothing is red, whatever it had left', () => {
+        expect(alarmPulsesLeft(true, false, 3)).toBe(0);
+    });
+
+    it('is short enough to be news and not a noise floor', () => {
+        expect(ALARM_BURST).toBeGreaterThan(0);
+        expect(ALARM_BURST * BEACON_PERIOD).toBeLessThanOrEqual(3);
+    });
+});
+
+describe('beaconCue', () => {
+    it('warns once when a pole first goes gold', () => {
+        expect(beaconCue('off', 'gold')).toBe('warn');
+        expect(beaconCue('gold', 'gold')).toBeNull();
+    });
+
+    it('says nothing about red, which alarms on its own beat instead', () => {
+        expect(beaconCue('gold', 'red')).toBeNull();
+        expect(beaconCue('red', 'red')).toBeNull();
+    });
+
+    it('says nothing when a pole is going out', () => {
+        expect(beaconCue('red', 'off')).toBeNull();
+        expect(beaconCue('gold', 'off')).toBeNull();
     });
 });
 

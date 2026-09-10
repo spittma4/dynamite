@@ -1,6 +1,7 @@
 import { TILE_PX, type FactoryState, type PlayerState } from '@shared';
 import type Phaser from 'phaser';
 
+import { gameAudio } from '../audio/Audio';
 import { RemoteTrack } from './Interpolation';
 import { UI, lineColour, playerColour } from './palette';
 import { INTERP_DELAY_MS } from '../constants';
@@ -179,10 +180,37 @@ export class AvatarView {
     }
 }
 
+/**
+ * The scene event a shout arrives on. One constant so the layer that spots it
+ * and the HUD that prints it cannot spell it differently.
+ */
+export const SHOUT_EVENT = 'crew-shout';
+
+/**
+ * Whether a crew-mate's bubble is news this frame (F18). `bubbleUntil` is the
+ * only thing that moves when somebody shouts again, so it doubles as the
+ * identity of the shout: announce a bubble whose expiry is later than the last
+ * one announced for that player, and only theirs — your own shout is a key you
+ * just pressed.
+ */
+export function newShout(
+    bubble: string,
+    bubbleUntil: number,
+    seenUntil: number,
+    serverNow: number,
+    own: boolean,
+): boolean {
+    if (own || bubble === '') return false;
+
+    return bubbleUntil > serverNow && bubbleUntil > seenUntil;
+}
+
 export class AvatarsLayer {
     private readonly views = new Map<string, AvatarView>();
     private readonly tracks = new Map<string, RemoteTrack>();
     private readonly positions = new Map<string, { x: number; y: number }>();
+    /** The last shout announced per player, so one bubble is announced once. */
+    private readonly shouted = new Map<string, number>();
 
     constructor(
         private readonly scene: Factory,
@@ -222,6 +250,7 @@ export class AvatarsLayer {
 
             view.update(pose, player, serverNow, nowMs);
             this.positions.set(key, { x: pose.x * TILE_PX, y: pose.y * TILE_PX });
+            this.announceShout(key, player, sessionId, serverNow);
         });
 
         for (const [key, view] of this.views) {
@@ -231,6 +260,7 @@ export class AvatarsLayer {
             this.views.delete(key);
             this.tracks.delete(key);
             this.positions.delete(key);
+            this.shouted.delete(key);
         }
 
         this.layer.sort('y');
@@ -249,6 +279,30 @@ export class AvatarsLayer {
         this.views.clear();
         this.tracks.clear();
         this.positions.clear();
+        this.shouted.clear();
+    }
+
+    /**
+     * A shout, off the world layer and onto the two channels a player inside a
+     * mini-game still has: the HUD strip they are already reading, and the ear.
+     * The word itself carries which shout it was, which is why one cue serves
+     * all four rather than four cues nobody would tell apart.
+     */
+    private announceShout(
+        key: string,
+        player: PlayerState,
+        sessionId: string,
+        serverNow: number,
+    ): void {
+        const seen = this.shouted.get(key) ?? Number.NEGATIVE_INFINITY;
+
+        if (!newShout(player.bubble, player.bubbleUntil, seen, serverNow, key === sessionId)) {
+            return;
+        }
+
+        this.shouted.set(key, player.bubbleUntil);
+        gameAudio.play('shout');
+        this.scene.events.emit(SHOUT_EVENT, player.bubble);
     }
 
     private remotePose(key: string, player: PlayerState, nowMs: number): AvatarPose {

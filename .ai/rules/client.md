@@ -13,8 +13,11 @@
 - Keys: WASD/arrows walk; `E` interact; `Space` action; `Esc` leave; `Q`/`E` selectors;
   `Tab` order board; `Shift`+arrows emotes; `~` debug overlay. Inside an overlay the same
   keys drive the mini-game.
-- Effects come from `fx` messages; keep them cheap (tweens, particles, text pops). Audio is
-  optional in M1; if added, WebAudio beeps behind a mute toggle.
+- Effects come from `fx` messages; keep them cheap (tweens, particles, text pops).
+- Audio shipped in M1 (F18). `resources/js/game/audio/` owns the only `AudioContext` in the
+  client — never create another. Call `gameAudio.play(cue)` or book ahead with `at()`; every
+  cue is declared in `audio/cues.ts` with a `seenAs` naming the visual that carries the same
+  fact, and a test fails if one is added without it. Audio is never the only channel.
 
 ## Verified `@colyseus/sdk` 0.18 API (from the current docs — prefer this over memory)
 

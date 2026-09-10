@@ -12,6 +12,9 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import { gameAudio } from '../audio/Audio';
+import type { CueName } from '../audio/cues';
+import { Metronome } from '../audio/tracks';
 import { TRUCK_LEAVING, truckIn, truckLeaves } from '../nouns';
 import type { Factory } from '../scenes/Factory';
 import { BayWall, type ReturnsItem } from './dock/BayWall';
@@ -48,13 +51,24 @@ const CHIP_GAP = 8;
 const LEGEND_Y = 150;
 const MARKER_W = 3;
 
+/**
+ * The judgement colours are the Jig's and the Slammer's, at the row's darker
+ * saturation: gold is Perfect and green is OK everywhere in the factory. They
+ * were the other way round here, which taught a player one vocabulary at two
+ * stations and the opposite at the third — recoverable by ear through the
+ * `perfect`/`ok` cues, and not recoverable at all without them.
+ *
+ * The marker is cyan rather than white because it has to be read *against* the
+ * white target line at the instant it crosses it, which is the only instant it
+ * carries anything.
+ */
 export const DOCK_COLOURS = {
     track: 0x1b1f26,
     trackIdle: 0x15171c,
-    ok: 0x8a6d1e,
-    perfect: 0x2f7a33,
+    ok: 0x2f7a33,
+    perfect: 0x8a6d1e,
     target: 0xffffff,
-    marker: 0xffffff,
+    marker: 0x7fd3ff,
     chipEmpty: 0x24262e,
     chipReady: 0x2b6fd6,
     chipStalled: 0xd9463d,
@@ -91,6 +105,29 @@ export function canShove(mg: DockMg, lane: number): boolean {
     if (lane < 0 || mg.truck.phase !== 'docked') return false;
 
     return laneStatus(mg.lanes[lane]) !== 'EMPTY';
+}
+
+/**
+ * What a shove sounded like (F18). The verdict never reaches `mg` — the server
+ * spends it as an `fx` at the crate — but the two things it does publish are
+ * enough: a lane that emptied while the truck lit one more slot lamp was a
+ * shove that boarded, and the letter on that lamp is the grade. A lane the
+ * leaving truck simply cleared lights no lamp, and so makes no sound.
+ */
+export function shoveCue(
+    before: DockLane | undefined,
+    after: DockLane | undefined,
+    hitsBefore: string,
+    hitsAfter: string,
+): CueName | null {
+    if (!before || !after) return null;
+
+    if (after.stalled && !before.stalled) return 'miss';
+
+    if (before.itemId === '' || after.itemId !== '') return null;
+    if (hitsAfter.length <= hitsBefore.length) return null;
+
+    return hitsAfter[hitsAfter.length - 1] === 'P' ? 'perfect' : 'ok';
 }
 
 export function tailgateOpen(mg: DockMg, serverNow: number): boolean {
@@ -171,6 +208,8 @@ class DockOverlay implements MinigameOverlay {
     private painted = '';
     private slam: boolean | null = null;
     private holding = false;
+    /** The reversing alarm the legend has been promising (F18). */
+    private readonly beeps = new Metronome('beep');
 
     mount(ctx: OverlayContext): void {
         this.ctx = ctx;
@@ -179,6 +218,7 @@ class DockOverlay implements MinigameOverlay {
         this.painted = '';
         this.slam = null;
         this.holding = false;
+        this.beeps.reset();
 
         const scene = ctx.scene;
 
@@ -197,8 +237,11 @@ class DockOverlay implements MinigameOverlay {
         if (!ctx || !this.row || !this.head || !this.legend) return;
 
         if (station.mg !== this.lastMg) {
+            const before = this.mg;
+
             this.lastMg = station.mg;
             this.mg = parseDockMg(station.mg);
+            this.judge(before, this.mg);
         }
 
         const mg = this.mg;
@@ -211,6 +254,7 @@ class DockOverlay implements MinigameOverlay {
         }
 
         this.lane = localLane(mg, me.workTile);
+        this.beep(mg, serverNow);
         this.head.setText(truckHeadline(mg, serverNow));
         this.drawRow(ctx, mg, serverNow);
         this.drawChips(ctx, mg);
@@ -252,6 +296,35 @@ class DockOverlay implements MinigameOverlay {
         }
     }
 
+    /**
+     * The beep, booked one beep at a time on the same `beepAt` grid the marker
+     * and the bay light are drawn from — so `SPACE shove on the beep` is one
+     * instruction about one moment rather than a legend and a picture of one.
+     */
+    private beep(mg: DockMg, serverNow: number): void {
+        if (mg.truck.phase !== 'docked') {
+            this.beeps.reset();
+
+            return;
+        }
+
+        this.beeps.book(mg.beepAt, mg.beepPeriodMs / 1000, serverNow, gameAudio);
+    }
+
+    /** Only this player's own lane: the dock is four lanes and four pairs of hands. */
+    private judge(before: DockMg | null, after: DockMg | null): void {
+        if (!before || !after || this.lane < 0) return;
+
+        const cue = shoveCue(
+            before.lanes[this.lane],
+            after.lanes[this.lane],
+            before.truck.hits,
+            after.truck.hits,
+        );
+
+        if (cue !== null) gameAudio.play(cue);
+    }
+
     unmount(): void {
         this.ctx?.container.removeAll(true);
         this.row = null;
@@ -261,6 +334,7 @@ class DockOverlay implements MinigameOverlay {
         this.chipText = [];
         this.ctx = null;
         this.holding = false;
+        this.beeps.reset();
     }
 
     /**

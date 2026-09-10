@@ -8,6 +8,7 @@ import type {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import type { AudioSettings } from '../audio/cues';
 import { HUD_HEIGHT, TOAST_MAX, TOAST_MS } from '../constants';
 import { GROOVE, NOTHING_ON_THE_BOARD, ORDER_BOARD } from '../nouns';
 import type { Connection } from '../net/connection';
@@ -87,6 +88,27 @@ export function boardTitle(remaining: number, total: number): string {
     return total > 0 ? `${ORDER_BOARD} · ${remaining}/${total} LEFT` : ORDER_BOARD;
 }
 
+/**
+ * The audio control's own second channel (F18 §5). A mute with no readout is a
+ * key a player presses twice because nothing told them the first press landed.
+ */
+export function soundReadout(settings: AudioSettings): string {
+    return settings.muted ? 'SOUND OFF' : `SOUND ${Math.round(settings.volume * 100)}%`;
+}
+
+/**
+ * Whether a volume nudge should also lift the mute. F18c left this to the
+ * surface with a readout to explain it with: turning it *up* while silent is a
+ * request to hear something, so it un-mutes; turning it down is not, and the
+ * engine keeps the two values independent so the level survives either way.
+ */
+export function nudgeUnmutes(muted: boolean, delta: number): boolean {
+    return muted && delta > 0;
+}
+
+/** How long the sound readout stays on the band after a key. */
+const SOUND_READOUT_MS = 2000;
+
 function css(colour: number): string {
     return `#${colour.toString(16).padStart(6, '0')}`;
 }
@@ -101,7 +123,11 @@ export class Hud {
     private readonly grooveLabel: Phaser.GameObjects.Text;
     private readonly grooveBar: Phaser.GameObjects.Graphics;
     private readonly bannerLabel: Phaser.GameObjects.Text;
+    private readonly soundLabel: Phaser.GameObjects.Text;
     private readonly toasts: Phaser.GameObjects.Container[] = [];
+
+    /** Which readout is the current one, so an older timer cannot hide it. */
+    private soundShown = 0;
 
     private chipText = '';
     private bookLine = '';
@@ -180,6 +206,42 @@ export class Hud {
             .setOrigin(0.5)
             .setVisible(false);
         scene.layers.overlay.add(this.bannerLabel);
+
+        this.soundLabel = scene.add
+            .text(10, HUD_HEIGHT + 6, '', {
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                color: css(UI.text),
+                fontStyle: 'bold',
+            })
+            .setDepth(5)
+            .setVisible(false);
+    }
+
+    /**
+     * The `M` / `[` / `]` readout (F18 §5). It is the whole visual channel for
+     * the audio controls, which is why it says the level rather than only that
+     * something changed.
+     */
+    sound(settings: AudioSettings): void {
+        const token = (this.soundShown += 1);
+
+        this.soundLabel.setText(soundReadout(settings));
+        this.soundLabel.setColor(css(settings.muted ? UI.beaconOff : UI.text));
+        this.soundLabel.setVisible(true);
+        this.scene.time.delayedCall(SOUND_READOUT_MS, () => {
+            if (token === this.soundShown) this.soundLabel.setVisible(false);
+        });
+    }
+
+    /**
+     * A crew-mate's shout, mirrored off the world layer (F18). The bubble is
+     * drawn over an avatar, and the player who most needs to read HELP is the
+     * one whose eyes are locked on a needle under an overlay covering a third of
+     * the floor — so the word is put on the strip they are already reading.
+     */
+    shout(word: string): void {
+        this.toast({ text: word, kind: 'warn' });
     }
 
     /** Shows one banner until the given `clock` second; `update` calls it from state. */

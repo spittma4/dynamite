@@ -17,6 +17,9 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import { gameAudio } from '../audio/Audio';
+import type { CueName } from '../audio/cues';
+import { type Pulse, PulseTrack } from '../audio/tracks';
 import { GROOVE, HANDS_FULL, INTAKE_ZONE, PRIME_KEG } from '../nouns';
 import { KEGS_IN, KEGS_OUT } from '../render/dropTargets';
 import { UI } from '../render/palette';
@@ -108,6 +111,32 @@ export const SLAMMER_COLOURS = {
 
 /** How long the needle and the verdict hold still after a release. */
 const FREEZE_MS = 800;
+
+/**
+ * How far ahead the band cues are booked (F18). A scheduled voice cannot be
+ * taken back, so this is the window in which a pulse is already committed: on
+ * the tightest shipped window (`okMsAtMinCharge`, 105 ms) the leading edge goes
+ * onto the AudioContext timeline the moment the charge is confirmed, and a
+ * release before it still hears the tick it was booked for. That is why
+ * `slammerPulses` stops at the gold — a *trailing* pulse booked this early was
+ * committed 15 ms before the gold moment and leaked after every clean release.
+ */
+export const BAND_BOOK_AHEAD_MS = 120;
+
+/**
+ * How long the operator's verdict waits behind the hopper (F18). Fired
+ * together, `miss` (sawtooth 160) and `pfft` (sawtooth 220) are one muddy buzz
+ * rather than two facts; landed in sequence they read the way `perfect`'s own
+ * two voices do — the event, then the judgement of it.
+ */
+export const VERDICT_DELAY_MS = 120;
+
+/** How long a refused chute press flashes red under the key that made it. */
+export const REJECT_FLASH_MS = 150;
+
+/** The sight posts: thin, and tall enough to read against the track edge. */
+const SIGHT_PX = 2;
+const SIGHT_LEN = 6;
 
 /** How long a locally started needle runs before a silent server cancels it. */
 const GRACE_MS = 400;
@@ -276,9 +305,23 @@ export interface GaugeGeometry {
     bandW: number;
     deadX: number;
     deadW: number;
+    /** The gold sights: at least `SIGHT_SPAN_PX` apart, centred on `targetX`. */
+    sightX: number;
+    sightW: number;
     lateX: number;
     lateW: number;
 }
+
+/**
+ * How far apart the gold sights sit. On the shipped 538 px panel the scale is
+ * 0.229 px/ms, so the judged ±50 ms gold strip is 23 px wide and a 3 px
+ * needle moving 3.8 px a frame is inside it for under six frames — against
+ * the crimp's 87 px and the dock's 121 px, which a player can genuinely hit by
+ * eye. The sights are drawn *outside* the track, as two marks to aim between;
+ * the strip and the hairline keep their true widths, because widening those
+ * would be a claim about the judgement the server does not honour.
+ */
+export const SIGHT_SPAN_PX = 40;
 
 /**
  * The scale is fixed at `gaugeTopMs`, never the band, so a hot mash draws a
@@ -308,17 +351,99 @@ export function gaugeGeometry(
     const band = span(target - okMs, target + okMs);
     const dead = span(target - cfg.deadCenterMs, target + cfg.deadCenterMs);
     const late = span(target + okMs, target + okMs + cfg.overholdMs);
+    const targetX = clamp(target * pxPerMs, 0, width);
+    const sightW = Math.min(width, Math.max(dead.w, SIGHT_SPAN_PX));
 
     return {
         pxPerMs,
-        targetX: clamp(target * pxPerMs, 0, width),
+        targetX,
         bandX: band.x,
         bandW: band.w,
         deadX: dead.x,
         deadW: dead.w,
+        sightX: clamp(targetX - sightW / 2, 0, width - sightW),
+        sightW,
         lateX: late.x,
         lateW: late.w,
     };
+}
+
+/**
+ * The mash as a count-in (F18). Two ticks and an accent: the accent is the
+ * third chute, which is the moment the plunger is loaded and `Space` becomes
+ * live, so the hand learns "tick tick TOCK — now hold" without reading a bar.
+ */
+export function mashCue(pressed: number): CueName {
+    return pressed >= 3 ? 'tickAccent' : 'tick';
+}
+
+/**
+ * The two moments of a charge, in seconds on the **local** clock (F18,
+ * contracts §7). The Slammer judges press-to-press intervals on the client's
+ * own clock and the needle runs off `performance.now()`, so booking these off
+ * the server clock would put the TOCK somewhere other than where the player can
+ * see the needle is — which is the precise failure the whole feature exists to
+ * prevent. `okMs` and `bandOffset` are the server's own published numbers, so
+ * the sound marks the band the release is actually scored against.
+ *
+ * Two, not three. "Band opens, TOCK" is the whole rhythm the player acts on;
+ * the band's closing edge only ever reports on a release that can no longer be
+ * made, and — booked `BAND_BOOK_AHEAD_MS` early against a 105 ms window — it
+ * was committed before the gold and leaked over every clean release.
+ */
+export function slammerPulses(
+    needleStartMs: number,
+    tCharge: number,
+    okMs: number,
+    bandOffset: number,
+): Pulse[] {
+    if (tCharge <= 0) return [];
+
+    const target = targetMs(tCharge, bandOffset);
+    const at = (ms: number): number => (needleStartMs + ms) / 1000;
+
+    return [
+        { at: at(target - okMs), cue: 'bandEdge' },
+        { at: at(target), cue: 'gold' },
+    ];
+}
+
+/** The verdict the operator hears. The gold gets its own, which is the point. */
+export function releaseCue(outcome: SlammerOutcome): CueName | null {
+    if (outcome === '') return null;
+
+    if (outcome === 'dead_center') return 'perfect';
+
+    return outcome === 'prime' ? 'ok' : 'miss';
+}
+
+/**
+ * The hopper as the whole floor hears it. These are F07's four sounds and they
+ * mirror the `fx` the server spends at the same instant, so the noise and the
+ * puff of particles are one event rather than two accounts of it. Prime and
+ * ordinary differ by *pitch* — a gain difference is the first distinction a
+ * noisy room destroys — and an early release has its own cue rather than
+ * borrowing `clink`, which also means "you set that down".
+ */
+export function slamSound(outcome: SlammerOutcome): CueName | null {
+    if (outcome === '') return null;
+
+    if (outcome === 'dead_center') return 'thunkBig';
+    if (outcome === 'prime') return 'thunk';
+
+    return outcome === 'late' ? 'pfft' : 'dud';
+}
+
+/**
+ * A chute square's fill. A refused press — a repeat, or a fourth — changes
+ * neither `mashed` nor the local record, so without this the key that just went
+ * down produced nothing on screen at all and the spill at the hopper, a round
+ * trip later and ten tiles away, was left to teach "three is enough".
+ */
+export function chuteColour(lit: boolean, rejected: boolean): number {
+    if (rejected) return SLAMMER_COLOURS.late;
+
+    return lit ? SLAMMER_COLOURS.chuteLit : SLAMMER_COLOURS.chuteOff;
 }
 
 export function needleX(elapsedMs: number, pxPerMs: number, width: number): number {
@@ -457,6 +582,12 @@ class SlammerOverlay implements MinigameOverlay {
     private aim: Aim | null = null;
     private frozenX = -1;
     private frozenUntil = 0;
+    /** The chute whose press was refused, and how long its square stays red. */
+    private rejected: Chute | null = null;
+    private rejectedUntil = 0;
+
+    /** tick / TOCK / tick across the band, on the same clock as the needle (F18). */
+    private readonly band = new PulseTrack(BAND_BOOK_AHEAD_MS);
 
     private gaugeX = 0;
     private gaugeW = 0;
@@ -651,9 +782,12 @@ class SlammerOverlay implements MinigameOverlay {
         this.lastPhase = 'idle';
         this.local = [];
         this.needleStart = -1;
+        this.band.clear();
         this.aim = null;
         this.frozenX = -1;
         this.frozenUntil = 0;
+        this.rejected = null;
+        this.rejectedUntil = 0;
         this.paintedGauge = '';
         this.paintedChutes = '';
         this.paintedVerdict = '';
@@ -685,13 +819,29 @@ class SlammerOverlay implements MinigameOverlay {
                 this.needleStart = needleStartMs(next.chargeStartAt, serverNow, performance.now());
             }
 
+            // Booked only now, on the server's numbers. Booking on the local
+            // prediction would need a cancel when a clamped mash moves the band,
+            // and a scheduled voice cannot be taken back (F18 §Risks).
+            this.band.aim(
+                slammerPulses(this.needleStart, next.tCharge, next.okMs, next.bandOffset),
+            );
+
             return;
         }
+
+        // The band is over the moment the charge is; the pulses it has not
+        // booked yet are about a needle nobody is watching any more.
+        this.band.clear();
 
         if (from === 'charge') {
             // An overhold fires server-side, so the freeze has to work with no
             // local release to hang it on.
             const now = performance.now();
+            const verdict = releaseCue(next.lastOutcome);
+
+            // Behind the hopper rather than on top of it: `slamSound` fires on
+            // this same patch, and two sawtooths started together are one buzz.
+            if (verdict !== null) gameAudio.afterMs(verdict, VERDICT_DELAY_MS);
 
             if (this.frozenUntil <= now) this.freezeNeedle(now);
         }
@@ -712,12 +862,22 @@ class SlammerOverlay implements MinigameOverlay {
         }
 
         // A repeat or a fourth press is an overflow the server answers with a
-        // spill; nothing lights for it here.
-        if (this.local.includes(chute) || this.local.length >= 3) return;
+        // spill — which arrives a round trip later, at the hopper. The square
+        // under the key that was refused flashes red now, so the press has an
+        // answer on the screen the player is looking at as well as in the ear.
+        if (this.local.includes(chute) || this.local.length >= 3) {
+            this.rejected = chute;
+            this.rejectedUntil = performance.now() + REJECT_FLASH_MS;
+            gameAudio.play('slop');
+
+            return;
+        }
 
         this.local.push(chute);
 
         if (this.local.length === 3) this.localThirdMs = performance.now();
+
+        gameAudio.play(mashCue(this.local.length));
     }
 
     private startNeedle(): void {
@@ -768,7 +928,7 @@ class SlammerOverlay implements MinigameOverlay {
         this.drawHandsRows(full);
         this.drawFooter(station, full);
 
-        this.drawChutes(mg, station);
+        this.drawChutes(mg, station, nowMs);
         this.drawVerdict(mg, nowMs);
         this.okWindow?.setText(readoutText(this.aim?.okMs ?? 0));
         this.combo?.setText(comboText(mg.combo));
@@ -777,12 +937,18 @@ class SlammerOverlay implements MinigameOverlay {
 
         this.drawGauge(mg);
         this.moveNeedle(mg, nowMs);
+        // The band's pulses come inside the booking horizon a few frames apart,
+        // so the cursor is stepped where the needle already is.
+        this.band.book(nowMs / 1000, gameAudio);
     }
 
-    private drawChutes(mg: SlammerMg, station: StationState): void {
+    private drawChutes(mg: SlammerMg, station: StationState, nowMs: number): void {
         const lights = chuteLights(mg.mashed, this.local);
         const rearming = isRearming(mg.phase, station.state);
-        const key = `${lights.l}${lights.u}${lights.r}|${rearming}`;
+        const rejected = this.rejectedUntil > nowMs ? this.rejected : null;
+        // The flash is in the key, so the frame it expires on repaints — a
+        // refusal changes nothing else about the panel.
+        const key = `${lights.l}${lights.u}${lights.r}|${rearming}|${rejected ?? ''}`;
 
         if (key === this.paintedChutes || !this.chutes) return;
 
@@ -797,7 +963,7 @@ class SlammerOverlay implements MinigameOverlay {
             const x = PANEL.titleX + i * (PANEL.chutePx + PANEL.chuteGap);
             const lit = lights[chute];
 
-            g.fillStyle(lit ? SLAMMER_COLOURS.chuteLit : SLAMMER_COLOURS.chuteOff, rearming ? 0.4 : 1);
+            g.fillStyle(chuteColour(lit, chute === rejected), rearming ? 0.4 : 1);
             g.fillRoundedRect(x, PANEL.chuteY, PANEL.chutePx, PANEL.chutePx, 5);
             g.lineStyle(2, SLAMMER_COLOURS.chuteEdge, rearming ? 0.4 : 1);
             g.strokeRoundedRect(x, PANEL.chuteY, PANEL.chutePx, PANEL.chutePx, 5);
@@ -850,6 +1016,13 @@ class SlammerOverlay implements MinigameOverlay {
         g.fillRect(geo.deadX, GAUGE_Y, geo.deadW, PANEL.gaugeH);
         g.fillStyle(SLAMMER_COLOURS.dead, 1);
         g.fillRect(geo.targetX - 1, GAUGE_Y, 2, PANEL.gaugeH);
+
+        // The sights, outside the track: two posts the eye can aim between when
+        // the judged strip between them is only a few frames wide.
+        for (const x of [geo.sightX, geo.sightX + geo.sightW - SIGHT_PX]) {
+            g.fillRect(x, GAUGE_Y - SIGHT_LEN, SIGHT_PX, SIGHT_LEN);
+            g.fillRect(x, GAUGE_Y + PANEL.gaugeH, SIGHT_PX, SIGHT_LEN);
+        }
     }
 
     private moveNeedle(mg: SlammerMg, nowMs: number): void {
@@ -1057,6 +1230,12 @@ class SlammerWorldView implements StationView {
         const hit = mg.lastOutcome === 'dead_center' || mg.lastOutcome === 'prime';
         const show = tierShow(mg.tier);
         const big = mg.lastOutcome === 'dead_center' ? 1 : 0;
+        const sound = slamSound(mg.lastOutcome);
+
+        // The hopper, for everyone on the floor rather than only the operator —
+        // this view is mounted on every client, which is what makes a keg you
+        // are walking towards something you can hear being made.
+        if (sound !== null) gameAudio.play(sound);
 
         this.squash(scene);
 

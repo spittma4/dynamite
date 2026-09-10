@@ -18,6 +18,8 @@ import {
     choreLabel,
     flightPose,
     flightProgress,
+    handCue,
+    handStateOf,
     itemSkin,
     placementOf,
 } from '../render/Items';
@@ -147,6 +149,48 @@ describe('placementOf', () => {
         const where = { x: -1, y: -1, holder: 'powder-a', inFlight: false };
 
         expect(placementOf(where, players)).toEqual({ kind: 'hidden' });
+    });
+});
+
+describe('handStateOf', () => {
+    it('is mine only when the item is in my own hands', () => {
+        expect(handStateOf({ kind: 'held', sessionId: 'sess-1' }, 'sess-1')).toBe('mine');
+        expect(handStateOf({ kind: 'held', sessionId: 'sess-2' }, 'sess-1')).toBe('away');
+    });
+
+    it('keeps the air apart from the floor, because a catch is not a pick-up', () => {
+        expect(handStateOf({ kind: 'flight' }, 'sess-1')).toBe('flight');
+        expect(handStateOf({ kind: 'tile', x: 0, y: 0 }, 'sess-1')).toBe('away');
+        expect(handStateOf({ kind: 'hidden' }, 'sess-1')).toBe('away');
+    });
+});
+
+describe('handCue', () => {
+    it('grabs what comes off a shelf, a tray or the floor', () => {
+        expect(handCue('away', 'mine')).toBe('grab');
+    });
+
+    it('catches what arrives out of the air', () => {
+        expect(handCue('flight', 'mine')).toBe('catch');
+    });
+
+    it('clinks what leaves your hands and comes to rest', () => {
+        expect(handCue('mine', 'away')).toBe('clink');
+    });
+
+    it('says nothing about a throw, which the arc already shows', () => {
+        expect(handCue('mine', 'flight')).toBeNull();
+    });
+
+    it('says nothing while nothing has changed', () => {
+        expect(handCue('mine', 'mine')).toBeNull();
+        expect(handCue('away', 'away')).toBeNull();
+        expect(handCue('flight', 'flight')).toBeNull();
+    });
+
+    it('says nothing about an item that never touched your hands', () => {
+        expect(handCue('away', 'flight')).toBeNull();
+        expect(handCue('flight', 'away')).toBeNull();
     });
 });
 

@@ -24,6 +24,9 @@ import {
 } from '@shared';
 import type Phaser from 'phaser';
 
+import { gameAudio } from '../audio/Audio';
+import type { CueName } from '../audio/cues';
+import { type Pulse, PulseTrack } from '../audio/tracks';
 import {
     FUSE_SET,
     HANDS_FULL,
@@ -74,7 +77,11 @@ export const JIG_COLOURS = {
     miss: 0xd9463d,
     track: 0x2a2a33,
     trackEdge: 0x6a6a78,
-    needle: 0xffffff,
+    // Not white. The needle is drawn last, 2 px, over the judged mark and over
+    // the third crimp click — both of them `text` — so at the one instant it
+    // carries the ±180 ms judgement it disappeared into what it was
+    // crossing. Cyan appears nowhere else on the track.
+    needle: 0x7fd3ff,
     fill: 0xb8862b,
     overfill: 0xd9463d,
     casing: 0xd62828,
@@ -419,6 +426,58 @@ export function tossBands(swingStartAt: number, cfg: TossConfig): JigBands & { c
     return { ...bands, close: closeAt(bands.mark, cfg.okMs) };
 }
 
+/**
+ * The phrase as a rhythm (F18). `secondsPerKnot`, the crimp's `leadSeconds` and
+ * its `clickSeconds` are all `60 / bpm` in every shipped level, so a long-fuse
+ * phrase is six pulses on one unbroken 150 bpm grid — three knots, the lead
+ * beat, then clicks two and three — and the tap lands on the sixth. Sounding
+ * them turns the crimp from counting three visual events at 2.5 Hz into the
+ * thing every rhythm game is: feel five pulses, hit the next one.
+ *
+ * `tickAccent` is the beat you *act* on and `tick` is everything leading up to
+ * it, which is why the knots are all plain: they are judged individually, but
+ * what the ratchet needs is a bar the accent can be heard against.
+ */
+export function jigPulses(mg: JigMg): Pulse[] {
+    if (mg.phase === 'pour') {
+        return mg.pour === null ? [] : accented(beatMarks(mg.pour, mg.bpm));
+    }
+
+    if (mg.phase === 'knots') return mg.knotAt.map((at): Pulse => ({ at, cue: 'tick' }));
+
+    return mg.phase === 'crimp' ? accented(mg.crimpClickAt) : [];
+}
+
+/** Every beat plain but the last, which is the one the press is judged against. */
+function accented(marks: readonly number[]): Pulse[] {
+    return marks.map(
+        (at, i): Pulse => ({ at, cue: i === marks.length - 1 ? 'tickAccent' : 'tick' }),
+    );
+}
+
+/**
+ * What makes one phrase a different phrase. The blob changes on every judged
+ * press — `knotIndex`, `last` — and re-reading it must not re-book beats the
+ * player has already heard, so the beats are rebuilt only when the phase or the
+ * bar it started on moves.
+ */
+export function phraseKey(mg: JigMg): string {
+    return `${mg.phase}:${mg.beatStartAt}`;
+}
+
+/** One confirmation per grade, so the three are told apart by ear. */
+export function gradeCue(grade: JigGrade): CueName {
+    return grade;
+}
+
+/** Long enough to see, shorter than a beat, so two clicks never light together. */
+export const CLICK_FLASH_SECONDS = 0.12;
+
+/** A ratchet click as an event on screen rather than a line that was always there. */
+export function clickFlash(clickAt: number, now: number): boolean {
+    return now >= clickAt && now - clickAt < CLICK_FLASH_SECONDS;
+}
+
 export function knotMarkers(mg: JigMg): { at: number; lane: JigLane; grade: JigGrade | null }[] {
     return mg.knotAt.map((at, i) => ({
         at,
@@ -607,6 +666,12 @@ class JigOverlay implements MinigameOverlay {
     private swungForHold = false;
     private frozenNow = 0;
 
+    /** The phrase's beats, booked ahead of the needle rather than played at it. */
+    private readonly beats = new PulseTrack();
+    private phrase = '';
+    /** The stamp of the judgement already confirmed, so one press makes one sound. */
+    private judgedAt = Number.NEGATIVE_INFINITY;
+
     mount(ctx: OverlayContext): void {
         this.ctx = ctx;
         this.graphics = ctx.scene.add.graphics();
@@ -619,6 +684,9 @@ class JigOverlay implements MinigameOverlay {
         this.cfg = null;
         this.held = null;
         this.swungForHold = false;
+        this.beats.clear();
+        this.phrase = '';
+        this.judgedAt = Number.NEGATIVE_INFINITY;
     }
 
     update(station: StationState, me: PlayerState, serverNow: number): void {
@@ -662,6 +730,7 @@ class JigOverlay implements MinigameOverlay {
             operator: role === 'a',
         };
 
+        this.sound(mg, role, isFrozen(station), serverNow);
         this.sendSwingOnHold(mg);
 
         if (role === 'b') this.drawRack(frame);
@@ -696,6 +765,37 @@ class JigOverlay implements MinigameOverlay {
         this.graphics = null;
         this.ctx = null;
         this.mg = null;
+    }
+
+    /**
+     * The phrase's beats and the judgement that closes each one (F18). Both are
+     * booked from the same `mg` the panel draws and against the server clock the
+     * marks are written in, because a beat measured on any other clock drifts
+     * away from the bar the player is watching inside a single phrase.
+     */
+    private sound(mg: JigMg, role: JigRole, frozen: boolean, serverNow: number): void {
+        const phrase = `${role}|${phraseKey(mg)}`;
+        const mounting = this.phrase === '';
+
+        if (phrase !== this.phrase) {
+            this.phrase = phrase;
+            // B is at the rack, whose panel draws none of these marks.
+            this.beats.aim(role === 'b' ? [] : jigPulses(mg));
+        }
+
+        // A jammed or damaged jig stops its own marks (`isFrozen`), so the beats
+        // have to stop with them rather than run on under a still needle.
+        if (!frozen) this.beats.book(serverNow, gameAudio);
+
+        const last = mg.last;
+
+        if (last === null || last.at <= this.judgedAt) return;
+
+        this.judgedAt = last.at;
+
+        // Arriving mid-phrase, the judgement already in `mg` belongs to a press
+        // that was made before this panel existed.
+        if (!mounting) gameAudio.play(gradeCue(last.grade));
     }
 
     private jigKey(
@@ -1174,12 +1274,31 @@ class JigOverlay implements MinigameOverlay {
         this.drawTrack(f, TRACK_Y, TRACK_H);
         this.drawBands(f, span, bandsAround(judged, cfg.crimp), TRACK_Y, TRACK_H);
 
+        // Three identical lines standing still is a count nobody can keep with
+        // their eyes, so each click is numbered and lights as the needle
+        // reaches it: the muted player sees the same three events the tick,
+        // tick, TOCK gives everybody else.
         mg.crimpClickAt.forEach((click, i) => {
             const last = i === mg.crimpClickAt.length - 1;
+            const lit = clickFlash(click, now);
             const x = trackX(ctx, span, click);
+            const colour = lit
+                ? JIG_COLOURS.perfect
+                : last
+                  ? JIG_COLOURS.text
+                  : JIG_COLOURS.trackEdge;
 
-            g.lineStyle(last ? 3 : 1, last ? JIG_COLOURS.text : JIG_COLOURS.trackEdge, 1);
+            g.lineStyle(lit || last ? 3 : 1, colour, 1);
             g.lineBetween(x, TRACK_Y - 4, x, TRACK_Y + TRACK_H + 4);
+            // Above the lines and below the phase strip: the pop rises through
+            // this band, and it is the only thing here that is ever transient.
+            labels.write(`crimp-count-${i}`, x, TRACK_Y - 8, `${i + 1}`, {
+                size: last ? 14 : 11,
+                bold: last || lit,
+                colour,
+                originX: 0.5,
+                originY: 1,
+            });
         });
 
         this.drawNeedle(f, trackX(ctx, span, now), TRACK_Y, TRACK_H);

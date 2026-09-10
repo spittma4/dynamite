@@ -45,7 +45,7 @@ Epic: **EL-173**.
 | F11 | EL-184 | Day loop, metrics, report card + P&L, run storage, Report scene | 5 | `F11-day-report-grade.md` | ✅ 2026-09-09 — `a38f6d3`. Review caught a non-integer `pnl.profit` that Laravel rejected (losing the crew's whole day) and the last truck's order dropped from the cycle time that feeds the grade. Report scene not yet seen in a browser |
 | F12 | EL-185 | Levels 1–4 + Sandbox, layout, copy, validation, level select, PLAYTEST.md | **1** (copy) / 5 (levels) | `F12-levels-sandbox.md` | ✅ 2026-09-09 — `a38f6d3`. Review caught that levels 2–4 shipped an order book nobody could finish in the shift (100 sticks against a ten-minute clock); every level validated, none was winnable. Retuned |
 | — | EL-186 | **Crimp retune + tempo floors** — the crimp was unplayable and `clickSeconds` was validated nowhere | 6 | `F14-difficulty-tuning.md` | ✅ 2026-09-09 — `leadSeconds` 0.4 / spacing 0.4 / okMs 180; a tap on click 2 is now 400 ms out against a ±180 ms window, so it misses. T1/T2/T3 added to `validateLevelConfig`, every judged timing in the game audited |
-| — | EL-194 | **No audio anywhere in the client**, and three mini-games are rhythm games | 6 | — | ☐ MVP-blocking |
+| F18 | EL-194 | **Audio** — WebAudio cues for three rhythm mini-games, no assets | 6 | `F18-audio.md` | ✅ 2026-09-10 — the crimp turned out to be a 6-pulse phrase on the factory's own 150 bpm grid (knots, lead, clicks are all 400 ms), so sonifying the knots too makes it an ordinary rhythm game instead of a counting exercise. Every cue declares the visual that carries the same fact, and a test fails if one is added without it. Review caught that `unlock()` had no caller and the whole layer was inert |
 | — | EL-188 | Housekeeping: one noun per object, `mvp-small` → `one-line`, order board, clipped Blast Bin label | 6 | — | ◐ client half ✅ 2026-09-09 — order board rebuilt as a job list leading with the fuse length, `nouns.ts` + a vocabulary test that fails on a second name for one object, waits no longer painted red, prop labels clamp inside the world. Server half (`copy.json`, `shared/src/copy.ts`, the `mvp-small` rename in contracts/F01/F08/F12) remains |
 | — | EL-173 | Integration playtest, tuning, MVP checklist | 6 | plan | ☐ |
 
@@ -84,8 +84,8 @@ because F02's `ConfigMsg` type-imports `Copy`.
 
 ## Progress
 
-Wave 5 complete 2026-09-09 (`a38f6d3`): **1869 tests green** — game-server 611, shared 418,
-client 655, Laravel 185 — all four typechecks clean, server boots on :2567, and the play page
+Wave 5 complete 2026-09-09 (`a38f6d3`): **2067 tests green** — game-server 611, shared 418,
+client 853, Laravel 185 — all four typechecks clean, server boots on :2567, and the play page
 was exercised in a real browser: the shift starts, the clock runs, the order book draws down
 and a truck arrives.
 

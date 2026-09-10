@@ -654,3 +654,14 @@ does not settle:
 4. **The game-server test path for a mini-game module is not named in §12.** F07 writes
    `game-server/tests/minigames/slammer.test.ts` by analogy with §1's `shared/tests/<module>.test.ts` rule;
    §12's F03 row claims "core tests" and its Slammer row lists source files only.
+
+## Superseded by F18 (2026-09-10)
+
+`resources/js/game/minigames/slammerAudio.ts` was specified here and never written — its task
+box stayed unticked through M1. F18 shipped the client's one audio engine, so the Slammer's
+four sounds (`thunk`, `pfft`, `clink`, `slop`) are now cue rows in `resources/js/game/audio/cues.ts`
+at the frequencies this doc specifies. Only the plumbing moved; the sounds are F07's.
+
+`pfft` is a deliberate downgrade from the band-passed noise burst specified here to a quiet
+sawtooth: a noise buffer plus a filter would be a second and third synthesis primitive for one
+sound. If it reads as wrong in a playtest, that is the trade to revisit.

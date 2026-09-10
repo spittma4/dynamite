@@ -1,6 +1,8 @@
 import { TILE_PX, type FxKind, type FxMsg } from '@shared';
 import type Phaser from 'phaser';
 
+import { type GameAudio, gameAudio } from '../audio/Audio';
+import type { CueName } from '../audio/cues';
 import type { Factory } from '../scenes/Factory';
 
 /**
@@ -23,6 +25,14 @@ export interface FxSpec {
     text?: string;
     textSize?: number;
     extra?: 'blast' | 'ring' | 'arcs' | 'squash' | 'flash';
+    /**
+     * What this effect sounds like, for the kinds whose moment has no cue
+     * anywhere else. Left off `thunk`, `clink`, `pfft` and `slop` — the Slammer
+     * and the item layer sound those at the press, and a second cue here would
+     * be the same keg heard twice — and off `spark` and `fuse`, whose channel is
+     * the hiss that starts half a second later and runs for the whole fuse.
+     */
+    sound?: CueName;
 }
 
 export const FX_SPECS: Record<FxKind, FxSpec> = {
@@ -30,16 +40,18 @@ export const FX_SPECS: Record<FxKind, FxSpec> = {
     spark: { count: 6, tint: 0xffb347, speed: [60, 120], lifespan: 250, gravityY: 200 },
     fuse: { count: 10, tint: 0xffe066, speed: [20, 60], lifespan: 400 },
     blast: {
+        sound: 'boom',
         count: 40,
         tint: [0xff7a1a, 0x222222],
         speed: [80, 220],
         lifespan: 600,
         extra: 'blast',
     },
-    fizzle: { count: 12, tint: 0x444444, speed: [10, 30], lifespan: 500, angle: [-110, -70] },
-    snap: { count: 6, tint: 0xffffff, speed: [40, 90], lifespan: 200 },
-    whump: { count: 20, tint: 0xc8a951, speed: [20, 50], lifespan: 500, extra: 'ring' },
+    fizzle: { sound: 'pfft', count: 12, tint: 0x444444, speed: [10, 30], lifespan: 500, angle: [-110, -70] },
+    snap: { sound: 'perfect', count: 6, tint: 0xffffff, speed: [40, 90], lifespan: 200 },
+    whump: { sound: 'save', count: 20, tint: 0xc8a951, speed: [20, 50], lifespan: 500, extra: 'ring' },
     horn: {
+        sound: 'horn',
         count: 0,
         tint: 0xffffff,
         speed: [0, 0],
@@ -48,8 +60,8 @@ export const FX_SPECS: Record<FxKind, FxSpec> = {
         textSize: 24,
         extra: 'arcs',
     },
-    slam: { count: 16, tint: 0x9a9a9a, speed: [30, 70], lifespan: 350, extra: 'squash' },
-    chime: { count: 8, tint: 0xf5c542, speed: [30, 60], lifespan: 400, extra: 'flash' },
+    slam: { sound: 'thunk', count: 16, tint: 0x9a9a9a, speed: [30, 70], lifespan: 350, extra: 'squash' },
+    chime: { sound: 'chime', count: 8, tint: 0xf5c542, speed: [30, 60], lifespan: 400, extra: 'flash' },
     clink: { count: 3, tint: 0xbbbbbb, speed: [20, 40], lifespan: 250, text: 'clink', textSize: 12 },
     pfft: {
         count: 6,
@@ -60,7 +72,7 @@ export const FX_SPECS: Record<FxKind, FxSpec> = {
         text: 'pfft',
         textSize: 12,
     },
-    bonk: { count: 4, tint: 0xbbbbbb, speed: [20, 40], lifespan: 250, text: 'bonk', textSize: 12 },
+    bonk: { sound: 'bonk', count: 4, tint: 0xbbbbbb, speed: [20, 40], lifespan: 250, text: 'bonk', textSize: 12 },
     slop: { count: 10, tint: 0x6b4a2b, speed: [20, 50], lifespan: 350 },
 };
 
@@ -71,6 +83,7 @@ export class Fx {
     constructor(
         private readonly scene: Factory,
         private readonly layer: Phaser.GameObjects.Container,
+        private readonly audio: GameAudio = gameAudio,
     ) {}
 
     /** A registered handler replaces the default, so the two never fire together. */
@@ -79,7 +92,14 @@ export class Fx {
     }
 
     play(m: FxMsg): void {
+        const spec = FX_SPECS[m.kind];
         const handler = this.overrides.get(m.kind);
+
+        // Before the dispatch, deliberately. An override replaces the *drawing*
+        // and is global to the kind with no fall-through, so a sound inside
+        // `render` would be silenced by whichever feature claimed the kind —
+        // and `blast`, the one effect nobody may miss, is exactly such a kind.
+        if (spec.sound !== undefined) this.audio.play(spec.sound);
 
         if (handler) {
             handler(this.scene, m);
@@ -87,7 +107,7 @@ export class Fx {
             return;
         }
 
-        this.render(FX_SPECS[m.kind], m);
+        this.render(spec, m);
     }
 
     private render(spec: FxSpec, m: FxMsg): void {
