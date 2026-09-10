@@ -1,4 +1,4 @@
-import type { ItemType, JigMg, StationConfig, Tile } from '@shared';
+import type { FuseLength, ItemType, JigMg, StationConfig, Tile } from '@shared';
 
 import { NEED_KEG, SHELF_FULL, SHELF_FULL_HANDS } from '../minigames/Jig';
 import { FUSE_SET } from '../nouns';
@@ -67,7 +67,7 @@ export function apron(station: StationConfig): Tile[] | null {
  * pours two sticks from one keg — so between them the machine is stocked and
  * the shelf is bare. The sim's own test is `pourAvailable` and this mirrors it.
  */
-export type JigStall = Pick<JigMg, 'phase' | 'cradle' | 'keg' | 'pour'>;
+export type JigStall = Pick<JigMg, 'phase' | 'cradle' | 'keg' | 'pour' | 'cradleWants'>;
 
 export interface Shortage {
     /** What the station says out loud. */
@@ -86,12 +86,17 @@ export interface Shortage {
  * fix it. `null` means the client cannot name the shortage and the caller falls
  * back to `copy.needParts`.
  *
- * The Jig stops three ways (`stationStatus`, `shared/src/sim/jig.ts`) and only
- * two of them are errands. In `parts` it is waiting on a fuse set from the rack
- * — and it has already consumed its keg off the shelf into `state.keg`, so the
- * shelf looks exactly like a keg starve. Reading it as one sends a hauler to
- * fill the eight slots, and a full shelf is what stops `feed()` restocking the
- * casings the machine prints for itself.
+ * The Jig stops three ways (`stationStatus`, `shared/src/sim/jig.ts`) and since N2
+ * all three are errands — the bin takes a fuse set like any other material. What
+ * each stop is short of is the whole problem: in `parts` the machine has already
+ * consumed its keg off the shelf into `state.keg`, so the shelf looks exactly like
+ * a keg starve. Reading it as one sends a hauler to fill the eight slots, and a
+ * full shelf is what stops `feed()` restocking the casings the machine prints for
+ * itself.
+ *
+ * The order of the branches is the rule, not an accident: the phase says what the
+ * machine is holding out for, a full shelf outranks every errand that would be
+ * refused at it, and only then is the shelf read for what is missing off it.
  *
  * Every sentence is the one the panel of the person standing there already
  * says. Two grammars for one fact — 'NEED KEGS' on the floor over 'NEED A KEG'
@@ -104,7 +109,22 @@ export function shortageOf(
     handsFull = false,
 ): Shortage | null {
     if (jig !== null && jig.phase === 'parts' && jig.cradle === 'empty') {
-        return { sentence: `NEED A ${FUSE_SET} — RACK`, haul: false, act: true };
+        return { sentence: needFuse(jig.cradleWants), haul: true, act: true };
+    }
+
+    const shelf = station.inputShelf;
+
+    if (!shelf) return null;
+
+    // Nowhere to put anything: `feed()` bails on `shelfRoom <= 0`, so a packed
+    // shelf never gets its casing and the Jig stays stopped until somebody lifts
+    // one back off. It is read before every errand below, because `shelfPush`
+    // refuses a full shelf — naming a haul here walks a hauler into a wordless
+    // `bonk`, and the keg starve and the clogged bin are both reachable this way.
+    // A fuse set is the one exception and it is handled above: it can still arrive
+    // through the air, off B's toss, with the shelf as full as it likes.
+    if (shelfTypes.length >= shelf.capacity) {
+        return { sentence: handsFull ? SHELF_FULL_HANDS : SHELF_FULL, haul: false, act: true };
     }
 
     // `stationStatus` starves on `phase === 'pour' && pour === null`, and
@@ -115,27 +135,16 @@ export function shortageOf(
         return { sentence: NEED_KEG, haul: true, act: true };
     }
 
-    const shelf = station.inputShelf;
-
-    if (!shelf) return null;
-
     const accepts = shelf.accepts as ItemType[] | undefined;
     // A keg the machine is holding with pours left is stock in hand, exactly as
     // `pourAvailable` counts it — otherwise the sign cries shortage on every
     // other cycle of a healthy line, and a sign that is always on is never read.
     const inMachine = jig?.keg != null && jig.keg.poursLeft > 0 ? 'keg' : '';
-    const missing = haulableInputs(accepts).find(
+    const missing = shelfScan(accepts).find(
         (type) => !shelfTypes.includes(type) && type !== inMachine,
     );
 
     if (missing) return { sentence: needOne(missing), haul: true, act: true };
-
-    // Nothing to fetch and nowhere to put it: `feed()` bails on `shelfRoom <= 0`,
-    // so a shelf packed with kegs never gets its casing and the Jig stays stopped
-    // until somebody lifts one back off.
-    if (shelfTypes.length >= shelf.capacity) {
-        return { sentence: handsFull ? SHELF_FULL_HANDS : SHELF_FULL, haul: false, act: true };
-    }
 
     // Out of the thing the machine stocks for itself, with room to stock it: the
     // answer is to wait a tick, so the sentence says so rather than naming an
@@ -150,6 +159,18 @@ export function shortageOf(
 }
 
 /**
+ * The types whose absence from the shelf is a shortage worth a sentence. A fuse
+ * set is not one of them, even though `haulableInputs` lists it since N2: the bin
+ * is stock the machine reaches into only during `parts`, so an empty bin at any
+ * other moment is not a stop, and the `parts` branch above owns the one moment it
+ * is. Scanning it here painted NEED FUSE SETS over a plain casing starve and sent
+ * a hauler the length of the floor for a material nothing was waiting on.
+ */
+function shelfScan(accepts: ItemType[] | undefined): ItemType[] {
+    return haulableInputs(accepts).filter((type) => type !== 'parts');
+}
+
+/**
  * The request for a single unit, which is what a shortage always is: one keg
  * unsticks the machine. `pluralOf` stays for the shelf signs, where a stock
  * list is what is wanted — 'NEED KEGS' read as a standing order to keep
@@ -157,4 +178,23 @@ export function shortageOf(
  */
 function needOne(type: ItemType): string {
     return type === 'keg' ? NEED_KEG : `NEED ${pluralOf(type)}`;
+}
+
+/**
+ * The fuse the jig is stopped for, named by its length rather than by where to
+ * get one. The sentence used to end '— RACK' because the rack was the only
+ * source; since N2 the bin takes a set too (`takeFromShelf`), so a sign that
+ * names one of the two sources is wrong about the other — and the half it left
+ * out is the only one a lone player has.
+ *
+ * The length is what a fetch can get wrong. `usableSetOnShelf` refuses a set the
+ * seated order cannot use, so a LONG set fetched under a SHORT order is a walk
+ * for nothing and the machine stays exactly as stopped. `''` is a day with no
+ * order, where the machine takes whatever arrives and the sentence says no more
+ * than it knows.
+ */
+function needFuse(wants: FuseLength | undefined): string {
+    const need = `NEED A ${FUSE_SET}`;
+
+    return wants ? `${need} — ${wants.toUpperCase()}` : need;
 }

@@ -1,6 +1,8 @@
-import { TILE_PX, type ItemType, type StationConfig, type Tile } from '@shared';
+import { TILE_PX, type FuseLength, type ItemType, type StationConfig, type Tile } from '@shared';
 
 import { SELF_STOCKED, pluralOf } from './dropTargets';
+import type { RackTone } from './fuseRack';
+import { outwardSide } from './intake';
 
 /**
  * The furniture standing on a shelf tile (F15 §2): a funnel you pour into on
@@ -26,6 +28,18 @@ import { SELF_STOCKED, pluralOf } from './dropTargets';
 /** The hopper's own box: 28 px of the tile's 32, so the tile edge still reads. */
 const HOPPER_W = 28;
 const SIDE_INSET = (TILE_PX - HOPPER_W) / 2;
+/**
+ * What each bin after the first adds to the face, in pixels.
+ *
+ * One bin fits the shelf tile, which is every out tray in the game. Three do
+ * not: at a share of one tile the keg funnel came out 12 px wide and the AUTO
+ * silo 3.6 px — narrower than the word read down it — the moment `parts` joined
+ * `accepts` for N2. So the intake *side* of a machine is as wide as the bins
+ * standing on it and grows **inward**, away from the aisle: the tile a hauler
+ * faces stays the aiming point the apron and the chevron mark, and the frontage
+ * it borrows is the machine wall beside the shelf, which nobody walks on.
+ */
+const EXTRA_BIN_PX = TILE_PX / 2;
 /** How far down into the shelf tile the body reaches; the rest is apron. */
 const BODY_PX = 24;
 /** A funnel's neck, and the chute's lip over the tile you pick up from. */
@@ -38,13 +52,28 @@ const THROAT_W = 12;
  */
 const FUNNEL_KINK = 0.6;
 const CHUTE_KINK = 0.75;
-/** A silo is a third of a funnel's width: it is not somewhere anybody aims. */
-const SILO_SHARE = 0.3;
+/**
+ * A silo's width, in pixels rather than as a share of the face: it is not
+ * somewhere anybody aims, so its width carries no information beyond *small*,
+ * and the one thing it has to stay is wide enough for the word read down it. As
+ * a share it shrank with every type added to `accepts` — at three bins it came
+ * out 3.6 px, narrower than AUTO is tall, and the one genuinely new fact the
+ * hoppers carry read as a label on the funnel beside it.
+ */
+const SILO_PX = 8;
 /** How tall one band of the fill column is drawn, in pixels. */
 const FILL_STEP = 2;
 
 /** The word read down a silo: this bin fills itself, so never go hunting. */
 export const AUTO = 'AUTO';
+
+/**
+ * The length tag on an empty book. `usableSetOnShelf` (`shared/src/sim/jig.ts`)
+ * treats `cradleWants === ''` as a wildcard — a machine with no order to
+ * disagree with has no preference to defend — so the bin says so rather than
+ * going blank and leaving the tag looking broken.
+ */
+export const ANY = 'ANY';
 
 export type BinKind = 'funnel' | 'chute' | 'silo';
 
@@ -114,7 +143,7 @@ export function hopperOf(
     // An out tray is one chute: it holds whatever the machine makes, and the
     // sign on the floor already names that (`shelfLabel`, `render/dropTargets`).
     const types = side === 'in' ? (accepts ?? [null]) : [null];
-    const bins = binsOf(types, kind, shelf.tile, contents, capacity);
+    const bins = binsOf(types, kind, shelf.tile, contents, capacity, inwardOf(station, shelf.tile));
     const filled = bins.find((bin) => !bin.selfStocked) ?? bins[0];
 
     return {
@@ -232,21 +261,32 @@ function binsOf(
     tile: Tile,
     contents: ItemType[],
     capacity: number,
+    inward: -1 | 1,
 ): HopperBin[] {
-    const shares = types.map((type) => (isSelfStocked(type) ? SILO_SHARE : 1));
-    const total = shares.reduce((sum, share) => sum + share, 0);
-    const left = tile[0] * TILE_PX + SIDE_INSET;
+    const face = HOPPER_W + (types.length - 1) * EXTRA_BIN_PX;
+    const silos = types.filter(isSelfStocked).length;
+    const funnels = types.length - silos;
+    // A shelf with nothing on it a player carries has no funnel to give the rest
+    // of the face to, so the silo takes it; otherwise the silos keep their fixed
+    // width and the bins a player aims at share everything that is left.
+    const siloPx = funnels === 0 ? face / Math.max(silos, 1) : SILO_PX;
+    const funnelPx = funnels === 0 ? 0 : (face - silos * siloPx) / funnels;
     const top = (tile[1] - 1) * TILE_PX;
     const bottom = tile[1] * TILE_PX + BODY_PX;
-    let x = left;
+    // The aisle edge of the shelf tile, so the first type a shelf accepts is the
+    // bin nearest the player and the face runs back into the machine from there.
+    let x = inward > 0 ? tile[0] * TILE_PX + SIDE_INSET : (tile[0] + 1) * TILE_PX - SIDE_INSET;
 
-    return types.map((type, i) => {
-        const width = (HOPPER_W * (shares[i] ?? 1)) / total;
-        const box = { x0: x, x1: x + width, top, bottom };
+    return types.map((type) => {
+        const width = isSelfStocked(type) ? siloPx : funnelPx;
+        const box =
+            inward > 0
+                ? { x0: x, x1: x + width, top, bottom }
+                : { x0: x - width, x1: x, top, bottom };
         const count = type === null ? contents.length : contents.filter((c) => c === type).length;
         const selfStocked = isSelfStocked(type);
 
-        x += width;
+        x += inward * width;
 
         return {
             kind: selfStocked ? 'silo' : kind,
@@ -262,4 +302,44 @@ function binsOf(
 
 function isSelfStocked(type: ItemType | null): boolean {
     return type !== null && SELF_STOCKED.includes(type);
+}
+
+/** Which way the face may grow: into the machine, never across the aisle. */
+function inwardOf(station: StationConfig, tile: Tile): -1 | 1 {
+    return (outwardSide(station, tile) * -1) as -1 | 1;
+}
+
+export interface FuseBin {
+    /** `JigMg.cradleWants`: the length the machine will reach into the bin for. */
+    wants: FuseLength;
+    /** The word on the tag — that length, or `ANY` on a day with no order. */
+    tag: string;
+    tone: RackTone;
+    banked: number;
+    usable: number;
+}
+
+/**
+ * What the fuse bin says beyond how full it is (N2). A fuse set is the one
+ * material on an input shelf that can be the *wrong* one: `usableSetOnShelf`
+ * (`shared/src/sim/jig.ts`) only arms the cradle from a set the seated order can
+ * use, so a bin of LONG sets under a SHORT order stops the machine exactly as
+ * dead as an empty bin while the `n/cap` on the shelf reads stocked.
+ *
+ * The three tones are the rack's own (`RACK_COLOURS`), because the bin and the
+ * rack are two ways of answering one question and a second palette for it would
+ * be a second language. Amber, never red, for the rack's reason: a length that
+ * disagrees is pressure, not a fault — nothing has gone wrong until the stick
+ * reaches the ramp.
+ */
+export function fuseBinOf(wants: FuseLength, banked: FuseLength[]): FuseBin {
+    const usable = wants === '' ? banked.length : banked.filter((l) => l === wants).length;
+
+    return {
+        wants,
+        tag: wants === '' ? ANY : wants.toUpperCase(),
+        tone: banked.length === 0 ? 'idle' : usable > 0 ? 'set' : 'warn',
+        banked: banked.length,
+        usable,
+    };
 }

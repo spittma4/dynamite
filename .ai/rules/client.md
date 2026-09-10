@@ -33,3 +33,12 @@
   (`/phaserjs/phaser`) for `Game`, `Scene`, `Graphics`, `Container`, `Text`, keyboard input —
   the scene/game-object API carried over — and check the Phaser 4 release notes for
   renderer/texture changes before relying on anything beyond those basics.
+
+## A sign a panel quotes is derived from the level, never a constant
+The floor's shelf signs are built by `shelfLabel('in', station.inputShelf.accepts, …)` out of the level
+JSON, so any sentence that quotes one reads the same level — `kegShelfSign(level)` in
+`render/dropTargets.ts`. A `KEGS_IN` constant built for `['keg']` was quoted by the help panel and the
+Slammer's hands panel; playtest N2 added `parts` to that shelf, the floor began painting
+`KEGS · FUSE SETS IN`, and both panels went on sending players to a sign that no longer exists. Pass the
+derived string in (`HelpFacts.assemblyShelf`, `handsLinesKeg(throwTiles, inSign)`) and assert the row
+against `shelfLabel(...)` rather than a literal, or the drift returns with the next `accepts` change.

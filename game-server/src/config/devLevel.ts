@@ -136,7 +136,7 @@ const DEV_LEVEL: LevelConfig = {
             inputShelf: {
                 tile: [11, 4],
                 capacity: 8,
-                accepts: ['keg', 'casing'],
+                accepts: ['keg', 'casing', 'parts'],
             },
             outputShelf: {
                 tile: [16, 4],

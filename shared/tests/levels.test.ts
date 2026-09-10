@@ -489,6 +489,20 @@ describe('every station on the shipped layout', () => {
         expect(stationOf(baseline, 'dock-a').joinMode).toBe('stand');
     });
 
+    /**
+     * N2: a fuse set is loaded into Assembly the way a keg is. The receptacle is
+     * the existing hopper with a third bin, so every shipped level — and the
+     * sandbox — has to accept `parts` or the machine advertises a channel that
+     * tile has no route for.
+     */
+    it.each(LEVEL_KEYS)('accepts kegs, casings and fuse sets at Assembly on %s', (key) => {
+        expect(stationOf(level(key), 'assembly-a').inputShelf?.accepts).toEqual([
+            'keg',
+            'casing',
+            'parts',
+        ]);
+    });
+
     it('gives the dock no shelves and Powder no input shelf', () => {
         const dock = stationOf(baseline, 'dock-a');
 

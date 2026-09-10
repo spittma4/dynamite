@@ -25,15 +25,32 @@ import { blockedTargets, dropTargets, producedBy, shelfLabel } from './dropTarge
 import { type Shortage, apron, outwardSide, shortageOf } from './intake';
 import {
     AUTO,
+    type FuseBin,
     type Hopper,
     type HopperBin,
     fillRows,
+    fuseBinOf,
     hopperOf,
     outlineOf,
     surfaceOf,
     throatOf,
 } from './hopper';
 import { RACK_COLOURS, rackBins, rackCaption, rackTileBox } from './fuseRack';
+import {
+    type MachineBody,
+    controlLip,
+    facePlate,
+    machineBody,
+    nameplate,
+    onMachine,
+} from './machine';
+import {
+    POST_LABEL,
+    POST_WIDTH,
+    type HelperPosts,
+    helperPosts,
+    postsAreLive,
+} from './helperPosts';
 import { type GlyphItem, drawItemGlyph } from './stationGlyphs';
 import { JIG_COLOURS, parseJigMg } from '../minigames/Jig';
 import type { Factory, FactoryConn } from '../scenes/Factory';
@@ -53,6 +70,20 @@ import type { Factory, FactoryConn } from '../scenes/Factory';
 const FOOTPRINT_ALPHA = 0.15;
 const MACHINE_EDGE_PX = 2;
 const TILE_INSET = 1;
+/** The corner radius on the nameplate, and the dot a bolt is drawn as. */
+const PLATE_RADIUS = 3;
+const BOLT_R = 1.5;
+const DIAL_R = 2;
+/** The length tag across the fuse bin's mouth, and how far below the lip it sits. */
+const FUSE_TAG_PX = 7;
+const FUSE_TAG_DROP = 4;
+/**
+ * Where a bin's name starts, measured down from its mouth. Clear of the length
+ * tag that crosses the mouth above it, and clear of the `n/cap` counter on the
+ * throat below — the counter is centred on the shelf tile, which is the keg
+ * funnel's own column, so a name centred in the bin landed on top of it.
+ */
+const BIN_NAME_GAP = 12;
 const OCCUPIED_ALPHA = 0.35;
 const RING_DASH = 5;
 const RING_GAP = 4;
@@ -74,6 +105,8 @@ const RACK_WRAP_PX = TILE_PX * 6;
 const PROGRESS_RADIUS = 24;
 const PROGRESS_WIDTH = 4;
 const PROGRESS_TRACK_ALPHA = 0.25;
+/** The word over the helper posts, at the size of the other floor legends. */
+const POST_PX = 8;
 const APRON_PITCH = 7;
 const APRON_INSET = 2;
 const CHEVRON_PX = 10;
@@ -106,6 +139,16 @@ export const APRON_LIT_ALPHA = 1;
 export const STATION_COLOURS = {
     machine: 0x50505c,
     machineEdge: 0x7a7a88,
+    /**
+     * The three tones that turn a grey rectangle into a body with a direction: the
+     * shadow along the front the crew works from, the recessed console on that
+     * face, and the plate the nameplate is bolted to. All of them are the
+     * machine's own grey, darker — a second hue on the body would be a second
+     * thing on the board, and the board already has enough marks on it.
+     */
+    shadow: 0x25252c,
+    console: 0x3f3f4a,
+    plate: 0x2c2c34,
     work: 0xffd400,
     rack: 0xff9a00,
     ring: 0x9a9a9a,
@@ -371,7 +414,12 @@ class StationSprite {
     private readonly apronTiles: Tile[];
     /** Which length the rack is set to, under the bins, for everyone not at it. */
     private readonly captionLabel: Phaser.GameObjects.Text | null;
+    /** The length tag across the fuse bin's mouth; `null` if the shelf takes none. */
+    private readonly fuseTag: Phaser.GameObjects.Text | null = null;
     private readonly intake: { aisle: Tile; toward: -1 | 1 } | null;
+    /** The tiles `E` joins as a helper from, and the one word over them (N4). */
+    private readonly posts: HelperPosts;
+    private postLabel: Phaser.GameObjects.Text | null = null;
     private readonly centre: { x: number; y: number };
     private readonly top: number;
     private painted = '';
@@ -448,24 +496,64 @@ class StationSprite {
             counter.setOrigin(0.5, 0);
             this.container.add(counter);
 
-            // A silo is fed by a pipe from inside the machine, so it says so.
-            // `haulableInputs` already keeps casings off the floor sign; this is
-            // the same fact in the silhouette, where a hauler will see it first.
+            // Every bin on an intake face is named down its own face. A silo says
+            // AUTO — it is fed by a pipe from inside the machine, and
+            // `haulableInputs` already keeps casings off the floor sign, so this
+            // is the same fact in the silhouette where a hauler sees it first. The
+            // rest say what they hold, because once a face carries two funnels the
+            // aisle sign naming both of them cannot say which column is which, and
+            // an empty bin has no glyph riding on it to give the game away.
             for (const bin of hopper.bins) {
-                if (!bin.selfStocked) continue;
+                const word = bin.selfStocked ? AUTO : bin.label;
 
-                const at = throatOf(bin);
-                const auto = text(scene, AUTO, AUTO_PX, hex(STATION_COLOURS.ring));
+                // An out chute's one bin holds whatever the machine makes, so it has
+                // no name of its own — the `STICKS OUT` caption on the face says it.
+                if (word === '') continue;
 
-                // Read down the silo. At 8 px across a 6.5 px bin the word ran
+                const size = bin.selfStocked ? AUTO_PX : BIN_NAME_PX;
+                const name = text(scene, word, size, hex(STATION_COLOURS.ring));
+
+                // Read down the bin. At 8 px across a 6.5 px silo the word ran
                 // over the keg funnel's mouth beside it and off the tile on the
                 // other side, so the one genuinely new fact the hoppers carry —
                 // do not go hunting for casings — was reading as a label on the
                 // funnel.
-                auto.setPosition(at.x, at.y);
-                auto.setOrigin(0.5, 0.5);
-                auto.setAngle(-90);
-                this.container.add(auto);
+                //
+                // AUTO keeps its throat, where it has always been read from. The
+                // rest hang from the mouth: the run grows downward from the anchor
+                // at -90°, so a long name reaches further into the bin instead of
+                // growing past both its ends, and nothing has to measure the text
+                // before Phaser has laid it out.
+                if (bin.selfStocked) {
+                    const at = throatOf(bin);
+
+                    name.setPosition(at.x, at.y);
+                    name.setOrigin(0.5, 0.5);
+                } else {
+                    name.setPosition((bin.box.x0 + bin.box.x1) / 2, bin.box.top + BIN_NAME_GAP);
+                    name.setOrigin(1, 0.5);
+                }
+
+                name.setAngle(-90);
+                this.container.add(name);
+            }
+
+            // The one fact a fuse bin needs that no other bin does: which length
+            // the machine will reach for. It sits across the bin's own mouth
+            // rather than beside the hopper, so it is read as a property of what
+            // is in there — `usableSetOnShelf` will not touch a set of any other
+            // length, and the shelf's `n/cap` cannot say that.
+            const fuseBox = hopper.bins.find((bin) => bin.type === 'parts')?.box;
+
+            if (fuseBox) {
+                this.fuseTag = text(scene, '', FUSE_TAG_PX, hex(RACK_COLOURS.idle), true);
+                this.fuseTag.setPosition(
+                    (fuseBox.x0 + fuseBox.x1) / 2,
+                    fuseBox.top + FUSE_TAG_DROP,
+                );
+                this.fuseTag.setOrigin(0.5, 0.5);
+                this.fuseTag.setVisible(false);
+                this.container.add(this.fuseTag);
             }
 
             // Grey boxes teach nothing: say what the shelf is for. The IN sign is
@@ -484,11 +572,18 @@ class StationSprite {
                 : text(scene, words, SIGN_PX, hex(STATION_COLOURS.counter), true);
 
             if (sign) {
+                // Ranged up against the machine's intake face rather than centred
+                // on the aisle tile. `shelfLabel` names every haulable type, and
+                // once `accepts` lists two of them — N2's fuse set beside the keg —
+                // the sign is four tiles wide: centred, it was painted straight
+                // across the hopper's own bins, which are the mouths it points at.
+                // Right-aligned it reads into them and stays on the floor.
                 label.setPosition(
-                    (sign.aisle[0] + 0.5) * TILE_PX,
+                    (sign.aisle[0] + (sign.toward > 0 ? 1 : 0)) * TILE_PX -
+                        sign.toward * COUNTER_GAP,
                     (sign.aisle[1] + SIGN_ROW) * TILE_PX,
                 );
-                label.setOrigin(0.5, 0.5);
+                label.setOrigin(sign.toward > 0 ? 1 : 0, 0.5);
             } else {
                 const outward = outwardSide(cfg, shelf.tile);
 
@@ -540,6 +635,16 @@ class StationSprite {
             this.captionLabel = null;
         }
 
+        this.posts = helperPosts(this.cfg);
+
+        if (this.posts.caption !== null) {
+            this.postLabel = text(scene, POST_LABEL, POST_PX, hex(STATION_COLOURS.work));
+            this.postLabel.setOrigin(0.5, 0.5);
+            this.postLabel.setAlpha(APRON_ALPHA);
+            this.postLabel.setPosition(this.posts.caption.x, this.posts.caption.y);
+            this.container.add(this.postLabel);
+        }
+
         this.paintStatics(bbox, machine);
     }
 
@@ -562,13 +667,19 @@ class StationSprite {
         const rack = rackState(jig);
         const glyphs = this.shelves.map((shelf) => ({ shelf, ...shelfContents(st, shelf, state) }));
         const inShelf = glyphs.find(({ shelf }) => shelf.kind === 'in');
+        const fuse = this.fuseTag
+            ? fuseBinOf(jig?.cradleWants ?? '', inShelf?.fuses ?? [])
+            : null;
         const shortage = this.shortage(inShelf, mg, handsFull);
         const label = stateLabel(st.state, shortage);
         const bubble = stationBubble(st, state.phase, copy, shortage, hasWorkFor(this.cfg, mg));
 
         // Full alpha for the thing in your hands, and for a machine stood waiting
-        // on something somebody could go and fetch — but not for a Jig waiting on
-        // a fuse, which comes off the rack and never crosses this shelf.
+        // on something somebody could go and fetch — the Jig waiting on a fuse set
+        // included, because since N2 the bin takes one and carrying it into the
+        // striped zone is an answer to that stop (`shortageOf` returns `haul: true`
+        // for it). It used to be the one exception, back when the only way a set
+        // reached the cradle was off the rack and across the aisle.
         const lit = wanted || (st.state === 'starved' && (shortage?.haul ?? false));
         const ring = st.state === 'working' ? Math.round(progressSweep(st.progress) * 64) : -1;
         const key = [
@@ -577,6 +688,10 @@ class StationSprite {
             bubble,
             lit ? 'lit' : '',
             `${rack.picked}~${rack.wanted}`,
+            // Nothing else on the key can see the fuse bin: two LONG sets and one
+            // of each are the same item types on the same shelf, and the tag is
+            // the difference between 'stocked' and 'stopped'.
+            fuse ? `${fuse.tag}${fuse.tone}${fuse.usable}/${fuse.banked}` : '',
             [...occupied].sort().join(' '),
             glyphs
                 .map(({ count, items }) =>
@@ -596,8 +711,11 @@ class StationSprite {
         if (lit) this.paintApron(this.dynamic, APRON_LIT_ALPHA);
 
         this.paintOccupied(occupied);
+        this.litPosts(postsAreLive(this.cfg, occupied));
 
         if (this.cfg.rackTiles.length > 0) this.paintRack(rack);
+
+        this.paintFuseTag(fuse);
 
         for (const { shelf, items, count } of glyphs) this.paintShelf(shelf, items, count);
 
@@ -657,6 +775,8 @@ class StationSprite {
         this.stateText.setVisible(false);
         this.bubbleText.setVisible(false);
         this.captionLabel?.setVisible(false);
+        this.fuseTag?.setVisible(false);
+        this.postLabel?.setAlpha(APRON_ALPHA);
 
         for (const shelf of this.shelves) shelf.counter.setVisible(false);
     }
@@ -675,19 +795,17 @@ class StationSprite {
             (bbox.y1 - bbox.y0 + 1) * TILE_PX,
         );
 
-        for (const [x, y] of machine) {
-            g.fillStyle(STATION_COLOURS.machine, 1);
-            g.fillRect(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX);
-            g.fillStyle(STATION_COLOURS.machineEdge, 1);
-            g.fillRect(x * TILE_PX, y * TILE_PX, TILE_PX, MACHINE_EDGE_PX);
-        }
-
+        this.paintBody(machine);
         this.outline(this.cfg.workTiles, STATION_COLOURS.work);
         this.outline(this.cfg.rackTiles, STATION_COLOURS.rack);
 
         for (const [x, y] of this.cfg.floorRing.tiles) this.dashedTile(x, y);
 
+        this.paintPosts(g, APRON_ALPHA);
+
         for (const shelf of this.shelves) {
+            this.paintFacePlate(g, shelf.hopper.bins);
+
             for (const bin of shelf.hopper.bins) this.paintBin(g, bin);
         }
 
@@ -697,6 +815,101 @@ class StationSprite {
         // shipped level the shelf tile is part of the machine block, and a zone
         // that stops at its edge is a one-tile zone again.
         this.paintApron(g, APRON_ALPHA);
+    }
+
+    /**
+     * The machine as one machine (N3). It used to be a fill and a 2 px highlight
+     * per tile, which is a tiled wall: Assembly came out as six boxes in a row
+     * with a word floating over the middle of them, and that is why the owner read
+     * the signage as bolted on rather than part of the thing.
+     *
+     * So the body is one silhouette — slabs by the row, a lit cowl where nothing
+     * stands above it, a shadowed plinth along the front, one stroke round the
+     * outside and no seams inside it — with a console on the face the crew work
+     * from and a bolted plate under its name. `render/machine.ts` works all of it
+     * out from the tile set, so the silhouette cannot disagree with the tiles a
+     * player cannot walk through.
+     */
+    private paintBody(machine: Tile[]): void {
+        const body = machineBody(machine);
+
+        if (!body) return;
+
+        const g = this.statics;
+
+        g.fillStyle(STATION_COLOURS.machine, 1);
+
+        for (const { x, y, w, h } of body.slabs) g.fillRect(x, y, w, h);
+
+        g.fillStyle(STATION_COLOURS.machineEdge, 1);
+
+        for (const { x, y, w, h } of body.cowl) g.fillRect(x, y, w, h);
+
+        g.fillStyle(STATION_COLOURS.shadow, 1);
+
+        for (const { x, y, w, h } of body.plinth) g.fillRect(x, y, w, h);
+
+        this.paintConsole(body);
+
+        g.lineStyle(MACHINE_EDGE_PX, STATION_COLOURS.machineEdge, 1);
+
+        for (const { x1, y1, x2, y2 } of body.outline) g.lineBetween(x1, y1, x2, y2);
+
+        // Only where there is machine under it. `machineCentre` is the mean of the
+        // tiles, and the Dock's block is a wall stub either side of the truck bay —
+        // so its mean is the middle of the empty bay and the plate came out bolted
+        // to bare floor with the ramp lanes under it. The name itself still goes
+        // where it always has; it is the plate that needs something to be on.
+        if (onMachine(body, this.centre)) this.paintNameplate();
+    }
+
+    /** The recessed panel on the working face, with dials a player can read. */
+    private paintConsole(body: MachineBody): void {
+        const lip = controlLip(body, this.cfg.workTiles);
+
+        if (!lip) return;
+
+        const g = this.statics;
+
+        g.fillStyle(STATION_COLOURS.console, 1);
+        g.fillRect(lip.band.x, lip.band.y, lip.band.w, lip.band.h);
+        g.fillStyle(STATION_COLOURS.machineEdge, 1);
+
+        for (const dial of lip.dials) g.fillCircle(dial.x, dial.y, DIAL_R);
+    }
+
+    /**
+     * The plate the station's name is bolted to. The name is drawn by
+     * `this.nameLabel`, which the container holds above the statics, so the plate
+     * only has to land under it — same centre, sized off the same string.
+     */
+    private paintNameplate(): void {
+        const g = this.statics;
+        const { plate, bolts } = nameplate(this.centre, this.nameLabel.text.length, LABEL_PX);
+
+        g.fillStyle(STATION_COLOURS.plate, 1);
+        g.fillRoundedRect(plate.x, plate.y, plate.w, plate.h, PLATE_RADIUS);
+        g.lineStyle(1, STATION_COLOURS.machineEdge, 1);
+        g.strokeRoundedRect(plate.x, plate.y, plate.w, plate.h, PLATE_RADIUS);
+        g.fillStyle(STATION_COLOURS.machineEdge, 1);
+
+        for (const bolt of bolts) g.fillCircle(bolt.x, bolt.y, BOLT_R);
+    }
+
+    /**
+     * The opening the bins are bolted into. Without it the hopper stood on the
+     * shelf tile looking like furniture parked in front of the machine; framed,
+     * the funnels read as mouths cut into its intake side.
+     */
+    private paintFacePlate(g: Phaser.GameObjects.Graphics, bins: HopperBin[]): void {
+        const plate = facePlate(bins.map((bin) => bin.box));
+
+        if (!plate) return;
+
+        g.fillStyle(STATION_COLOURS.shadow, 1);
+        g.fillRect(plate.x, plate.y, plate.w, plate.h);
+        g.lineStyle(1, STATION_COLOURS.machineEdge, 1);
+        g.strokeRect(plate.x, plate.y, plate.w, plate.h);
     }
 
     /**
@@ -725,6 +938,30 @@ class StationSprite {
 
         g.lineBetween(tail.x, tail.y, tip.x, tip.y);
         g.lineBetween(tip.x, tip.y, head.x, head.y);
+    }
+
+    /**
+     * The stand-here brackets on the helper posts (N4). Yellow, because a post is
+     * a post and the work tile is already yellow — the shape is what says which
+     * kind. The ring keeps its grey dashes: it is also F10's fuel apron, and that
+     * is the mark the DANGER stripes are hung off.
+     */
+    private paintPosts(g: Phaser.GameObjects.Graphics, alpha: number): void {
+        g.lineStyle(POST_WIDTH, STATION_COLOURS.work, alpha);
+
+        for (const seg of this.posts.brackets) g.lineBetween(seg.x1, seg.y1, seg.x2, seg.y2);
+    }
+
+    /**
+     * A post only answers `E` once every work tile is taken (`fullyManned` on the
+     * server), so the brackets come up to full and the word with them at exactly
+     * that moment. The rule is legible without a panel: the floor lights up when
+     * the machine has room for another pair of hands.
+     */
+    private litPosts(live: boolean): void {
+        this.postLabel?.setAlpha(live ? APRON_LIT_ALPHA : APRON_ALPHA);
+
+        if (live) this.paintPosts(this.dynamic, APRON_LIT_ALPHA);
     }
 
     private outline(tiles: Tile[], colour: number): void {
@@ -967,6 +1204,24 @@ class StationSprite {
         }
     }
 
+    /**
+     * The length tag on the fuse bin, in the rack's own three voices: the bin and
+     * the rack are two ways of answering one question and a second palette for it
+     * would be a second language. Amber, never red, for the rack's reason — a
+     * length that disagrees is pressure, not a fault, and nothing has gone wrong
+     * until the stick reaches the ramp and the Dock bonks it.
+     */
+    private paintFuseTag(fuse: FuseBin | null): void {
+        if (!this.fuseTag) return;
+
+        this.fuseTag.setVisible(fuse !== null);
+
+        if (!fuse) return;
+
+        this.fuseTag.setText(fuse.tag);
+        this.fuseTag.setColor(hex(RACK_COLOURS[fuse.tone]));
+    }
+
     private paintProgress(progress: number): void {
         const g = this.dynamic;
         const start = -Math.PI / 2;
@@ -1094,17 +1349,25 @@ function shelfContents(
     st: StationState,
     shelf: ShelfBox,
     state: FactoryState,
-): { count: number; items: GlyphItem[] } {
+): { count: number; items: GlyphItem[]; fuses: FuseLength[] } {
     const ids = shelf.kind === 'in' ? st.inputShelf : st.outputShelf;
     const items: GlyphItem[] = [];
+    // The lengths of the sets banked in the fuse bin. A glyph does not carry one
+    // — nothing on the board tells a SHORT set from a LONG one at 12 px — and the
+    // bin's tag is the only place the difference is said out loud.
+    const fuses: FuseLength[] = [];
 
     ids.forEach((id) => {
         const item = state.items.get(id);
 
-        if (item) items.push({ type: item.type, quality: item.quality, prime: item.prime });
+        if (!item) return;
+
+        items.push({ type: item.type, quality: item.quality, prime: item.prime });
+
+        if (item.type === 'parts') fuses.push(item.fuseLength as FuseLength);
     });
 
-    return { count: ids.length, items };
+    return { count: ids.length, items, fuses };
 }
 
 class StationsLayer {

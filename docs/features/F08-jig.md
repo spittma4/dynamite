@@ -32,12 +32,21 @@ station, visibly slower, by walking to the rack for parts and carrying them back
   a `crimpOnDented` roll on a dented casing through F10).
 - PRIME STICK: clean seat + Perfect pour from a 1.0 keg + all knots Perfect + Perfect crimp →
   `fx chime`, station-local brass flash, `grooveEvents.primeSticks++`, `ItemState.prime = true`.
-- B: `pick` short/long, `fetch` (0.6 s) creating a carried `parts` item, `swing` (arc 0.5 s), `toss`
+- B: `pick` short/long, `fetch` (0.6 s) creating a carried `parts` item, `stock` (bank the set in hand
+  on the input shelf, no timing), `swing` (arc 0.5 s), `toss`
   judged ±120/±250 ms: Perfect → cradle armed; OK → jig surface, 0.5 s tax; miss → `parts` floor item on
   the aisle tile that blocks the next swing until hauled. Full cradle bounces the set. A body in the
   aisle takes the hit.
 - Solo / hauler path: a player *standing* on a jig work tile (not joined — a `press` station refuses a
   join with full hands) while carrying a `parts` item arms an empty cradle; there is no toss-to-self.
+- The fuse receptacle (N2): `assembly-a.inputShelf.accepts` includes `parts`, so a set is loaded into
+  the machine the way a keg is — face the hopper, press `E`. While the phrase stands in PARTS with an
+  empty cradle and an A on the tile, the jig reaches into its own bin for the set whose `fuseLength`
+  matches the seated order (lowest shelf index first) and arms the cradle `'surface'`, paying the same
+  0.5 s bench tax an OK toss pays. A bin holding only the wrong length is left alone and the machine
+  says so (`cradleWants`) rather than spending A's pour on a stick the Dock will bonk. B banks a set
+  with `stock`. The relay is untouched: a Perfect toss still arms instantly, which is the only
+  zero-latency channel there is.
 - Kegs hold `recipes.keg.output.pours` pours; the jig tracks `poursLeft`; an empty keg is destroyed.
 - Bail (Esc, `E`, disconnect, F10 ejection): mid-pour spill, mid-knots the part set is discarded,
   mid-crimp the stick pops off with a loose cap through F06's drop table.
@@ -49,7 +58,11 @@ station, visibly slower, by walking to the rack for parts and carrying them back
 
 **Out (later milestones):**
 - Colour on casings and the DIE/colour beat; dents made by Casing Prep (M2 — Stamp & Crimp). M1 casings
-  are red; `ItemState.dents` is drawn whatever its source.
+  are one colour, and since N1 it is `GLYPH_COLOURS.casing` (waxed card) on the picker as well as on
+  the floor and in the hopper — the chip used to be 0xd62828, which is `LINE_COLOURS.a` and 1.17:1
+  against `JIG_COLOURS.miss`, so the material was painted the colour of failure. `ItemState.dents` is
+  drawn whatever its source, as a dimple rather than a dot, and the chips now carry a `CASINGS` label
+  that names the dent's cost (`casingsLabel`) — "Idk what the three red squares indicated tbh".
 - Churn's ±100 ms knot delay (M2 — Groove/Churn).
 - Mega Boom (2 pours, cycle ×1.6) and the `cycleMultiplier` recipe key (M2 — product attributes).
 - Second Jig / Parts Rack upgrades, 4-tile jigs (M4).
@@ -80,7 +93,7 @@ From the contracts (§3, §4, §7, §8, §13):
   `ItemState.{id, type, x, y, holder, shelf, quality, prime, dents, fuseLength, fill, capLoose, frayed, orderId}`;
   `OrderState.{id, status, fuseLength}`.
 - `mg` message `{ stationId, op, t, v? }` with the assembly ops `seat` (`v` = shelf index), `pour`,
-  `knot` (`v` `'l'|'r'`), `crimp`, `pick` (`v` `'short'|'long'`), `fetch`, `swing`, `toss`. Every `t` is
+  `knot` (`v` `'l'|'r'`), `crimp`, `pick` (`v` `'short'|'long'`), `fetch`, `stock`, `swing`, `toss`. Every `t` is
   the client's `performance.now()` ms and reaches server seconds only through `world.inputClock`.
 - `fx` kinds `'chime'` (PRIME STICK) and `'bonk'` (cradle bounce). No other fx: knot zips, the toss
   *tink* and the *chunk* of an ordinary stick are played client-side from `mg.last`.
@@ -185,13 +198,14 @@ export interface JigMg {                                       // StationState.m
   phase: JigPhase; bpm: number;
   beatStartAt: number;                                         // clock second of the current phase's first beat
   rearmFrom: number; rearmAt: number;                          // the re-arm bar's ends (clock seconds)
-  seated: { dents: number; colour: 'red'; orderId: string } | null;
+  seated: { dents: number; colour: 'red'; orderId: string; fuseLength: FuseLength } | null;
   fill: number;                                                // 0 until the pour resolves, then 0.6 | 1.0 | 1.2
   pour: { startAt: number; targetAt: number; beats: number; primeKeg: boolean } | null;
   keg: { quality: number; prime: boolean; poursLeft: number } | null;
   lanes: JigLane[]; knotAt: number[]; knotIndex: number; knotGrades: JigGrade[];
   crimpClickAt: number[];                                      // three clock-second times
   cradle: JigCradle; cradleFuse: FuseLength | ''; surfaceReadyAt: number;
+  cradleWants: FuseLength;                                     // the fuse the seated order asks for; '' = no preference
   bPhase: JigBPhase; bPick: FuseLength; bFetchDoneAt: number; swingStartAt: number;
   aisleBlocked: boolean;
   orderChip: { orderId: string; fuseLength: FuseLength }[];     // next two 'open' orders
@@ -210,7 +224,7 @@ export interface JigTickView {
   cycleIdle: boolean;                                          // ctx.phase === 'idle' — what ctx.beginCycle() tests
   rearmAt: number;                                             // ctx.rearmAt
   operators: string[]; rackHands: string[];                    // sessionIds, earliest Member.joinedAt first
-  shelf: { index: number; itemId: string; type: ItemType; dents: number; quality: number; prime: boolean }[];
+  shelf: { index: number; itemId: string; type: ItemType; dents: number; quality: number; prime: boolean; fuseLength: FuseLength }[];
   casingCount: number; shelfRoom: number;                      // feeder inputs (inputCap − inputShelf.length)
   activeOrderId: string;                                       // orders.activeOrderId(world)
   orders: { orderId: string; fuseLength: FuseLength }[];        // status 'open', lowest-numbered first
@@ -235,6 +249,7 @@ export type JigEffect =
   | { e: 'stockCasing'; dents: number }                        // items.createItem('casing', { dents }) + items.shelfPush(…, 'in', item)
   | { e: 'createParts'; fuseLength: FuseLength; sessionId: string }   // items.createItem('parts', { fuseLength }) + items.giveToPlayer
   | { e: 'partsToFloor'; itemId: string; tile: Tile }          // items.placeNear
+  | { e: 'shelfParts'; itemId: string }                        // items.shelfPush(…, 'in', item); false → ctx.fx('bonk') and the set stays in B's hands
   | { e: 'complete'; item: JigStickInit; perfect: boolean; handsOf: string }   // ctx.complete({ item: OutputSpec, perfect })
   | { e: 'dropStick'; item: JigStickInit; origin: Tile; culpritId: string }    // items.createItem + items.dropItem + ctx.abort()
   | { e: 'abort' }                                             // ctx.abort()
@@ -299,7 +314,7 @@ already has §13's default applied by `validateLevelConfig`):
 | `minigame.casings` | `{ stock: 3, dentChance: 0.3 }` (§13 default; level files may omit it) | the feeder's target casing count and dent probability |
 | `recipes.keg.output.pours` | 2 | `keg.poursLeft` when a keg is taken |
 | `workTiles` / `rackTiles` | from the level (`mvp-small`: `[[13,8],[14,8]]` / `[[16,8]]`) | jig tiles / rack tile; `tiles.aisle = deriveAisleTile(rackTiles[0], nearest jig tile)` = `[15,8]` on that map |
-| `inputShelf.capacity`, `accepts` | 8, `["keg","casing"]` | the seat picker draws only casings; the first keg by shelf index is the next pour source; the feeder tops casings up to `casings.stock` while the shelf has room |
+| `inputShelf.capacity`, `accepts` | 8, `["keg","casing","parts"]` | the seat picker draws only casings; the first keg by shelf index is the next pour source; a banked `parts` set is the receptacle's stock, reached for in PARTS; the feeder tops casings up to `casings.stock` while the shelf has room — all three types share the one capacity, so banked sets can clog the keg supply |
 | `outputShelf.capacity` | 4 | `ctx.complete` shelves the stick when there is room, else it lands in A's hands |
 | `hazards.sparks.crimpOnDented` | 0.3 | rolled by F08 with `world.rng.next()` before `hazards.sparkRing` |
 | `groove.weights.primeStick` | (F12's baseline) | the size of the PRIME STICK Groove impulse; F11 applies it from `grooveEvents.primeSticks` |
@@ -353,8 +368,31 @@ tile).**
 the solo player never *join* while carrying: `view.partsOnJigTile` is the first player **standing** on a
 jig work tile (`world.playersAt`) whose carried item is a `parts` item. When `cradle === 'empty'` and
 that player exists: `cradle = 'armed'`, `cradleFuse = their fuseLength`, effect `destroyItem(itemId)`.
-With a full cradle they keep carrying and the rule fires when it empties. This is the only way parts
-reach the cradle other than B's toss; there is no toss-to-self.
+With a full cradle they keep carrying and the rule fires when it empties. It is unconditional on fuse
+length: a hauler who insists on loading a mismatch by hand is a player-caused consequence.
+
+**Cradle from the shelf — the receptacle (every tick, after *cradle from hands*, before B).** Accepted
+only while `phase === 'parts'` ∧ `cradle === 'empty'` ∧ `a !== ''` ∧ `bPhase === 'idle'`. `wantedFuse` is
+`seated.fuseLength` — captured at the seat, not looked up — else `view.orders[0]?.fuseLength`, else `''`
+(`''` means the seat had no order behind it and any set will do). It is captured because `view.orders` is
+the **open** book: `settleOrder` stamps the seated order the moment its truck pulls off, so a length
+re-derived from that list flipped under a stick already in the jig, the machine consumed the wrong-length
+set and skipped the matching one, and the Dock bonked WRONG FUSE three stations later.
+
+The `bPhase === 'idle'` guard defends the relay, and it covers `fetching` and `holding` as well as a
+swing in the air: B's panel says HOLD SPACE TO SWING with no timing cue, so a B who waits for A to reach
+PARTS is doing what the screen says — and with a stocked bin the machine used to reach in on that very
+tick and bounce their on-time Perfect into the aisle. While a set is in a B's hands the relay owns the
+arm; the bin is the lone player's and the hauler's path. Take the lowest-`index` `parts` entry on `view.shelf` whose
+`fuseLength` matches, and arm `cradle = 'surface'`, `cradleFuse = entry.fuseLength`,
+`surfaceReadyAt = now + 0.5`; effects `consume(itemId)` then `destroyItem(itemId)`, exactly as `seat`
+spends a casing. Nothing matches → the cradle stays empty, the bin is left alone and `cradleWants` says
+what the machine is holding out for. The `phase === 'parts'` guard is load-bearing: arming whenever the
+cradle is empty would keep it permanently full, bounce every one of B's tosses and turn the relay into a
+debris generator.
+
+`cradleWants = wantedFuse` is published every tick so the hopper bin, the floor sign and the A panel all
+read one authoritative value instead of re-deriving it from `orderChip`.
 
 **A — SEAT** (`op: 'seat'`, `v` = index into `station.inputShelf`), accepted only when: `phase === 'seat'`,
 `view.cycleIdle`, `now ≥ view.rearmAt`, not paused, `view.aCarrying === ''` (hands full → the picker says
@@ -365,7 +403,8 @@ re-renders from state).
    `phase = 'seat'` and drops the remaining effects (nothing has been consumed yet).
 2. `casingItemId = shelf[v].itemId`; effect `consume(casingItemId)` then `destroyItem(casingItemId)` —
    the casing now lives in the jig and re-emerges as the stick. `seated = { dents, colour: 'red',
-   orderId: view.activeOrderId }` (F09's lowest-numbered open order; `''` when none is open).
+   orderId: view.activeOrderId, fuseLength }` (F09's lowest-numbered open order, `''` when none is open;
+   `fuseLength` is that order's own, read out of `view.orders` here and never looked up again).
 3. `aTile` = A's `workTile`. → *POUR*.
 
 **A — POUR.**
@@ -453,9 +492,15 @@ Worked cycle (prime keg, long fuse, B Perfect, 2 workers): SEAT at 100.13 → po
    `bFetchDoneAt = now + 0.6`. When `now ≥ bFetchDoneAt` (tick): effect `createParts(bPick, b)` (F06
    creates `p-<n>` with `fuseLength` and `giveToPlayer` sets `PlayerState.carrying`),
    `bPhase = 'holding'`.
-3. `op: 'swing'`: accepted only in `holding` and when `!view.aisleFloorItem` (a blocked aisle refuses the
+3. `op: 'stock'`: accepted only in `holding` with a set really in B's hands. No timing and no judgement:
+   `bPhase = 'idle'`, effect `shelfParts(p)`. The adapter pushes it onto the input shelf; a shelf at
+   capacity fx `bonk` at the shelf tile and the set stays in B's hands, which the next tick reads back as
+   `holding`. This is the slow, safe channel — the only one that can fill the receptacle, because
+   `createParts` is the only producer of a `parts` item and only B can trigger it. It costs Groove:
+   parked sets raise `shelfFullness`, which is the point.
+4. `op: 'swing'`: accepted only in `holding` and when `!view.aisleFloorItem` (a blocked aisle refuses the
    swing; `aisleBlocked` is shown so B hauls or waits). `bPhase = 'swinging'`, `swingStartAt = at`.
-4. `op: 'toss'` (or the swing closing unreleased at
+5. `op: 'toss'` (or the swing closing unreleased at
    `swingStartAt + arcSeconds + okMs/1000 + MAX_INPUT_BACKDATE_S` = 0.95 s): let `p` be B's carried parts
    item and `offset = (at − (swingStartAt + cfg.toss.arcSeconds)) × 1000`. In order:
    - `view.bodyOnAisle !== ''` → effects `partsToFloor(p, aisle)` and `bubble(bodyOnAisle)`,
@@ -466,11 +511,11 @@ Worked cycle (prime keg, long fuse, B Perfect, 2 workers): SEAT at 100.13 → po
      effect `destroyItem(p)`; OK → `cradle = 'surface'`, `cradleFuse`, `surfaceReadyAt = now + 0.5`,
      effect `destroyItem(p)`; miss → effect `partsToFloor(p, aisle)`, note `early`/`late`.
    - `bPhase = 'idle'`, set `last` with `who: 'b'`.
-5. `aisleBlocked = view.aisleFloorItem` every tick: any floor item on `tiles.aisle` blocks (a keg dropped
+6. `aisleBlocked = view.aisleFloorItem` every tick: any floor item on `tiles.aisle` blocks (a keg dropped
    there is the same clutter). `partsToFloor` is `items.placeNear`, so a set thrown at an occupied aisle
    tile lands beside it rather than vanishing. Hauling is F06's generic pick-up; carrying the set onto a
    jig work tile arms the cradle by the *cradle from hands* rule.
-6. Toss-on-the-crimp is cadence, not a rule: nothing couples the toss judgement to A's clicks.
+7. Toss-on-the-crimp is cadence, not a rule: nothing couples the toss judgement to A's clicks.
 
 **Bail** (`{ t: 'leave' }` for A — Esc, `E`, disconnect or an F10 ejection), by phase:
 - `seat`: nothing.
@@ -504,7 +549,12 @@ and no mark has moved.
 **Station state and progress** (`stationStatus(state, view)`, returned from `status(ctx)`; F05 writes it
 verbatim unless the station is `jammed` or `damaged`, which F05/F10 own): `starved` when
 (`phase === 'seat'` ∧ `a !== ''` ∧ `now ≥ rearmAt` ∧ (no casing on the shelf ∨ no pour available)) ∨
-(`phase === 'pour'` ∧ `pour === null`) ∨ (`phase === 'parts'` ∧ `cradle === 'empty'`); `working` when
+(`phase === 'pour'` ∧ `pour === null`) ∨ (`phase === 'parts'` ∧ `cradle === 'empty'` ∧ (`a === ''` ∨ no
+usable set on the shelf) — a machine holding its own material is not starved, and without that clause the
+tick that enters PARTS reports one 50 ms frame of red before the next tick arms it, while without the
+`a === ''` half an abandoned fuse wait read `working` at progress 0.5 for the rest of the shift: `bail()`
+has no `parts` branch and `takeFromShelf` needs an operator, so nothing there will ever move again);
+`working` when
 `phase !== 'seat'` ∨ `now < rearmAt`; else `idle`. `progress`: `seat` →
 `clamp((now − rearmFrom) / max(rearmAt − rearmFrom, 0.001), 0, 1)` while re-arming, else 0; `pour` →
 `0.25 + 0.25 × min(fillAt(now), 1)`; `parts` → 0.5; `knots` → `0.5 + 0.25 × knotIndex / n`; `crimp` →
@@ -558,8 +608,10 @@ panel, the B panel or a read-only spectator panel from `mg.a` / `mg.b` / `ctx.se
   sweeping rack → jig over `arcSeconds` from `swingStartAt`, a `FULL` badge when `cradle !== 'empty'` and
   an `AISLE BLOCKED` badge when `aisleBlocked`. Keys: `space` or `up` down → `fetch` when
   `bPhase === 'idle'`, `swing` when `holding`; while the key stays down and `bPhase` becomes `holding`,
-  send `swing` immediately; the same key up → `toss` when `swinging`. `repeat` events are consumed and
-  send nothing.
+  send `swing` immediately; the same key up → `toss` when `swinging`; `down` → `stock` when `holding`
+  (`bStockOp`), which is the bin's only supply route and is named in the legend and in the `holding`
+  state line. `down` is consumed whether or not a set is in hand, so it never falls through to the floor
+  and walks B off the rack tile. `repeat` events are consumed and send nothing.
 - *World view (`JigWorldFx.ts`, `jigView`, every client).* One `StationView` per assembly station,
   created by F04's `Factory.create()` and updated every frame: while `bPhase === 'swinging'`, a parabola
   from the rack tile to the nearest jig tile with a spool sprite at
@@ -661,6 +713,20 @@ Unit (`shared/tests/jig.test.ts`, vitest, a stub `rng` and hand-built `JigTickVi
   leaves mid-swing keeps the set and returns to idle.
 - cradle from hands: a player standing on a jig tile carrying parts arms an empty cradle · they keep
   carrying while the cradle is full and arm it when it empties.
+- cradle from the receptacle (N2): a matching set in the bin arms `surface` with the 0.5 s tax and emits
+  `consume` then `destroyItem` · the tax expiring ties the knots on that set's length · a set of the
+  wrong length is left in the bin and `cradleWants` names what is wanted · it drains the lowest shelf
+  index first, skipping lengths it cannot use · it takes any set on a day with no open order · it never
+  reaches outside the parts phase, so B always has somewhere to toss · it yields to a swing in flight ·
+  it holds the arm while B merely *has* a set (fetching or holding), so B's on-time toss still grades ·
+  hands beat the bin · it takes nothing into an unstaffed machine · it leaves the bin alone while the
+  cradle already holds a set · it keeps the length its stick was seated under when that order settles
+  mid-phrase · it does not read starved while a usable set sits in the hopper, does read starved when only
+  the wrong length is there, and reads starved once A walks off mid-parts whatever the bin holds · banked
+  sets that fill the shelf stop the casing feeder (the three-way contention on one `capacity`).
+- B banking (`op: 'stock'`): it emits `shelfParts` from `holding` and returns to idle · it refuses with
+  nothing in hand · it refuses mid-fetch · a shelf that refused the set returns B to holding · it is
+  refused from A.
 - roles: the earliest-joined work member is A · the next work member is promoted when A leaves · inputs
   from a helper are ignored · inputs from a stranger are ignored.
 - bail: leaving mid-pour spills, destroys the keg and keeps the casing seated · leaving in parts loses
@@ -728,6 +794,19 @@ join options `{ name, factoryId }`, two browsers, `data-debug=1`):
       sprite, PRIME STICK flash) and the `assembly` entry in F04's `stationViews`; `events.primeStick`
       added to `config/game/copy.json`. Verified in the app from a second browser.
 - [ ] 11. In-app verification steps 1–8 with screenshots; tick the status boxes.
+- [x] 12a. The fuse receptacle (N2), sim and config: `JigShelfEntry.fuseLength`, `JigMg.cradleWants`,
+      `takeFromShelf` with `wantedFuse`/`usableSetOnShelf`, the `stock` op and the `shelfParts` effect,
+      `assembly-a.inputShelf.accepts` + `parts` on every shipped level and the dev level; tests in
+      `game-server/tests/minigames/jig.test.ts` and `shared/tests/levels.test.ts`. Contracts §4/§7
+      amended for `MgOp: 'stock'`.
+- [ ] 12b. The receptacle's client half — code and tests done, the in-app check outstanding: the third
+      hopper bin and its amber wrong-length state, the split parts sentences in `render/intake.ts`,
+      the reworded `RACK_STAKE`, the `down` → `stock` binding
+      (`bStockOp`) with its legend and `holding` state line, and the two sentences that hardcoded
+      `KEGS IN` — both now read `kegShelfSign(level)` off the level's own shelf
+      (`ui/helpContent.ts` through `HelpFacts`, `minigames/Slammer.ts` through `handsLinesKeg`). The help
+      panel's FLOW rows no longer claim a keg is the only thing carried to Assembly. Still to verify in
+      the app.
 
 ## Risks & open questions
 

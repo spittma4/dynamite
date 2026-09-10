@@ -1,4 +1,4 @@
-import { LEVEL_DEFAULTS, pushOutOfSolid, stepPosition } from '../shared';
+import { LEVEL_DEFAULTS, pinnedToPost, pushOutOfSolid, stepPosition } from '../shared';
 import type { Axis, Facing, MovementConfig, PlayerState, SolidFn } from '../shared';
 import type { PlayerRuntime, System, World } from './World';
 
@@ -28,10 +28,18 @@ function movementOf(world: World): MovementConfig {
     return world.level.movement ?? LEVEL_DEFAULTS.movement;
 }
 
+/**
+ * Whether the player is pinned to a post. The rule itself is shared
+ * (`pinnedToPost`) because the client predicts against it: a helper has no post —
+ * `join` leaves `workTile` empty for them (contracts §10.2) — and freezing a body
+ * with no gesture is N4's "get stuck", a square rubber-banding against a server
+ * that had quietly taken its legs. Walking off the post is how a helper leaves,
+ * and `stations.syncHelpers` reads the feet to notice.
+ */
 function pressed(world: World, player: PlayerState): boolean {
     if (player.stationId === '') return false;
 
-    return world.stationConfig(player.stationId).joinMode === 'press';
+    return pinnedToPost(player, world.stationConfig(player.stationId));
 }
 
 /** The unit vector rounded onto the eight compass signs; `-0` is not an `Axis`. */

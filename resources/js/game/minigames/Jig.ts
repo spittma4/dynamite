@@ -36,7 +36,7 @@ import {
 } from '../nouns';
 import { KEGS_OUT, pluralOf, producedBy, shelfLabel } from '../render/dropTargets';
 import { RACK_COLOURS, rackBins, rackCaption } from '../render/fuseRack';
-import { KEG_WORD, kegLook } from '../render/stationGlyphs';
+import { GLYPH_COLOURS, KEG_WORD, kegLook } from '../render/stationGlyphs';
 import type { Factory } from '../scenes/Factory';
 import type { MinigameOverlay, OverlayContext, OverlayFactory, OverlayKey } from './types';
 
@@ -85,11 +85,53 @@ export const JIG_COLOURS = {
     needle: 0x7fd3ff,
     fill: 0xb8862b,
     overfill: 0xd9463d,
-    casing: 0xd62828,
-    dent: 0x101014,
+    /**
+     * N1: "Idk what the three red squares indicated tbh." It was 0xd62828 — which
+     * is `LINE_COLOURS.a`, this floor's own red — against a `miss` of 0xd9463d.
+     * 1.17:1 apart, and 1.14:1 to a deuteranope: the material a player is about to
+     * pick was painted the colour of failure, a chip's width from the judged mark
+     * that uses the other one.
+     *
+     * So it is the colour a casing already is everywhere else a player sees one —
+     * the floor glyph and the hopper both draw `GLYPH_COLOURS.casing`, waxed card.
+     * Imported rather than copied: one material, one colour, one place to repaint
+     * it. 10.56:1 off the panel it sits on (the old red managed 3.79) and 2.39:1
+     * off the alarm, with the hue and the saturation pulling the same way — under
+     * both dichromat simulations the card stays pale while the alarm darkens.
+     */
+    casing: GLYPH_COLOURS.casing,
+    /**
+     * A dent, as a shadow in the card. It used to be 0x101014, which is the
+     * panel's own background — a dot the exact colour of the hole behind the chip,
+     * on a chip that was the colour of a miss, meaning nothing the player was
+     * ever told. `ink` below is where that near-black went: it was doing a second
+     * job as dark text on a lit rack bin, and changing one should not move the
+     * other.
+     */
+    dent: 0x5b4a3a,
+    /** Near-black for text on a lit surface — the picked rack bin's own gold. */
+    ink: 0x101014,
     keg: 0x8a6a3a,
     prime: 0xf5c542,
-    parts: 0xc8a951,
+    /**
+     * The fuse set, in the one colour a fuse set is everywhere else — the floor
+     * glyph and the hopper bin both draw `GLYPH_COLOURS.parts`, galvanised slate.
+     * It was 0xc8a951, a muted gold, which put the two *materials* a player compares
+     * on this machine 1.26:1 apart (1.13:1 under deuteranopia simulation): less
+     * separable than the casing and the alarm. `.ai/rules/minigames.md` is the rule
+     * it broke — an item's colour is imported, never re-typed in a panel.
+     *
+     * Slate against waxed card is still only 1.40:1, because both are mid-tone; the
+     * pair is guarded in `Jig.test.ts` so it cannot collapse further, and separating
+     * them properly is a change to `GLYPH_COLOURS.parts`, which the floor glyph and
+     * the hopper bin would move with.
+     */
+    parts: GLYPH_COLOURS.parts,
+    /**
+     * The gold that is left: the rack bin B has *picked*, which is a state and not a
+     * material. `ink` is the near-black written on top of it.
+     */
+    picked: 0xc8a951,
     brass: 0xf5d67a,
     label: 0xbbbbbb,
     dim: 0x6a6a78,
@@ -207,6 +249,35 @@ export function readShelf(
 
 export function casingDings(dents: number): number {
     return Math.max(0, Math.min(MAX_DINGS, Math.floor(dents)));
+}
+
+/**
+ * What the chips are. The `KEG` gauge beside them has been named all along, and
+ * the name comes from `pluralOf` rather than a literal so the panel cannot drift
+ * from the shelf sign and the floor paint that use the same word.
+ */
+export const CASINGS_LABEL = pluralOf('casing');
+
+/**
+ * What a dent costs, in the four words the picker has room for. `isPrimeStick`
+ * refuses on `dents > 0` before it looks at a single grade, so a dented casing is
+ * a cycle that cannot be won however well it is played — and the player had no
+ * way at all to know that the dot was the reason.
+ *
+ * 'PERFECT' is the word the help panel already uses for it ("Dented ones can never
+ * be perfect"), rather than a fifth name for the gold outcome.
+ */
+export const DENT_NOTE = 'DENTED · NEVER PERFECT';
+
+/**
+ * The chips' name, carrying the dent warning only while a dented chip is on the
+ * shelf. One label rather than two: a second line under the chips would land on
+ * `pickerBlock`'s sentence, and a warning that is always on is never read.
+ */
+export function casingsLabel(chips: readonly { dents: number }[]): string {
+    const dented = chips.some((chip) => casingDings(chip.dents) > 0);
+
+    return dented ? `${CASINGS_LABEL} · ${DENT_NOTE}` : CASINGS_LABEL;
 }
 
 /** The cursor is sticky between cycles, so it is clamped to whatever is left. */
@@ -514,6 +585,21 @@ export function laneFor(key: OverlayKey): JigLane | null {
     if (key === 'right') return 'r';
 
     return null;
+}
+
+/**
+ * B's other key, and the bin's only regular supply: `createParts` hands the set to
+ * `state.b`, so B is the one producer of a fuse set and nothing else can fill the
+ * hopper N2 added. Until this existed the `stock` op was on the wire, in the
+ * contracts table and in four server tests, and unreachable from the client — the
+ * only way to bank a set was to join the rack, fetch, ESC off the tile, walk round
+ * to the hopper and press E, which is more kludgey than the complaint N2 answered.
+ *
+ * Its own key rather than a second meaning for `Space`: the hold is the toss, and a
+ * tap that sometimes banked instead would cost B the one judged gesture they have.
+ */
+export function bStockOp(bPhase: JigBPhase): MgOp | null {
+    return bPhase === 'holding' ? 'stock' : null;
 }
 
 /** B's one key: down fetches, then swings; up releases the set it swung. */
@@ -857,6 +943,16 @@ class JigOverlay implements MinigameOverlay {
             return true;
         }
 
+        // Eaten whether or not there is a set to bank: a ↓ that fell through to the
+        // floor would walk B off the rack tile, which is a leave.
+        if (key === 'down') {
+            const op = down && !repeat ? bStockOp(mg.bPhase) : null;
+
+            if (op !== null) ctx.send(op);
+
+            return true;
+        }
+
         if (key !== 'space' && key !== 'up') return false;
         if (repeat) return true;
 
@@ -1045,6 +1141,16 @@ class JigOverlay implements MinigameOverlay {
         });
         const dim = block !== '';
 
+        // Named, because the playtest read three unlabelled chips as "maybe the
+        // charge strength". It sits where the KEG gauge's own label sits, on the
+        // same row, and carries the dent warning when there is one to carry.
+        if (casings.length > 0) {
+            labels.write('casings-label', PAD, TRACK_Y - 16, casingsLabel(casings), {
+                size: 11,
+                colour: JIG_COLOURS.label,
+            });
+        }
+
         casings.forEach((chip, i) => {
             const x = PAD + i * (CHIP_W + CHIP_GAP);
             const selected = i === this.cursor && !dim;
@@ -1053,10 +1159,19 @@ class JigOverlay implements MinigameOverlay {
             g.fillRoundedRect(x, TRACK_Y, CHIP_W, CHIP_H, 4);
             g.lineStyle(selected ? 2 : 1, selected ? JIG_COLOURS.text : JIG_COLOURS.trackEdge, 1);
             g.strokeRoundedRect(x, TRACK_Y, CHIP_W, CHIP_H, 4);
-            g.fillStyle(JIG_COLOURS.dent, dim ? 0.35 : 1);
 
+            // A dimple, not a dot: the shadow, then the card's own colour caught
+            // on the far lip of it. One flat circle on a chip the same colour as
+            // the panel behind it read as a decoration, which is how a dent — the
+            // one thing on this chip that decides the cycle — went unexplained.
             for (let d = 0; d < casingDings(chip.dents); d++) {
-                g.fillCircle(x + 9 + d * 8, TRACK_Y + CHIP_H - 9, DING_R);
+                const cx = x + 9 + d * 8;
+                const cy = TRACK_Y + CHIP_H - 9;
+
+                g.fillStyle(JIG_COLOURS.dent, dim ? 0.35 : 1);
+                g.fillCircle(cx, cy, DING_R);
+                g.fillStyle(JIG_COLOURS.casing, dim ? 0.35 : 1);
+                g.fillCircle(cx + DING_R * 0.35, cy + DING_R * 0.35, DING_R * 0.45);
             }
         });
 
@@ -1369,7 +1484,7 @@ class JigOverlay implements MinigameOverlay {
         for (const bin of bins) {
             const { x0, y0, x1, y1 } = bin.box;
 
-            g.fillStyle(bin.picked ? JIG_COLOURS.parts : JIG_COLOURS.track, 1);
+            g.fillStyle(bin.picked ? JIG_COLOURS.picked : JIG_COLOURS.track, 1);
             g.fillRoundedRect(x0, y0, x1 - x0, y1 - y0, 4);
 
             if (bin.wanted) {
@@ -1380,7 +1495,7 @@ class JigOverlay implements MinigameOverlay {
             labels.write(`pick-${bin.fuse}`, (x0 + x1) / 2, (y0 + y1) / 2, bin.label, {
                 size: 12,
                 bold: bin.picked,
-                colour: bin.picked ? JIG_COLOURS.dent : JIG_COLOURS.label,
+                colour: bin.picked ? JIG_COLOURS.ink : JIG_COLOURS.label,
                 originX: 0.5,
                 originY: 0.5,
             });
@@ -1437,7 +1552,9 @@ class JigOverlay implements MinigameOverlay {
             'legend',
             PAD,
             ctx.height - LEGEND_UP,
-            '← short · → long · hold SPACE fetch, swing · release to toss · ESC bail',
+            `← short · → long · hold SPACE fetch, swing · release to toss · ↓ bank it in the ${pluralOf(
+                'parts',
+            )} bin · ESC bail`,
             { size: 11, colour: JIG_COLOURS.label },
         );
     }
@@ -1478,7 +1595,9 @@ class JigOverlay implements MinigameOverlay {
             'b-state',
             PAD,
             TRACK_Y + TRACK_H + 8,
-            mg.bPhase === 'holding' ? 'HOLD SPACE TO SWING' : `SPACE TO FETCH A ${FUSE_SET}`,
+            mg.bPhase === 'holding'
+                ? `HOLD SPACE TO SWING · ↓ INTO THE ${pluralOf('parts')} BIN`
+                : `SPACE TO FETCH A ${FUSE_SET}`,
             { size: 12, colour: JIG_COLOURS.label },
         );
 

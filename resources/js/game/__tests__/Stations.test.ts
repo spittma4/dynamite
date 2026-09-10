@@ -36,10 +36,13 @@ const {
     stationBubble,
     stripeSegments,
 } = await import('../render/Stations');
+const { POST_LABEL, POST_WIDTH, postBrackets } = await import('../render/helperPosts');
 const { JIG_COLOURS } = await import('../minigames/Jig');
 const { BOARD_COLOURS, LINE_COLOURS } = await import('../render/palette');
-const { AUTO } = await import('../render/hopper');
-const { rackCaption } = await import('../render/fuseRack');
+const { ANY, AUTO } = await import('../render/hopper');
+const { pluralOf } = await import('../render/dropTargets');
+const { RACK_COLOURS, rackCaption } = await import('../render/fuseRack');
+const { COWL_PX, PLINTH_PX } = await import('../render/machine');
 
 /**
  * The station layer's decisions (F05 §Client). Every one of them is a function
@@ -462,7 +465,14 @@ class FakeText {
         this.style = style;
     }
 
-    setOrigin(): this {
+    originX = 0;
+    originY = 0;
+
+    /** Which way a sign grows from its anchor, which is the N2 fix on the IN sign. */
+    setOrigin(x = 0, y = x): this {
+        this.originX = x;
+        this.originY = y;
+
         return this;
     }
 
@@ -505,6 +515,15 @@ class FakeText {
 
     setVisible(value: boolean): this {
         this.visible = value;
+
+        return this;
+    }
+
+    alpha = 1;
+
+    /** Recorded: a helper post's word comes up to full exactly when `E` will answer. */
+    setAlpha(value: number): this {
+        this.alpha = value;
 
         return this;
     }
@@ -581,6 +600,17 @@ const ASSEMBLY_CFG = {
     floorRing: { tiles: [[12, 5]] },
 };
 
+/**
+ * The same Assembly once its shelf takes a fuse set (N2). `accepts` gains
+ * `parts`, so the intake face carries three bins — a keg funnel, the AUTO casing
+ * silo and the fuse bin — and the hopper grows inward over the machine wall
+ * beside the shelf to hold them.
+ */
+const ASSEMBLY_FUSE_CFG = {
+    ...ASSEMBLY_CFG,
+    inputShelf: { tile: [11, 4], capacity: 8, accepts: ['keg', 'casing', 'parts'] },
+};
+
 /** What each machine makes, which is where an out tray gets its noun. */
 const RECIPES = {
     keg: { station: 'boom_powder', inputs: {}, output: { type: 'keg', pours: 2 } },
@@ -598,6 +628,8 @@ interface Extras {
     rows?: [string, Record<string, unknown>][];
     /** The item id in the local player's hands. */
     carrying?: string;
+    /** Who is on which post, for the helper-post paint (N4). */
+    crew?: { stationId: string; workTile: string }[];
 }
 
 function harness(
@@ -661,22 +693,24 @@ function harness(
             sessionId: 's1',
             state: {
                 phase: 'running',
-                players: new Map([
-                    [
-                        's1',
-                        {
-                            stationId: 'powder-a',
-                            workTile: '5,4',
-                            carrying: extras.carrying ?? '',
-                        },
-                    ],
-                ]),
+                players: new Map(
+                    (extras.crew ?? [{ stationId: 'powder-a', workTile: '5,4' }]).map(
+                        (member, i) => [
+                            `s${i + 1}`,
+                            { ...member, carrying: i === 0 ? (extras.carrying ?? '') : '' },
+                        ],
+                    ),
+                ),
                 stations,
                 items: new Map([
                     ['k-1', { type: 'keg', quality: 0.7, prime: false }],
                     ['c-1', { type: 'casing', quality: 1, prime: false }],
                     ['c-2', { type: 'casing', quality: 1, prime: false }],
                     ['c-3', { type: 'casing', quality: 1, prime: false }],
+                    // Banked fuse sets, which are the one material on an input
+                    // shelf that can be the wrong one.
+                    ['p-short', { type: 'parts', quality: 1, prime: false, fuseLength: 'short' }],
+                    ['p-long', { type: 'parts', quality: 1, prime: false, fuseLength: 'long' }],
                 ]),
             },
             config: { level, layout, copy: { stations: STATION_COPY } },
@@ -801,6 +835,23 @@ function assembly(over: Record<string, unknown>): Extras {
     return { stations: [ASSEMBLY_CFG], rows: [['assembly-a', row(over)]] };
 }
 
+/** How many times the bracket stroke was set up at one alpha. */
+function postStrokes(ops: string[], alpha: number): string[] {
+    return ops.filter((op) => op === `lineStyle:${POST_WIDTH},${STATION_COLOURS.work},${alpha}`);
+}
+
+/**
+ * The bracket arms actually drawn on `ASSEMBLY_CFG`'s one post, read back against
+ * the geometry module — so the paint and `postBrackets` cannot drift apart.
+ */
+function postArms(ops: string[]): string[] {
+    const wanted = postBrackets([12, 5]).map(
+        (seg) => `lineBetween:${seg.x1},${seg.y1},${seg.x2},${seg.y2}`,
+    );
+
+    return ops.filter((op) => wanted.includes(op));
+}
+
 /** `StationState.mg` as the Jig writes it, at the two stops that look alike. */
 const SEAT = JSON.stringify({ phase: 'seat', cradle: 'empty' });
 const WAITING_ON_A_FUSE = JSON.stringify({ phase: 'parts', cradle: 'empty', keg: { poursLeft: 1 } });
@@ -847,7 +898,15 @@ describe('the intake apron', () => {
         expect(apronStrokes(h.ops, APRON_LIT_ALPHA)).toEqual([]);
     });
 
-    it('signs the aisle tile, not the shelf the glyphs sit on', () => {
+    /**
+     * It used to hang off the shelf tile's edge at 348 px, across the glyphs, where
+     * the playtester read it as "KEGS · CAS". Then it was centred on the aisle
+     * tile — which was fine at 'KEGS IN' and wrong the moment `accepts` gained
+     * N2's fuse set: `shelfLabel` names every haulable type, so the sign is four
+     * tiles wide and centred it crossed the hopper bins it points at. It is ranged
+     * up against the machine's intake face instead, growing away from it.
+     */
+    it('ranges the sign up against the intake face, never across it', () => {
         const h = harness(null, assembly({ state: 'idle' }));
 
         createStationsLayer(h.scene);
@@ -855,12 +914,34 @@ describe('the intake apron', () => {
 
         const sign = h.texts.find((t) => t.text === 'KEGS IN');
 
-        // It used to hang off the shelf tile's edge at 348 px, across the glyphs,
-        // where the playtester read it as "KEGS · CAS".
         expect(sign).toBeDefined();
-        expect(sign?.x).toBe(10.5 * TILE_PX);
+        // The aisle tile is 10,4 and the shelf it faces is 11,4.
+        expect(sign?.x).toBeGreaterThan(10 * TILE_PX);
+        expect(sign?.x).toBeLessThanOrEqual(11 * TILE_PX);
+        expect(sign?.originX).toBe(1);
         expect(sign?.y).toBeGreaterThan(4 * TILE_PX);
         expect(sign?.y).toBeLessThan(5 * TILE_PX);
+    });
+
+    /**
+     * The sign that made the anchoring matter. 'KEGS · FUSE SETS IN' is 19
+     * characters — about 114 px at 10 px bold, three and a half tiles — and the
+     * hopper's first bin wall starts 2 px inside the shelf tile.
+     */
+    it('still clears the bins once the shelf takes a fuse set too', () => {
+        const h = harness(null, {
+            stations: [ASSEMBLY_FUSE_CFG],
+            rows: [['assembly-a', row({ state: 'idle' })]],
+        });
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const sign = h.texts.find((t) => t.text === `KEGS · ${pluralOf('parts')} IN`);
+
+        expect(sign).toBeDefined();
+        expect(sign?.originX).toBe(1);
+        expect(sign?.x).toBeLessThanOrEqual(11 * TILE_PX);
     });
 
     it('lights up when you walk in carrying what the shelf takes', () => {
@@ -1119,7 +1200,16 @@ describe('the intake apron', () => {
         expect(said).not.toContain(STATION_COPY.needParts);
     });
 
-    it('leaves the intake zone dim for a fuse, which is fetched from the rack', () => {
+    /**
+     * It used to leave the zone dim, because a fuse set never crossed this shelf:
+     * B fetched one from the rack and tossed it across the aisle. Since N2 the bin
+     * takes one — `assembly-a.inputShelf.accepts` lists `parts` and
+     * `takeFromShelf` arms the cradle out of it — so carrying a set into the
+     * striped zone is an answer to this stop, and for a crew with nobody at the
+     * rack it is the only answer. The relay is still there; the zone is no longer
+     * lying about being no use.
+     */
+    it('lights the intake zone for a fuse, which the bin now takes', () => {
         const h = harness(
             null,
             assembly({ state: 'starved', inputShelf: ['c-1', 'c-2', 'c-3'], mg: WAITING_ON_A_FUSE }),
@@ -1128,7 +1218,7 @@ describe('the intake apron', () => {
         createStationsLayer(h.scene);
         h.post();
 
-        expect(apronStrokes(h.ops, APRON_LIT_ALPHA)).toEqual([]);
+        expect(apronStrokes(h.ops, APRON_LIT_ALPHA).length).toBeGreaterThan(0);
     });
 
     // `shelfPush` refuses at the cap and answers with a bonk and no words, so the
@@ -1487,13 +1577,24 @@ describe('the fuse rack from across the floor', () => {
             orderChip: wants === '' ? [] : [{ orderId: 'o-1', fuseLength: wants }],
         });
 
-    /** Everything drawn inside the rack tile, which the shipped Assembly puts at 13,7. */
+    /**
+     * Everything drawn inside the rack tile, which the shipped Assembly puts at
+     * 13,7. Both coordinates, not just the x: the nameplate on the body above is
+     * centred on the same column, 100 px up, and a filter that scopes by tile has
+     * to mean the tile.
+     */
     const onRack = (ops: string[], op: string): string[] =>
         ops.filter((entry) => {
             const [name, args] = entry.split(':');
-            const x = Number(args?.split(',')[0]);
+            const [x, y] = (args ?? '').split(',').map(Number);
 
-            return name === op && x >= 13 * TILE_PX && x < 14 * TILE_PX;
+            return (
+                name === op &&
+                (x ?? -1) >= 13 * TILE_PX &&
+                (x ?? -1) < 14 * TILE_PX &&
+                (y ?? -1) >= 7 * TILE_PX &&
+                (y ?? -1) < 8 * TILE_PX
+            );
         });
 
     it('draws two bins on the rack tile before anybody has joined', () => {
@@ -1606,5 +1707,377 @@ describe('the fuse rack from across the floor', () => {
         h.post();
 
         expect(h.ops.some((op) => op.startsWith(`lineStyle:2,${BOARD_COLOURS.urgent}`))).toBe(true);
+    });
+});
+
+/** The numeric ops of one kind, for the shapes whose position is the whole point. */
+function shapes(ops: string[], op: string): number[][] {
+    return ops
+        .filter((line) => line.startsWith(`${op}:`))
+        .map((line) =>
+            line
+                .slice(op.length + 1)
+                .split(',')
+                .map(Number),
+        );
+}
+
+/**
+ * The machine (N3). "The gameboard is better but just feels off for some reason.
+ * Some of the words/signs are just there and not entirely accurate. I bet adding
+ * the fuse receptacle and making the stations more of a 'machine' on the board
+ * might fix it a lot."
+ *
+ * The old drawing is the reason: every machine tile was filled on its own and
+ * given its own 2 px top highlight, so Assembly was six boxes in a row with a
+ * word floating over the middle of them — which is why the signage read as
+ * bolted on rather than part of the thing. The body is now one silhouette with a
+ * lit top, a shaded front, a console on the side the crew works from and a plate
+ * the name is bolted to.
+ *
+ * The harness's Assembly block is row 4 of x 11–16 (`MACHINE_WALLS` inside the
+ * station's own bbox), so the body is one 192 px slab at y 128.
+ */
+describe('the machine on the board', () => {
+    const body = (): string[] => {
+        const h = harness(null, assembly({ state: 'idle' }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        return h.ops;
+    };
+
+    it('fills each row of the body as one slab, not one box per tile', () => {
+        const rects = shapes(body(), 'fillRect');
+
+        expect(rects).toContainEqual([11 * TILE_PX, 4 * TILE_PX, 6 * TILE_PX, TILE_PX]);
+        // The retired per-tile highlight: a 32x2 cap on top of every single tile,
+        // which is exactly what made one machine read as a row of boxes.
+        expect(rects.filter((r) => r[2] === TILE_PX && r[3] === 2)).toEqual([]);
+    });
+
+    it('draws one silhouette around it rather than a seam between its tiles', () => {
+        const ops = body();
+        const left = 11 * TILE_PX;
+        const right = 17 * TILE_PX;
+        const runs = shapes(ops, 'lineBetween');
+
+        expect(ops).toContain(`lineStyle:2,${STATION_COLOURS.machineEdge},1`);
+        expect(runs).toContainEqual([left, 3 * TILE_PX, right, 3 * TILE_PX]);
+        expect(runs).toContainEqual([left, 5 * TILE_PX, right, 5 * TILE_PX]);
+        // The seam between rows 3 and 4 is the one line that must not be there.
+        expect(runs).not.toContainEqual([left, 4 * TILE_PX, right, 4 * TILE_PX]);
+    });
+
+    it('lights the top and shades the front, so the body has a direction', () => {
+        const rects = shapes(body(), 'fillRect');
+
+        expect(rects).toContainEqual([11 * TILE_PX, 3 * TILE_PX, 6 * TILE_PX, COWL_PX]);
+        expect(rects).toContainEqual([
+            11 * TILE_PX,
+            5 * TILE_PX - PLINTH_PX,
+            6 * TILE_PX,
+            PLINTH_PX,
+        ]);
+    });
+
+    /**
+     * A word painted straight onto the grey belongs to nothing, which is the
+     * "just there" the owner read. A plate with a bolt through each end is part
+     * of the machine, and the name on it is then the machine's own.
+     */
+    it('bolts the name to a plate instead of letting it float on the grey', () => {
+        const ops = body();
+        const centre = { x: 14 * TILE_PX, y: 4 * TILE_PX };
+        const plate = shapes(ops, 'fillRoundedRect').find(
+            (r) => Math.abs((r[0] ?? 0) + (r[2] ?? 0) / 2 - centre.x) < 1,
+        );
+
+        expect(plate).toBeDefined();
+        expect((plate?.[1] ?? 0) + (plate?.[3] ?? 0) / 2).toBeCloseTo(centre.y, 5);
+        expect(shapes(ops, 'fillCircle').filter((c) => c[1] === centre.y)).toHaveLength(2);
+    });
+
+    /**
+     * The work tiles were outlined on the floor and the body above them was
+     * blank, so nothing about the machine said which side of it you operate.
+     */
+    it('gives the working side a console over the tiles the crew stand on', () => {
+        const lip = shapes(body(), 'fillRect').find(
+            (r) => r[0] === 13 * TILE_PX && r[2] === 2 * TILE_PX,
+        );
+
+        expect(lip).toBeDefined();
+        expect((lip?.[1] ?? 0) + (lip?.[3] ?? 0)).toBe(5 * TILE_PX);
+    });
+
+    /**
+     * The bins used to stand on the shelf tile looking like furniture parked in
+     * front of the machine. Framed into the body they read as mouths cut into its
+     * intake side, which is the half of N2 the drawing owes the fuse bin.
+     */
+    it('frames the intake bins into the body rather than parking them beside it', () => {
+        const bins = shapes(body(), 'fillRect').find((r) => r[0] === 11 * TILE_PX - 1);
+
+        expect(bins).toBeDefined();
+        expect(bins?.[1]).toBe(3 * TILE_PX);
+    });
+
+    it('still outlines the work posts and the floor ring it always did', () => {
+        const ops = body();
+
+        expect(ops.some((op) => op.startsWith(`lineStyle:2,${STATION_COLOURS.work}`))).toBe(true);
+        expect(ops.some((op) => op.startsWith(`lineStyle:1,${STATION_COLOURS.ring}`))).toBe(true);
+    });
+
+    it('draws no body at all for a station with no machine tiles in its footprint', () => {
+        const h = harness(null, {
+            stations: [DOCK_CFG],
+            rows: [['dock-a', row({ state: 'idle', mg: dockMg([{ itemId: 's-1' }]) })]],
+        });
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.texts.some((t) => t.text === 'DOCK')).toBe(true);
+        expect(h.ops).not.toContain(`lineStyle:2,${STATION_COLOURS.machineEdge},1`);
+    });
+});
+
+/**
+ * The receptacle on screen (N2). "There should be a receptacle for fuses like
+ * there is for boom — having to just drop them in at the assembly line's feet or
+ * carry it over as the operator is kludgey and doesn't make sense. You input the
+ * materials into the station the same."
+ *
+ * Kegs and casings already had a bin each on the intake face. The fuse set gets
+ * the third, with the one fact no other bin needs: the length the machine will
+ * reach for. `usableSetOnShelf` (`shared/src/sim/jig.ts`) refuses a set the
+ * seated order cannot use, so a bin of LONG sets under a SHORT order stops the
+ * Jig exactly as dead as an empty bin while the shelf's `n/cap` reads stocked.
+ */
+describe('the fuse bin on the intake face', () => {
+    /** `StationState.mg` for a Jig stopped on an empty cradle, wanting a length. */
+    const wanting = (cradleWants: string): string =>
+        JSON.stringify({ phase: 'parts', cradle: 'empty', keg: { poursLeft: 1 }, cradleWants });
+
+    function fused(over: Record<string, unknown>): Extras {
+        return { stations: [ASSEMBLY_FUSE_CFG], rows: [['assembly-a', row(over)]] };
+    }
+
+    /** The three bins on a 60 px face: keg 354–380, AUTO silo 380–388, fuse 388–414. */
+    const FUSE_BIN = { x0: 388, x1: 414 };
+
+    it('names the bin down its own face, in the plural the floor signs use', () => {
+        const h = harness(null, fused({ state: 'idle', mg: wanting('short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const name = h.texts.find((t) => t.text === 'FUSE SETS');
+
+        expect(name?.angle).not.toBe(0);
+        expect(name?.x).toBeGreaterThan(FUSE_BIN.x0);
+        expect(name?.x).toBeLessThan(FUSE_BIN.x1);
+    });
+
+    it('names the keg bin the same way, so the two funnels are told apart', () => {
+        const h = harness(null, fused({ state: 'idle', mg: wanting('short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const name = h.texts.find((t) => t.text === 'KEGS');
+
+        expect(name?.angle).not.toBe(0);
+        expect(name?.x).toBeLessThan(FUSE_BIN.x0);
+    });
+
+    /**
+     * The rack already draws SHORT and LONG on its own two bins down on row 7.
+     * This one is on the machine's intake face, which is what makes it a fact
+     * about the bin rather than about the rack.
+     */
+    it('tags the bin with the length the machine will reach for', () => {
+        const h = harness(null, fused({ state: 'idle', mg: wanting('short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const tag = h.texts.find(
+            (t) => t.text === 'SHORT' && t.y > 3 * TILE_PX && t.y < 5 * TILE_PX,
+        );
+
+        expect(tag?.visible).toBe(true);
+        expect(tag?.x).toBeGreaterThan(FUSE_BIN.x0);
+        expect(tag?.x).toBeLessThan(FUSE_BIN.x1);
+    });
+
+    it('says so in the rack voice for a length the bin can satisfy', () => {
+        const h = harness(null, fused({ state: 'idle', inputShelf: ['p-short'], mg: wanting('short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const tag = h.texts.find((t) => t.text === 'SHORT' && t.y < 5 * TILE_PX);
+
+        expect(tag?.colour).toBe(`#${RACK_COLOURS.set.toString(16).padStart(6, '0')}`);
+    });
+
+    /**
+     * The only amber state on the bin, and the reason the tag exists at all: two
+     * sets banked, 2/8 on the shelf, and the machine will not touch either of
+     * them. Amber rather than red for the rack's own reason — a length that
+     * disagrees is pressure, not a fault.
+     */
+    it('turns amber when every set banked is the wrong length', () => {
+        const h = harness(
+            null,
+            fused({ state: 'idle', inputShelf: ['p-long', 'p-long'], mg: wanting('short') }),
+        );
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const tag = h.texts.find((t) => t.text === 'SHORT' && t.y < 5 * TILE_PX);
+
+        expect(tag?.colour).toBe(`#${RACK_COLOURS.warn.toString(16).padStart(6, '0')}`);
+    });
+
+    it('takes any length on a day with no order to disagree with', () => {
+        const h = harness(null, fused({ state: 'idle', inputShelf: ['p-long'], mg: wanting('') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const tag = h.texts.find((t) => t.text === ANY);
+
+        expect(tag?.visible).toBe(true);
+        expect(tag?.colour).toBe(`#${RACK_COLOURS.set.toString(16).padStart(6, '0')}`);
+    });
+
+    it('has no tag at all on a machine whose shelf refuses fuse sets', () => {
+        const h = harness(null, assembly({ state: 'idle', mg: wanting('short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.texts.some((t) => t.text === 'FUSE SETS')).toBe(false);
+        expect(h.texts.some((t) => t.text === 'SHORT' && t.y < 5 * TILE_PX)).toBe(false);
+    });
+
+    it('fills the bin with the sets banked in it', () => {
+        const h = harness(null, fused({ state: 'idle', inputShelf: ['p-long', 'p-short'] }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const column = shapes(h.ops, 'fillRect').filter(
+            (r) => (r[0] ?? 0) >= FUSE_BIN.x0 && (r[0] ?? 0) < FUSE_BIN.x1 && r[3] === 2,
+        );
+
+        expect(column.length).toBeGreaterThan(0);
+        expect(h.texts.some((t) => t.text === '2/8' && t.visible)).toBe(true);
+    });
+
+    /**
+     * All of the above is a lot of new drawing, and the layer's promise is that a
+     * station doing nothing costs one string compare a frame. The fuse facts are
+     * on the key because nothing else on it can see them: two LONG sets and one
+     * of each are the same item types on the same shelf.
+     */
+    it('repaints only when the fuse bin itself has changed', () => {
+        for (const over of [
+            { state: 'idle', inputShelf: ['p-long'], mg: wanting('short') },
+            { state: 'starved', inputShelf: ['p-long', 'p-short'], mg: wanting('long') },
+        ]) {
+            const h = harness(null, fused(over));
+
+            createStationsLayer(h.scene);
+            h.post();
+
+            const after = h.ops.length;
+
+            h.post();
+            h.post();
+
+            expect(h.ops.length).toBe(after);
+        }
+    });
+});
+
+/**
+ * The helper posts on the floor (N4). "You can 'sit'/press E and get stuck on the
+ * squares around a station — you should only be able to press E on something you
+ * can pick up or a station that you're working." Half the fix is the shrunken join
+ * zone in `shared`; this is the other half, which is that the tile never looked
+ * like anything: every ring tile wore the same faint grey dashes, on the corridor
+ * as much as on the post.
+ */
+describe('the helper posts', () => {
+    it('brackets the posts dimly while nobody is running the machine', () => {
+        const h = harness(null, { ...assembly({ state: 'idle' }), crew: [] });
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        // `ASSEMBLY_CFG`'s ring is the single tile (12,5): eight arms, one stroke.
+        expect(postStrokes(h.ops, APRON_ALPHA)).toHaveLength(1);
+        expect(postArms(h.ops)).toHaveLength(8);
+        expect(postStrokes(h.ops, APRON_LIT_ALPHA)).toEqual([]);
+    });
+
+    it('brings the posts up to full once every work tile is taken', () => {
+        const h = harness(null, {
+            ...assembly({ state: 'working', workers: 2 }),
+            crew: [
+                { stationId: 'assembly-a', workTile: '13,5' },
+                { stationId: 'assembly-a', workTile: '14,5' },
+            ],
+        });
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(postStrokes(h.ops, APRON_LIT_ALPHA)).toHaveLength(1);
+        expect(postArms(h.ops)).toHaveLength(16);
+    });
+
+    it('leaves them dim while only one of the two posts is manned', () => {
+        const h = harness(null, {
+            ...assembly({ state: 'working', workers: 1 }),
+            crew: [{ stationId: 'assembly-a', workTile: '13,5' }],
+        });
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(postStrokes(h.ops, APRON_LIT_ALPHA)).toEqual([]);
+    });
+
+    it('names the posts once, and lights the word with the brackets', () => {
+        const dim = harness(null, { ...assembly({ state: 'idle' }), crew: [] });
+
+        createStationsLayer(dim.scene);
+        dim.post();
+
+        const word = dim.texts.filter((t) => t.text === POST_LABEL);
+
+        expect(word).toHaveLength(1);
+        expect(word[0]?.alpha).toBe(APRON_ALPHA);
+
+        const live = harness(null, {
+            ...assembly({ state: 'working', workers: 2 }),
+            crew: [
+                { stationId: 'assembly-a', workTile: '13,5' },
+                { stationId: 'assembly-a', workTile: '14,5' },
+            ],
+        });
+
+        createStationsLayer(live.scene);
+        live.post();
+
+        expect(live.texts.find((t) => t.text === POST_LABEL)?.alpha).toBe(APRON_LIT_ALPHA);
     });
 });

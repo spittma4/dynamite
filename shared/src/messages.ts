@@ -41,6 +41,7 @@ export type MgOp =
     | 'fetch'
     | 'swing'
     | 'toss'
+    | 'stock'
     | 'shove'
     | 'tailgate';
 export type FxKind =
@@ -84,6 +85,7 @@ const MG_OPS: readonly string[] = [
     'fetch',
     'swing',
     'toss',
+    'stock',
     'shove',
     'tailgate',
 ];

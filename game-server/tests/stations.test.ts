@@ -225,6 +225,12 @@ describe('build', () => {
         expect(stationsSystem.name).toBe('stations');
     });
 
+    /**
+     * The second net under `validateLevelOnLayout`'s. It is over join zones, and
+     * since N4 a ring tile is only one of those when it touches a work tile — a
+     * ring tile two stations share is still caught, but by the validator's own
+     * "two stations standing on the same tile" rule, which reads the whole ring.
+     */
     it('refuses two stations that share a join tile', () => {
         const world = makeWorld();
         const level = structuredClone(world.level);
@@ -232,7 +238,7 @@ describe('build', () => {
 
         if (first === undefined || second === undefined) throw new Error('fixture changed');
 
-        second.floorRing.tiles.push([...first.workTiles[0]!]);
+        second.workTiles.push([...first.workTiles[0]!]);
         world.level = level;
 
         expect(() => build(world)).toThrow(/powder-a/);
@@ -285,12 +291,97 @@ describe('joining a press station', () => {
         expect(second.stationId).toBe('');
     });
 
-    it('joins a floor-ring tile as a helper with no work tile', () => {
+    it('joins a helper post once every work tile is taken, with no work tile of its own', () => {
+        onInteract(world, standOn(world, 'session-1', [4, 5]));
+
         const player = standOn(world, 'session-0', [3, 5]);
 
         expect(onInteract(world, player)).toBe(true);
         expect(player.stationId).toBe('powder-a');
         expect(player.workTile).toBe('');
+    });
+
+    /**
+     * N4: "you can 'sit'/press E and get stuck on the squares around a station".
+     * A helper is a second pair of hands on a machine somebody is running, so on
+     * a machine nobody is running there is nothing to be the second pair of.
+     * F05 §Open questions called this out as the fix if playtests showed it, and
+     * they did — it is also every accidental press, because the common case is a
+     * hauler crossing an idle station's apron.
+     */
+    it('refuses a helper post while no operator is on the machine', () => {
+        const player = standOn(world, 'session-0', [3, 5]);
+
+        expect(onInteract(world, player)).toBe(false);
+        expect(player.stationId).toBe('');
+    });
+
+    it('refuses a ring tile that is not a helper post even with the machine staffed', () => {
+        onInteract(world, standOn(world, 'session-1', [4, 5]));
+
+        const player = standOn(world, 'session-0', [8, 6]);
+
+        expect(onInteract(world, player)).toBe(false);
+        expect(player.stationId).toBe('');
+    });
+
+    /**
+     * A helper has no gesture and no post, so pinning them was the whole of the
+     * reported "stuck": the server froze their legs, the client kept predicting
+     * them walking, and WASD rubber-banded. Walking off the post is now how you
+     * leave, which is the leave nobody has to be told about.
+     */
+    it('leaves a helper where they stood rather than snapping them to the post', () => {
+        onInteract(world, standOn(world, 'session-1', [4, 5]));
+
+        const player = standOn(world, 'session-0', [3, 5]);
+
+        player.x = 3.9;
+        player.moving = true;
+
+        onInteract(world, player);
+
+        expect(player.x).toBe(3.9);
+        expect(player.moving).toBe(true);
+    });
+
+    it('drops a helper from the station when they walk off the post', () => {
+        onInteract(world, standOn(world, 'session-1', [4, 5]));
+
+        const player = standOn(world, 'session-0', [3, 5]);
+
+        onInteract(world, player);
+        expect(player.stationId).toBe('powder-a');
+
+        player.x = 2.5;
+        player.y = 6.5;
+        tick(world, 0.05);
+
+        expect(player.stationId).toBe('');
+        expect(stationOf(world, 'powder-a').members.size).toBe(1);
+    });
+
+    /** The helper panel promises E and ESC as well as stepping off; all three work. */
+    it('leaves a helper on a second E, the way the panel says it will', () => {
+        onInteract(world, standOn(world, 'session-1', [4, 5]));
+
+        const player = standOn(world, 'session-0', [3, 5]);
+
+        onInteract(world, player);
+
+        expect(onInteract(world, player)).toBe(true);
+        expect(player.stationId).toBe('');
+    });
+
+    it('keeps an operator on their post when the position drifts inside the tile', () => {
+        const player = standOn(world, 'session-0', [4, 5]);
+
+        onInteract(world, player);
+
+        player.x = 4.9;
+        tick(world, 0.05);
+
+        expect(player.stationId).toBe('powder-a');
     });
 
     it('waives the clipboard on a return inside the memory window and charges it after', () => {
@@ -462,26 +553,40 @@ describe('staffing', () => {
 });
 
 describe('interrupts', () => {
+    /**
+     * The operator has to arrive last for this to test anything, and since N4 a
+     * helper post is dead until the work tile is taken — so the way to arrive
+     * last at your own machine is to step off it and come back, which is what a
+     * hauler-operator does every time the out tray fills.
+     */
     it('spends the aisle before the machine, whoever arrived last', () => {
         const world = runningWorld(3);
-        const tiles: [number, number][] = [
+        const operator = standOn(world, 'session-2', [4, 5]);
+
+        onInteract(world, operator);
+
+        [
             [3, 5],
             [5, 5],
-            [4, 5],
-        ];
-
-        // Two bodies mill on the ring and the third takes the work tile last,
-        // so `joinedAt` alone would make the operator its own interrupt.
-        tiles.forEach((tile, i) => {
+        ].forEach((tile, i) => {
             world.state.clock = i;
-            onInteract(world, standOn(world, `session-${i}`, tile));
+            onInteract(world, standOn(world, `session-${i}`, tile as [number, number]));
         });
+
+        // `joinedAt` alone would now make the operator its own interrupt.
+        world.state.clock = 3;
+        leave(world, operator);
+        standOn(world, 'session-2', [4, 5]);
+        onInteract(world, operator);
 
         world.state.clock = 6;
         tick(world, 0.05);
 
         expect(stateOf(world, 'powder-a').workers).toBe(3);
         expect(memberOf(world, 'powder-a', 'session-2').role).toBe('work');
+        expect(memberOf(world, 'powder-a', 'session-2').joinedAt).toBeGreaterThan(
+            memberOf(world, 'powder-a', 'session-1').joinedAt,
+        );
         expect(memberOf(world, 'powder-a', 'session-2').nextBubbleAt).toBeNull();
         expect(memberOf(world, 'powder-a', 'session-1').nextBubbleAt).not.toBeNull();
     });

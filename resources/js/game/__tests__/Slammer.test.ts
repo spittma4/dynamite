@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CUES } from '../audio/cues';
 import { PRIME_KEG } from '../nouns';
-import { KEGS_OUT } from '../render/dropTargets';
+import { KEGS_OUT, kegShelfSign, shelfLabel } from '../render/dropTargets';
 import {
     LEGEND,
     SLAMMER_COLOURS,
@@ -60,6 +60,25 @@ import type { OverlayContext } from '../minigames/types';
 
 /** Every shipped level's `carry.throwTiles` (`config/game/levels/*.json`). */
 const THROW_TILES = 2;
+
+/**
+ * The level the hands panel reads its one sign off. `accepts` is every shipped
+ * level's `assembly-a.inputShelf.accepts`, `parts` included since N2 — the row
+ * quoted a `KEGS_IN` constant built for `['keg']` and named a sign the floor
+ * stopped painting the moment the bin took a third material.
+ */
+const LEVEL = {
+    carry: { throwTiles: THROW_TILES },
+    stations: [
+        { id: 'powder-a', type: 'boom_powder', outputShelf: { tile: [6, 3], capacity: 6 } },
+        {
+            id: 'assembly-a',
+            type: 'assembly',
+            inputShelf: { tile: [11, 4], capacity: 8, accepts: ['keg', 'casing', 'parts'] },
+        },
+    ],
+};
+const KEG_SHELF = kegShelfSign(LEVEL as unknown as Parameters<typeof kegShelfSign>[0]);
 
 const CFG: SlammerHeatConfig = {
     minChargeSeconds: 0.7,
@@ -611,25 +630,34 @@ describe('the readouts', () => {
     });
 
     it('gives the operator one key per row and one action per row', () => {
-        expect(handsLinesKeg(THROW_TILES)).toHaveLength(4);
-        expect(handsLinesKeg(THROW_TILES).join(' ')).toContain('Space');
-        expect(handsLinesKeg(THROW_TILES).join(' ')).toContain('Esc');
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF)).toHaveLength(4);
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF).join(' ')).toContain('Space');
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF).join(' ')).toContain('Esc');
 
-        for (const line of handsLinesKeg(THROW_TILES)) expect(line.length).toBeLessThanOrEqual(60);
+        for (const line of handsLinesKeg(THROW_TILES, KEG_SHELF)) expect(line.length).toBeLessThanOrEqual(60);
     });
 
     it('leads with walking the keg to Assembly, in the name on its nameplate', () => {
-        expect(handsLinesKeg(THROW_TILES)[0]).toContain(STATION_LABEL.assembly);
-        expect(handsLinesKeg(THROW_TILES)[0]).toContain('striped');
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF)[0]).toContain(STATION_LABEL.assembly);
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF)[0]).toContain('striped');
     });
 
+    /**
+     * The sign is quoted off the level, so the assertion is too: on the shipped
+     * floor it is the three-material sign, and a level whose shelf took only kegs
+     * would quote that instead. A literal here is how the drift got in.
+     */
     it('matches the walk to the paint the player will be standing on', () => {
-        expect(handsLinesKeg(THROW_TILES).join(' ')).toContain('KEGS IN');
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF).join(' ')).toContain(KEG_SHELF);
+        expect(KEG_SHELF).toBe(shelfLabel('in', ['keg', 'casing', 'parts'], null));
+        expect(handsLinesKeg(THROW_TILES, shelfLabel('in', ['keg'], null)).join(' ')).toContain(
+            'KEGS IN',
+        );
     });
 
     it('never offers the floor, which is the one drop that feeds a fire', () => {
-        expect(handsLinesKeg(THROW_TILES).join(' ')).not.toContain('floor');
-        expect(handsLinesKeg(THROW_TILES).join(' ')).not.toContain('fuel');
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF).join(' ')).not.toContain('floor');
+        expect(handsLinesKeg(THROW_TILES, KEG_SHELF).join(' ')).not.toContain('fuel');
     });
 
     it('keeps the always-on legend free of the floor drop too', () => {
@@ -645,12 +673,12 @@ describe('the readouts', () => {
  */
 describe('handsLines', () => {
     it('names the keg walk when the thing in your hands is a keg', () => {
-        expect(handsLines('keg', THROW_TILES)).toEqual(handsLinesKeg(THROW_TILES));
+        expect(handsLines('keg', THROW_TILES, KEG_SHELF)).toEqual(handsLinesKeg(THROW_TILES, KEG_SHELF));
     });
 
     it('falls back to item-agnostic advice for anything else', () => {
-        expect(handsLines('stick', THROW_TILES)).toEqual(handsLinesAny(THROW_TILES));
-        expect(handsLines('', THROW_TILES)).toEqual(handsLinesAny(THROW_TILES));
+        expect(handsLines('stick', THROW_TILES, KEG_SHELF)).toEqual(handsLinesAny(THROW_TILES));
+        expect(handsLines('', THROW_TILES, KEG_SHELF)).toEqual(handsLinesAny(THROW_TILES));
     });
 
     it('never sends a stick to Assembly or calls it fuel', () => {
@@ -662,7 +690,7 @@ describe('handsLines', () => {
     });
 
     it('keeps the ways out of a full pair of hands on both versions', () => {
-        expect(handsLinesAny(THROW_TILES)).toHaveLength(handsLinesKeg(THROW_TILES).length);
+        expect(handsLinesAny(THROW_TILES)).toHaveLength(handsLinesKeg(THROW_TILES, KEG_SHELF).length);
         expect(handsLinesAny(THROW_TILES).join(' ')).toContain('Space');
         expect(handsLinesAny(THROW_TILES).join(' ')).toContain('Esc');
     });
@@ -748,7 +776,7 @@ function mountPanel(over: {
     } as unknown as StationState;
     const ctx = stub({
         scene: stub({
-            levelConfig: { carry: { throwTiles: THROW_TILES } },
+            levelConfig: LEVEL,
             add: stub({
                 text: (_x: number, _y: number, value: unknown) => {
                     const entry: PaintedText = {
@@ -829,7 +857,7 @@ describe('the panel a full pair of hands gets', () => {
 
         expect(panel.shown).toBe(true);
 
-        for (const line of handsLinesKeg(THROW_TILES)) expect(panel.lines).toContain(line);
+        for (const line of handsLinesKeg(THROW_TILES, KEG_SHELF)) expect(panel.lines).toContain(line);
     });
 
     it('keeps them off the panel while the plunger is still taking input', () => {

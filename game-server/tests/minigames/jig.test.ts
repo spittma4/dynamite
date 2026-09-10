@@ -19,6 +19,7 @@ import {
     toMg,
 } from '../../src/shared';
 import type {
+    FuseLength,
     ItemType,
     JigConfig,
     JigEffect,
@@ -72,11 +73,40 @@ const TILES: JigTiles = {
 const BEAT = 0.4;
 
 function casing(index: number, dents = 0): JigShelfEntry {
-    return { index, itemId: `c-${index + 1}`, type: 'casing', dents, quality: 1, prime: false };
+    return {
+        index,
+        itemId: `c-${index + 1}`,
+        type: 'casing',
+        dents,
+        quality: 1,
+        prime: false,
+        fuseLength: '',
+    };
 }
 
 function keg(index: number, quality = 1, prime = true): JigShelfEntry {
-    return { index, itemId: `k-${index + 1}`, type: 'keg', dents: 0, quality, prime };
+    return {
+        index,
+        itemId: `k-${index + 1}`,
+        type: 'keg',
+        dents: 0,
+        quality,
+        prime,
+        fuseLength: '',
+    };
+}
+
+/** A fuse set banked in the hopper — the N2 receptacle's stock. */
+function fuseSet(index: number, fuseLength: FuseLength = 'long'): JigShelfEntry {
+    return {
+        index,
+        itemId: `p-${index + 1}`,
+        type: 'parts',
+        dents: 0,
+        quality: 1,
+        prime: false,
+        fuseLength,
+    };
 }
 
 function makeView(over: Partial<JigTickView> = {}): JigTickView {
@@ -167,14 +197,24 @@ function withCrew(over: Partial<JigTickView> = {}): { state: JigState; shelf: Ji
     return { state, shelf };
 }
 
-/** Seated at 100, pouring from the 100.4 beat: the mark lands at 100.4 + beats × 0.4. */
-function seated(quality = 1, prime = true, dents = 0): { state: JigState; targetAt: number } {
+/**
+ * Seated at 100, pouring from the 100.4 beat: the mark lands at 100.4 + beats × 0.4.
+ * `orders` is what the book held at the moment of the seat, because `seat` captures
+ * the length the stick is for out of it and the machine holds that length for the
+ * rest of the phrase.
+ */
+function seated(
+    quality = 1,
+    prime = true,
+    dents = 0,
+    orders: JigTickView['orders'] = [],
+): { state: JigState; targetAt: number } {
     const shelf = [casing(0, dents), keg(1, quality, prime)];
     const state = createJigState(CFG, TILES);
 
-    tickJig(state, { shelf });
-    send(state, 'a1', 'seat', { v: 0, at: 100, view: { shelf } });
-    advance(state, 100.05, { shelf: [keg(1, quality, prime)] });
+    tickJig(state, { shelf, orders });
+    send(state, 'a1', 'seat', { v: 0, at: 100, view: { shelf, orders } });
+    advance(state, 100.05, { shelf: [keg(1, quality, prime)], orders });
 
     return { state, targetAt: state.pour?.targetAt ?? 0 };
 }
@@ -202,6 +242,13 @@ function atCrimp(fuse: 'short' | 'long' = 'long'): JigState {
     }
 
     return state;
+}
+
+/** The next 20 Hz step from wherever the state last ticked. */
+function nextTick(state: JigState, over: Partial<JigTickView> = {}): JigEffect[] {
+    const now = Math.round((state.lastTickAt + 0.05) * 1000) / 1000;
+
+    return tickJig(state, { ...over, now });
 }
 
 describe('judge', () => {
@@ -502,14 +549,22 @@ describe('the pick the order made', () => {
 describe('seat', () => {
     it('opens a cycle, takes the casing off the shelf and binds the active order', () => {
         const { state, shelf } = withCrew();
-        const effects = send(state, 'a1', 'seat', { v: 0, view: { shelf } });
+        const orders = [{ orderId: 'o-1', fuseLength: 'short' as const }];
+        const effects = send(state, 'a1', 'seat', { v: 0, view: { shelf, orders } });
 
         expect(effects).toEqual([
             { e: 'beginCycle' },
             { e: 'consume', itemId: 'c-1' },
             { e: 'destroyItem', itemId: 'c-1' },
         ]);
-        expect(state.seated).toEqual({ dents: 0, colour: 'red', orderId: 'o-1' });
+        // The order's fuse length comes with the binding, not a lookup later: the
+        // order is gone from the open book the moment its truck settles it.
+        expect(state.seated).toEqual({
+            dents: 0,
+            colour: 'red',
+            orderId: 'o-1',
+            fuseLength: 'short',
+        });
         expect(state.phase).toBe('pour');
     });
 
@@ -1195,6 +1250,353 @@ describe('the cradle from hands', () => {
     });
 });
 
+describe('the cradle from the receptacle (N2)', () => {
+    const WANTS_LONG = [{ orderId: 'o-1', fuseLength: 'long' as const }];
+
+    /** Through the pour and standing in PARTS: the only window the bin is read in. */
+    function inParts(fuse: FuseLength = 'long'): JigState {
+        const orders = [{ orderId: 'o-1', fuseLength: fuse }];
+        const { state, targetAt } = seated(1, true, 0, orders);
+
+        advance(state, targetAt - 0.05, { orders });
+        send(state, 'a1', 'pour', { at: targetAt, view: { orders } });
+
+        return state;
+    }
+
+    function spent(effects: JigEffect[]): string[] {
+        return kinds(effects).filter((kind) => kind === 'consume' || kind === 'destroyItem');
+    }
+
+    it('reaches into its own hopper for the set the order asks for and pays the bench tax', () => {
+        const state = inParts();
+        const effects = nextTick(state, { shelf: [fuseSet(0, 'long')], orders: WANTS_LONG });
+
+        expect(state.cradle).toBe('surface');
+        expect(state.cradleFuse).toBe('long');
+        expect(state.surfaceReadyAt).toBeCloseTo(state.lastTickAt + 0.5, 6);
+        // `consume` before `destroyItem`, exactly as `seat` spends a casing: the
+        // throw from `ctx.consume` is the cheapest proof the set was really on
+        // the shelf and not conjured out of the view.
+        expect(spent(effects)).toEqual(['consume', 'destroyItem']);
+        expect(effects).toContainEqual({ e: 'consume', itemId: 'p-1' });
+        expect(effects).toContainEqual({ e: 'destroyItem', itemId: 'p-1' });
+    });
+
+    it('ties the knots once the bench tax it charged has run out', () => {
+        const state = inParts();
+
+        nextTick(state, { shelf: [fuseSet(0, 'long')], orders: WANTS_LONG });
+        advance(state, state.surfaceReadyAt - 0.05, { orders: WANTS_LONG });
+
+        expect(state.phase).toBe('parts');
+
+        advance(state, state.surfaceReadyAt, { orders: WANTS_LONG });
+
+        expect(state.phase).toBe('knots');
+        expect(state.workFuse).toBe('long');
+    });
+
+    it('leaves a set of the wrong length in the bin and says what it is holding out for', () => {
+        const state = inParts();
+        const effects = nextTick(state, { shelf: [fuseSet(0, 'short')], orders: WANTS_LONG });
+
+        expect(state.cradle).toBe('empty');
+        expect(state.cradleWants).toBe('long');
+        expect(spent(effects)).toEqual([]);
+    });
+
+    it('drains the bin in the order it filled, skipping the lengths it cannot use', () => {
+        const state = inParts();
+        const shelf = [fuseSet(0, 'short'), fuseSet(1, 'long'), fuseSet(2, 'long')];
+        const effects = nextTick(state, { shelf, orders: WANTS_LONG });
+
+        expect(effects).toContainEqual({ e: 'consume', itemId: 'p-2' });
+        expect(spent(effects)).toEqual(['consume', 'destroyItem']);
+    });
+
+    it('takes any set on a day with no order to disagree with', () => {
+        const state = inParts('');
+
+        nextTick(state, { shelf: [fuseSet(0, 'short')], orders: [] });
+
+        expect(state.cradle).toBe('surface');
+        expect(state.cradleFuse).toBe('short');
+    });
+
+    /**
+     * The co-op guard, and the whole defence of the relay: a machine that topped
+     * its own cradle up whenever it was empty would bounce every one of B's
+     * tosses (`resolveToss`'s full-cradle branch) and turn a partner into a
+     * debris generator.
+     */
+    it('never reaches into the bin outside parts, so B always has somewhere to toss', () => {
+        const { state } = withCrew();
+        const shelf = [casing(0), keg(1), fuseSet(2, 'long')];
+
+        advance(state, 101, { shelf, orders: WANTS_LONG });
+
+        expect(state.phase).toBe('seat');
+        expect(state.cradle).toBe('empty');
+
+        send(state, 'a1', 'seat', { v: 0, at: 101.05, view: { shelf, orders: WANTS_LONG } });
+        advance(state, 101.5, { shelf: [keg(1), fuseSet(2, 'long')], orders: WANTS_LONG });
+
+        expect(state.phase).toBe('pour');
+        expect(state.cradle).toBe('empty');
+    });
+
+    /** A swing already in the air is as deliberate as a set in a hauler's hands. */
+    it('yields to a swing in flight rather than bouncing the toss it would have caused', () => {
+        const state = inParts();
+        const bParts = { itemId: 'p-9', fuseLength: 'long' as const };
+        const over = { shelf: [fuseSet(0, 'long')], orders: WANTS_LONG, rackHands: ['b1'], bParts };
+
+        // B swings during the pour; the pour lands, and the machine finds both a
+        // set in the bin and a set in the air. It waits for the one in the air.
+        nextTick(state, { orders: WANTS_LONG, rackHands: ['b1'], bParts });
+        send(state, 'b1', 'swing', { at: state.lastTickAt, view: over });
+
+        const effects = nextTick(state, over);
+
+        expect(state.bPhase).toBe('swinging');
+        expect(state.cradle).toBe('empty');
+        expect(spent(effects)).toEqual([]);
+    });
+
+    /**
+     * The same restraint one step earlier. B's panel says HOLD SPACE TO SWING with
+     * no timing cue, so a B who waits for A to reach PARTS before pressing is doing
+     * what the screen told them — and with a stocked bin the machine used to reach
+     * in on that very tick and bounce their on-time Perfect into the aisle.
+     */
+    it('holds the arm while B has a set in hand, so an on-time toss still lands', () => {
+        const state = inParts();
+        const bParts = { itemId: 'p-9', fuseLength: 'long' as const };
+        const over = { shelf: [fuseSet(0, 'long')], orders: WANTS_LONG, rackHands: ['b1'], bParts };
+        const waiting = nextTick(state, over);
+
+        expect(state.bPhase).toBe('holding');
+        expect(state.cradle).toBe('empty');
+        expect(spent(waiting)).toEqual([]);
+
+        send(state, 'b1', 'swing', { at: state.lastTickAt, view: over });
+
+        const at = state.swingStartAt + CFG.toss.arcSeconds;
+        const effects = send(state, 'b1', 'toss', { at, view: over });
+
+        expect(state.cradle).toBe('armed');
+        expect(state.last).toMatchObject({ who: 'b', step: 'toss', grade: 'perfect' });
+        expect(effects).toContainEqual({ e: 'destroyItem', itemId: 'p-9' });
+    });
+
+    it('holds the arm through B’s fetch as well, so the set has somewhere to go', () => {
+        const state = inParts();
+        const empty = { orders: WANTS_LONG, rackHands: ['b1'] };
+
+        // B takes the rack tile with the bin still empty and starts a fetch; a
+        // hauler banks a set while the spool is winding.
+        nextTick(state, empty);
+        send(state, 'b1', 'fetch', { at: state.lastTickAt, view: empty });
+
+        const effects = nextTick(state, { ...empty, shelf: [fuseSet(0, 'long')] });
+
+        expect(state.bPhase).toBe('fetching');
+        expect(state.cradle).toBe('empty');
+        expect(spent(effects)).toEqual([]);
+    });
+
+    /**
+     * `openOrders` lists only `status === 'open'`, and `settleOrder` stamps the
+     * seated order the moment its truck pulls off — so a length re-derived from
+     * that list flipped under a stick already in the jig, the machine consumed the
+     * wrong set, skipped the right one, and the Dock bonked WRONG FUSE three
+     * stations later. The length is captured at the seat and held.
+     */
+    it('keeps the length its stick was seated under when that order settles mid-phrase', () => {
+        const state = inParts('long');
+        const shelf = [fuseSet(0, 'short'), fuseSet(1, 'long')];
+        const effects = nextTick(state, {
+            shelf,
+            orders: [{ orderId: 'o-2', fuseLength: 'short' }],
+        });
+
+        expect(state.cradleWants).toBe('long');
+        expect(state.cradleFuse).toBe('long');
+        expect(effects).toContainEqual({ e: 'consume', itemId: 'p-2' });
+    });
+
+    it('lets the hauler in hands win over its own bin', () => {
+        const state = inParts();
+        const effects = nextTick(state, {
+            shelf: [fuseSet(0, 'long')],
+            orders: WANTS_LONG,
+            partsOnJigTile: { sessionId: 'h1', itemId: 'p-7', fuseLength: 'short' },
+        });
+
+        // Armed from hands is instant, so the same tick already ties the knots:
+        // the length A works is the hauler's, and the bin is untouched.
+        expect(state.phase).toBe('knots');
+        expect(state.workFuse).toBe('short');
+        expect(effects).toContainEqual({ e: 'destroyItem', itemId: 'p-7' });
+        expect(spent(effects)).toEqual(['destroyItem']);
+    });
+
+    it('takes nothing into an unstaffed machine', () => {
+        const state = inParts();
+        const effects = nextTick(state, {
+            shelf: [fuseSet(0, 'long')],
+            orders: WANTS_LONG,
+            operators: [],
+        });
+
+        expect(state.a).toBe('');
+        expect(state.cradle).toBe('empty');
+        expect(spent(effects)).toEqual([]);
+    });
+
+    it('leaves the bin alone while the cradle already holds a set', () => {
+        const state = inParts();
+
+        state.cradle = 'surface';
+        state.cradleFuse = 'long';
+        state.surfaceReadyAt = state.lastTickAt + 10;
+
+        const effects = nextTick(state, { shelf: [fuseSet(0, 'long')], orders: WANTS_LONG });
+
+        expect(spent(effects)).toEqual([]);
+    });
+
+    it('does not read starved while a usable set sits in its own hopper', () => {
+        const state = inParts();
+        const view = makeView({
+            now: state.lastTickAt + 0.05,
+            shelf: [fuseSet(0, 'long')],
+            orders: WANTS_LONG,
+        });
+
+        expect(stationStatus(state, view)).toEqual({ state: 'working', progress: 0.5 });
+    });
+
+    it('still reads starved when the bin holds only the wrong length', () => {
+        const state = inParts();
+        const view = makeView({
+            now: state.lastTickAt + 0.05,
+            shelf: [fuseSet(0, 'short')],
+            orders: WANTS_LONG,
+        });
+
+        expect(stationStatus(state, view).state).toBe('starved');
+    });
+
+    /**
+     * `bail()` has no `parts` branch, so an A who walks off during the fuse wait
+     * leaves the phrase standing exactly where it was — and `takeFromShelf` needs
+     * an operator, so nothing will ever move it again. Reported as `working` at
+     * progress 0.5 the machine looked fine for the rest of the shift: no red word,
+     * no lit apron, no bubble and nothing billed against the Groove.
+     */
+    it('reads starved once A walks off mid-parts, stocked bin or not', () => {
+        const state = inParts();
+        const over = {
+            now: state.lastTickAt + 0.05,
+            shelf: [fuseSet(0, 'long')],
+            orders: WANTS_LONG,
+            operators: [],
+        };
+
+        tickJig(state, over);
+
+        expect(state.a).toBe('');
+        expect(state.phase).toBe('parts');
+        expect(stationStatus(state, makeView(over)).state).toBe('starved');
+    });
+
+    /**
+     * The three-way contention the receptacle created, pinned rather than fixed:
+     * every shipped level shares one eight-slot shelf between the kegs a hauler
+     * brings, the casings `feed()` prints and the sets anybody banks, and the level
+     * notes keep `capacity` at 8 on purpose — `groove.weights.shelfFullness` is
+     * `inputShelf.length / capacity`, so a bigger shelf would quietly soften the
+     * clog level 2 exists to teach. A bin packed with sets the order cannot use is
+     * therefore a real stop, and the honest sign for it is SHELF FULL — LIFT ONE
+     * OFF (E) (`render/intake.ts`), not an errand.
+     */
+    it('stops printing casings once banked sets have filled the shelf', () => {
+        const state = inParts();
+        const shelf = Array.from({ length: 8 }, (_, i) => fuseSet(i, 'short'));
+        const view = {
+            now: state.lastTickAt + 0.05,
+            shelf,
+            orders: WANTS_LONG,
+            shelfRoom: 0,
+            casingCount: 0,
+        };
+        const effects = tickJig(state, view);
+
+        expect(kinds(effects)).not.toContain('stockCasing');
+        expect(stationStatus(state, makeView(view)).state).toBe('starved');
+    });
+});
+
+describe('B banking a set (op stock)', () => {
+    const B_PARTS = { itemId: 'p-9', fuseLength: 'long' as const };
+
+    function holding(): JigState {
+        const state = createJigState(CFG, TILES);
+
+        tickJig(state, { rackHands: ['b1'], bParts: B_PARTS });
+
+        return state;
+    }
+
+    it('shelves the set B is holding, with no timing and no judgement', () => {
+        const state = holding();
+        const effects = send(state, 'b1', 'stock', {
+            view: { rackHands: ['b1'], bParts: B_PARTS },
+        });
+
+        expect(effects).toEqual([{ e: 'shelfParts', itemId: 'p-9' }]);
+        expect(state.bPhase).toBe('idle');
+        expect(state.last).toBeNull();
+    });
+
+    it('refuses a bank from a B with nothing in hand', () => {
+        const state = createJigState(CFG, TILES);
+
+        tickJig(state, { rackHands: ['b1'] });
+
+        expect(send(state, 'b1', 'stock', { view: { rackHands: ['b1'] } })).toEqual([]);
+    });
+
+    it('refuses a bank mid-fetch, so a set is never banked before it exists', () => {
+        const state = createJigState(CFG, TILES);
+
+        tickJig(state, { rackHands: ['b1'] });
+        send(state, 'b1', 'fetch', { view: { rackHands: ['b1'] } });
+
+        expect(send(state, 'b1', 'stock', { view: { rackHands: ['b1'] } })).toEqual([]);
+        expect(state.bPhase).toBe('fetching');
+    });
+
+    it('takes the set back into holding when the shelf refused it', () => {
+        const state = holding();
+
+        send(state, 'b1', 'stock', { view: { rackHands: ['b1'], bParts: B_PARTS } });
+        nextTick(state, { rackHands: ['b1'], bParts: B_PARTS });
+
+        expect(state.bPhase).toBe('holding');
+    });
+
+    it('refuses a bank from A', () => {
+        const state = holding();
+
+        expect(
+            send(state, 'a1', 'stock', { view: { rackHands: ['b1'], bParts: B_PARTS } }),
+        ).toEqual([]);
+    });
+});
+
 describe('bail', () => {
     function bail(state: JigState): JigEffect[] {
         return reduceJig(state, { t: 'leave', sessionId: 'a1' }, () => 0);
@@ -1357,6 +1759,9 @@ describe('toMg', () => {
         expect(Object.keys(mg)).not.toContain('kegItemId');
         expect(Object.keys(mg)).not.toContain('pourGrade');
         expect(mg.phase).toBe('knots');
+        // One authoritative answer to "what fuse does this stick need?", so the
+        // hopper bin, the floor sign and the A panel cannot disagree about it.
+        expect(Object.keys(mg)).toContain('cradleWants');
         expect(JSON.parse(JSON.stringify(mg))).toEqual(mg);
     });
 });
@@ -1480,6 +1885,10 @@ function onTheLastPour(): { world: World; a: PlayerState } {
 
 function shelveKeg(world: World, quality = 1): void {
     shelfPush(world, stateOf(world, 'assembly-a'), 'in', createItem(world, 'keg', { quality }));
+}
+
+function fxKinds(world: World): string[] {
+    return world.outbox.flatMap((out) => (out.name === 'fx' ? [out.payload.kind] : []));
 }
 
 function shelved(world: World, type: ItemType): number {
@@ -1665,6 +2074,78 @@ describe('the jig adapter', () => {
         expect(world.itemsAt(13, 6)).toEqual([]);
         expect(world.itemsAt(14, 6).length).toBe(1);
         expect(mg(world).aisleBlocked).toBe(false);
+    });
+
+    it('reaches into its own hopper for a fuse set somebody loaded there', () => {
+        const { world, a } = crewedJig();
+
+        shelveKeg(world);
+        run(world, 2);
+        sendMg(world, a, 'seat', 0);
+        run(world, 0.1);
+
+        const wants = orderOf(world, activeOrderId(world)).fuseLength;
+        const pour = mg(world).pour as { targetAt: number };
+
+        run(world, Math.max(0, pour.targetAt - world.state.clock) + 0.6);
+
+        expect(mg(world).phase).toBe('parts');
+
+        shelfPush(
+            world,
+            stateOf(world, 'assembly-a'),
+            'in',
+            createItem(world, 'parts', { fuseLength: wants }),
+        );
+        run(world, 0.05);
+
+        // `ctx.consume` would throw if the reducer had named a set that was not
+        // really on the shelf, which is the invariant the two effects buy.
+        expect(shelved(world, 'parts')).toBe(0);
+        expect(mg(world).cradle).toBe('surface');
+
+        run(world, 0.6);
+
+        expect(mg(world).phase).toBe('knots');
+        expect(mg(world).cradleWants).toBe(wants);
+    });
+
+    it('banks the set B fetched onto the input shelf', () => {
+        const { world, b } = crewedJig();
+
+        sendMg(world, b, 'fetch');
+        run(world, 0.7);
+
+        expect(playerOf(world, 'session-1').carrying).not.toBe('');
+
+        sendMg(world, b, 'stock');
+
+        expect(shelved(world, 'parts')).toBe(1);
+        expect(playerOf(world, 'session-1').carrying).toBe('');
+        expect(mg(world).bPhase).toBe('idle');
+    });
+
+    it('bonks and keeps the set in B hands when the hopper is full', () => {
+        const { world, b } = crewedJig();
+        const st = stateOf(world, 'assembly-a');
+
+        sendMg(world, b, 'fetch');
+        run(world, 0.7);
+
+        while (st.inputShelf.length < st.inputCap) shelveKeg(world);
+
+        const carried = playerOf(world, 'session-1').carrying;
+
+        world.outbox.length = 0;
+        sendMg(world, b, 'stock');
+
+        expect(playerOf(world, 'session-1').carrying).toBe(carried);
+        expect(fxKinds(world)).toContain('bonk');
+
+        // The hands the set is still in read back as a swing waiting to happen.
+        run(world, 0.05);
+
+        expect(mg(world).bPhase).toBe('holding');
     });
 
     it('lets B swing again after a missed toss', () => {

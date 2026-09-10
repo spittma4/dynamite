@@ -25,6 +25,7 @@ const MG_OPS: Record<MgOp, true> = {
     fetch: true,
     swing: true,
     toss: true,
+    stock: true,
     shove: true,
     tailgate: true,
 };
@@ -119,7 +120,7 @@ describe('isMgMsg', () => {
         for (const op of Object.keys(MG_OPS)) {
             expect(isMgMsg({ stationId: 'powder-a', op, t: 10 })).toBe(true);
         }
-        expect(Object.keys(MG_OPS)).toHaveLength(13);
+        expect(Object.keys(MG_OPS)).toHaveLength(14);
         expect(isMgMsg({ stationId: 'assembly-a', op: 'swing', t: 10 })).toBe(true);
     });
 

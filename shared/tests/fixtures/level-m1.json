@@ -88,7 +88,7 @@
             "anchor": [13, 3],
             "workTiles": [[13, 5], [14, 5]],
             "rackTiles": [[13, 7]],
-            "inputShelf": { "tile": [11, 4], "capacity": 8, "accepts": ["keg", "casing"] },
+            "inputShelf": { "tile": [11, 4], "capacity": 8, "accepts": ["keg", "casing", "parts"] },
             "outputShelf": { "tile": [16, 4], "capacity": 4 },
             "floorRing": {
                 "tiles": [

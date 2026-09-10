@@ -12,8 +12,10 @@ import {
     extrasFor,
     firstBubbleAt,
     footprintOf,
+    helperPostsOf,
     interruptsPerSecond,
     joinZoneOf,
+    pinnedToPost,
     pickExtras,
     roleForTile,
 } from '../src/sim/stations';
@@ -168,21 +170,66 @@ describe('tile geometry', () => {
         expect(keys).toEqual(['4,3', '4,4', '5,3', '5,4', '6,3', '6,4', '7,3', '7,4']);
     });
 
-    it('puts the work, rack and ring tiles in the join zone and nothing else', () => {
+    it('keeps only the ring tiles that touch a work tile as helper posts', () => {
+        expect(helperPostsOf(assembly).map(([x, y]: Tile) => `${x},${y}`)).toEqual([
+            '12,5',
+            '15,5',
+            '13,6',
+            '14,6',
+        ]);
+        expect(helperPostsOf(powder).map(([x, y]: Tile) => `${x},${y}`)).toEqual([
+            '3,5',
+            '5,5',
+            '4,6',
+        ]);
+    });
+
+    it('puts the work, rack and helper-post tiles in the join zone and nothing else', () => {
         const zone = joinZoneOf(assembly);
 
         expect(zone.has('13,5')).toBe(true);
         expect(zone.has('13,7')).toBe(true);
-        expect(zone.has('11,7')).toBe(true);
+        expect(zone.has('12,5')).toBe(true);
         expect(zone.has('11,4')).toBe(false);
-        expect(zone.size).toBe(2 + 1 + 20);
+        expect(zone.size).toBe(2 + 1 + 4);
+    });
+
+    it('leaves the far side of the fuel apron out of the join zone', () => {
+        const zone = joinZoneOf(assembly);
+
+        for (const key of ['17,3', '17,7', '11,6', '16,6']) expect(zone.has(key)).toBe(false);
     });
 
     it('maps a tile to the role that stands on it', () => {
         expect(roleForTile(assembly, [13, 5])).toBe('work');
         expect(roleForTile(assembly, [13, 7])).toBe('rack');
-        expect(roleForTile(assembly, [11, 7])).toBe('helper');
+        expect(roleForTile(assembly, [12, 5])).toBe('helper');
+        expect(roleForTile(assembly, [11, 7])).toBeNull();
         expect(roleForTile(assembly, [1, 1])).toBeNull();
+    });
+});
+
+/**
+ * N4's "stuck". The server freezes a press station's post-holders and the client
+ * predicts WASD for everybody, so the one fact both sides have to agree on is who
+ * has legs — a disagreement here is a square that walks and snaps, walks and snaps.
+ */
+describe('who has legs', () => {
+    it('pins a member standing on a post at a press station', () => {
+        expect(pinnedToPost({ stationId: 'assembly-a', workTile: '13,5' }, assembly)).toBe(true);
+    });
+
+    it('leaves a helper their legs: a helper holds no post', () => {
+        expect(pinnedToPost({ stationId: 'assembly-a', workTile: '' }, assembly)).toBe(false);
+    });
+
+    it('leaves the dock crew their legs, because standing there is the membership', () => {
+        expect(pinnedToPost({ stationId: 'dock-a', workTile: '22,4' }, dock)).toBe(false);
+    });
+
+    it('leaves a player at no station alone, config or not', () => {
+        expect(pinnedToPost({ stationId: '', workTile: '' }, undefined)).toBe(false);
+        expect(pinnedToPost({ stationId: 'assembly-a', workTile: '13,5' }, undefined)).toBe(false);
     });
 });
 

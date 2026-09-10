@@ -21,7 +21,7 @@ import { gameAudio } from '../audio/Audio';
 import type { CueName } from '../audio/cues';
 import { type Pulse, PulseTrack } from '../audio/tracks';
 import { GROOVE, HANDS_FULL, INTAKE_ZONE, PRIME_KEG } from '../nouns';
-import { KEGS_IN, KEGS_OUT } from '../render/dropTargets';
+import { KEGS_OUT, kegShelfSign } from '../render/dropTargets';
 import { UI } from '../render/palette';
 import { throwDistance } from '../ui/format';
 import type { Factory } from '../scenes/Factory';
@@ -163,11 +163,15 @@ export const IN_THE_BAND = 'IN THE BAND';
  * the E row, where nobody scanning a key column would find it. The walk leads,
  * because it is the answer `ui/helpContent.ts` gives, and it names the paint
  * the player will be standing on rather than only the stripes.
+ *
+ * `inSign` is that paint, off `kegShelfSign` and the level's own shelf rather than
+ * a constant: N2 added `parts` to Assembly's `accepts`, so the sign on the floor
+ * became KEGS · FUSE SETS IN and a hardcoded KEGS IN named nothing.
  */
-export function handsLinesKeg(throwTiles: number): readonly string[] {
+export function handsLinesKeg(throwTiles: number, inSign: string): readonly string[] {
     return [
         `WASD   walk it to ${STATION_LABEL.assembly} — ${INTAKE_ZONE}`,
-        `E      face the ${KEGS_IN} shelf there — E puts it down`,
+        `E      face ${inSign} there — E puts it down`,
         `Space  throw it ${throwDistance(throwTiles)} — E catches`,
         `Esc    drop the ${GROOVE.toLowerCase()}, combo and all`,
     ];
@@ -190,8 +194,12 @@ export function handsLinesAny(throwTiles: number): readonly string[] {
 }
 
 /** Which set of rows a full pair of hands gets, from what is actually in them. */
-export function handsLines(itemType: string, throwTiles: number): readonly string[] {
-    return itemType === 'keg' ? handsLinesKeg(throwTiles) : handsLinesAny(throwTiles);
+export function handsLines(
+    itemType: string,
+    throwTiles: number,
+    inSign: string,
+): readonly string[] {
+    return itemType === 'keg' ? handsLinesKeg(throwTiles, inSign) : handsLinesAny(throwTiles);
 }
 
 /**
@@ -598,6 +606,8 @@ class SlammerOverlay implements MinigameOverlay {
     private carriedType = '';
     /** `level.carry.throwTiles`, so the hands rows quote the level, not a guess. */
     private throwTiles = 0;
+    /** The IN sign the keg errand ends at, painted off the same level. */
+    private kegShelf = '';
 
     private gauge: Phaser.GameObjects.Graphics | null = null;
     private needle: Phaser.GameObjects.Graphics | null = null;
@@ -616,6 +626,7 @@ class SlammerOverlay implements MinigameOverlay {
         this.reset();
 
         this.throwTiles = ctx.scene.levelConfig.carry.throwTiles;
+        this.kegShelf = kegShelfSign(ctx.scene.levelConfig);
 
         const scene = ctx.scene;
         const add = (o: Phaser.GameObjects.GameObject): void => {
@@ -1066,7 +1077,7 @@ class SlammerOverlay implements MinigameOverlay {
     private drawHandsRows(full: boolean): void {
         if (!full) return;
 
-        const rows = handsLines(this.carriedType, this.throwTiles);
+        const rows = handsLines(this.carriedType, this.throwTiles, this.kegShelf);
 
         this.handsRows.forEach((row, i) => row.setText(rows[i] ?? ''));
     }
@@ -1091,7 +1102,7 @@ class SlammerOverlay implements MinigameOverlay {
             fontStyle: 'bold',
         });
 
-        this.handsRows = handsLinesKeg(this.throwTiles).map((line, i) =>
+        this.handsRows = handsLinesKeg(this.throwTiles, this.kegShelf).map((line, i) =>
             scene.add.text(0, 30 + i * 18, line, {
                 fontFamily: 'monospace',
                 fontSize: '13px',

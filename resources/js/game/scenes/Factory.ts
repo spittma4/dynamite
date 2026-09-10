@@ -10,6 +10,7 @@ import {
     type StationType,
     TILE_PX,
     makeWallLookup,
+    pinnedToPost,
 } from '@shared';
 import type { Callbacks } from '@colyseus/sdk';
 import Phaser from 'phaser';
@@ -34,6 +35,9 @@ import { createStationsLayer } from '../render/Stations';
  */
 
 export { HUD_HEIGHT };
+
+/** The intent a pinned body is predicted with: a post-holder's legs are the machine's. */
+const STILL: MoveInput = { dx: 0, dy: 0 };
 
 /** Draw order, bottom to top. F05, F06 and F10 fill the layers they own. */
 export interface FactoryLayers {
@@ -265,7 +269,13 @@ export class Factory extends Phaser.Scene {
                 predictor.reconcile({ x: me.x, y: me.y, seq: me.seq, speed: me.speed }, nowMs);
             }
 
-            predictor.step(this.intent, delta / 1000, me.speed, nowMs);
+            // A post-holder has no legs on the server, and `Keys` keeps sending
+            // WASD from inside an overlay on purpose — predicting a walk the
+            // server will not grant is the rubber-band N4 reported as being
+            // stuck. The rule is shared so the two cannot disagree about it.
+            const pinned = pinnedToPost(me, this.stationConfig(me.stationId));
+
+            predictor.step(pinned ? STILL : this.intent, delta / 1000, me.speed, nowMs);
         }
 
         avatars.update(state, conn.sessionId, me ? predictor.pose : null, serverNow, nowMs);
@@ -278,6 +288,13 @@ export class Factory extends Phaser.Scene {
     /** Px inside the layers: predicted for the own avatar, interpolated for the rest. */
     avatarPosition(sessionId: string): { x: number; y: number } | null {
         return this.avatars?.positionOf(sessionId) ?? null;
+    }
+
+    /** The station's config block, or `undefined` for '' and for an unknown id. */
+    stationConfig(stationId: string): LevelConfig['stations'][number] | undefined {
+        if (stationId === '') return undefined;
+
+        return this.level?.stations.find((station) => station.id === stationId);
     }
 
     /** The level as the scene last received it — scaled once the day starts. */

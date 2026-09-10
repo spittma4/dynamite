@@ -12,7 +12,7 @@ import {
     TRUCK_LEAVING,
 } from '../nouns';
 import { RE_ARMING } from '../minigames/Jig';
-import { KEGS_IN, KEGS_OUT, pluralOf } from '../render/dropTargets';
+import { KEGS_OUT, pluralOf, shelfLabel } from '../render/dropTargets';
 import { grooveBand } from '../ui/grooveBand';
 
 /** The shipped bands (`config/game/levels/*.json`), enough to reach each label. */
@@ -169,12 +169,20 @@ describe('the currency the bar measures', () => {
  * only because every shipped level happens to accept kegs there.
  */
 describe('the signs quote the paint', () => {
+    /**
+     * The IN sign is no longer a constant at all: N2 gave Assembly's shelf a third
+     * claimant, so the one true spelling is whatever `shelfLabel` makes of the level
+     * the round is running (`kegShelfSign`), and the three sentences that quote it
+     * are handed that string. What stays pinned is the builder — and that no file
+     * writes either sign out by hand.
+     */
     it('builds both keg signs off the function that paints them', () => {
-        expect(KEGS_IN).toBe('KEGS IN');
+        expect(shelfLabel('in', ['keg'], null)).toBe('KEGS IN');
+        expect(shelfLabel('in', ['keg', 'casing', 'parts'], null)).toBe('KEGS · FUSE SETS IN');
         expect(KEGS_OUT).toBe('KEGS OUT');
     });
 
-    it.each([KEGS_IN, KEGS_OUT])('never spells %s out in a source file', (sign) => {
+    it.each(['KEGS IN', KEGS_OUT])('never spells %s out in a source file', (sign) => {
         expect(filesSaying(sign)).toEqual([]);
     });
 });

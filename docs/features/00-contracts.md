@@ -208,7 +208,7 @@ Server → client (`room.onMessage`):
 | `report` | `ReportPayload` (§9) at day end; never sent when `day.endsOn === 'never'` |
 
 ```ts
-export type MgOp = 'mash'|'charge'|'release'|'seat'|'pour'|'knot'|'crimp'|'pick'|'fetch'|'swing'|'toss'|'shove'|'tailgate';
+export type MgOp = 'mash'|'charge'|'release'|'seat'|'pour'|'knot'|'crimp'|'pick'|'fetch'|'swing'|'toss'|'stock'|'shove'|'tailgate';
 export type FxKind = 'thunk'|'spark'|'fuse'|'blast'|'fizzle'|'snap'|'whump'|'horn'|'slam'|'chime'|'clink'|'pfft'|'bonk'|'slop';
 export type InputMsg = { dx: Axis; dy: Axis; seq: number };   export type InteractMsg = { t?: number };
 export type ActionMsg = { t: number };                          export type MgMsg = { stationId: string; op: MgOp; t: number; v?: number | string };
@@ -319,6 +319,7 @@ from config; never a dial fraction. The client never decides an outcome.
 | | `fetch` | — | B takes spool + cap (0.6 s) → a `parts` item in B's hands |
 | | `swing` | — | B starts the arc (key-down) |
 | | `toss` | — | B releases; judged against `swingStartAt + toss.arcSeconds` |
+| | `stock` | — | B banks the set in hand on the input shelf (no timing, no judgement); a shelf at capacity fx `bonk` and the set stays in B's hands |
 | `dock` | `shove` | — | tap judged against the beep; one judgement per lane per beep |
 | | `tailgate` | `'down'\|'up'` | E keydown/keyup on a lane while `mg.tailgateUntil > clock`; the server measures the `tailgateHoldSeconds` hold on its own clock |
 
@@ -327,8 +328,8 @@ from config; never a dial fraction. The client never decides an outcome.
 parsed by `parseDockMg` (`shared/src/sim/dock.ts`). Each carries what its overlay needs (phase,
 `clock`-second timestamps, combo, lanes…) and is rewritten only on change.
 
-Join modes (`StationConfig.joinMode`): `'press'` — `E` on a work/rack/ring tile with empty hands
-joins, the clipboard applies, the avatar snaps to the tile centre, movement freezes; `'stand'` —
+Join modes (`StationConfig.joinMode`): `'press'` — `E` on a work tile, a rack tile or a **helper post**
+(`helperPostsOf`, §10.2 — not the whole `floorRing`; N4) with empty hands joins, the clipboard applies, the avatar snaps to the tile centre, movement freezes; `'stand'` —
 standing on a work tile *is* being at the station (`stationId`/`workTile` set and cleared by the
 stations tick), no clipboard, no snap, arrows keep walking, `E` goes to the module regardless of
 `carrying`. `powder-a`/`assembly-a` are `press`; `dock-a` is `stand`.
@@ -626,7 +627,11 @@ export const stationsSystem: System;                                // { name: '
 ```
 
 Pure (`shared/src/sim/stations.ts`): `footprintOf(cfg, layout): { bbox; machine: Tile[] }` (machine =
-the layout's wall tiles inside the bbox), `joinZoneOf(cfg): Set<string>`, `roleForTile(cfg, tile): Role | null`,
+the layout's wall tiles inside the bbox), `helperPostsOf(cfg): Tile[]` (the `floorRing` tiles orthogonally
+adjacent to a `workTiles` tile — **not** the whole ring; N4), `joinZoneOf(cfg): Set<string>` =
+`workTiles ∪ rackTiles ∪ helperPostsOf(cfg)`, `roleForTile(cfg, tile): Role | null` (`'helper'` only on a
+helper post), `pinnedToPost(player, cfg): boolean` (`stationId !== '' && workTile !== '' && joinMode === 'press'`
+— the client predicts against it, `game-server/src/sim/movement.ts` freezes on it),
 `clipboardSecondsFor(lastLeftAt, now, clipboardSeconds, memorySeconds)`, `countWorkers`,
 `extrasFor`, `interruptsPerSecond`, `pickExtras`, `firstBubbleAt`, `bubblesDue`, `armedAt`,
 `STATION_LABEL`, `ACTION_OP: Record<StationType, MgOp>` = `{ boom_powder: 'charge', assembly: 'crimp', dock: 'shove' }`
@@ -643,6 +648,11 @@ else `idle`). While `damaged` F05 makes no cycle, accepts no join, forwards no o
 `tally.bumpPlayer(userId, 'bubbles')` for each `whatCanIDo` bubble; it keeps no private stats.
 Clipboard text = `clipboardLines(world.level)[station.clipboardIndex++ % length]`; station bubbles
 `copy.stations.needParts/needHands` are client-drawn.
+
+N4 (the helper post): a `helper` join is refused unless every `workTiles` tile is held by a `work`
+member; a helper is **not** pinned (`join` leaves their position alone, `movement` leaves their legs)
+and `stations.tick` drops them with reason `'stepOff'` the tick they stand off a helper post — the same
+rule `syncStandMembers` applies at a `stand` station, for the one `press` role with no post.
 
 ### 10.3 Mini-game modules — `game-server/src/sim/minigames/` (F05 types; F07/F08/F09 bodies)
 

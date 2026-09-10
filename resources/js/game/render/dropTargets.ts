@@ -100,34 +100,49 @@ export function shelfLabel(
 }
 
 /**
- * The two signs on the keg errand, off the same builder that paints them. Three
- * sentences quoted them by hand — the Slammer's hands panel, the Jig's route
- * line and the help panel — so a level that named the shelf anything else would
- * have sent all three players to a sign the floor does not have.
+ * The IN sign on the machine a keg is carried to, read off the level the round is
+ * running. Three sentences used to quote a `KEGS_IN` constant built for `['keg']` —
+ * the Slammer's hands panel, the Jig's route line and the help panel — and N2 gave
+ * that shelf a third claimant, so the floor started painting KEGS · FUSE SETS IN
+ * while all three sentences still sent players to a sign that is not there.
+ *
+ * The taker is found by what its shelf asks a player to bring, the way `kegSource`
+ * finds the maker by what its recipe makes: naming the station type would be a
+ * second rule to keep in step with the one the sign is built from.
  */
-export const KEGS_IN = shelfLabel('in', ['keg'], null);
+export function kegShelfSign(level: Pick<LevelConfig, 'stations'>): string {
+    const taker = level.stations.find((station) =>
+        haulableInputs(station.inputShelf?.accepts as ItemType[] | undefined).includes('keg'),
+    );
+
+    return shelfLabel('in', taker?.inputShelf?.accepts as ItemType[] | undefined, null);
+}
+
+/** The out tray a keg is lifted off, off the same builder that paints it. */
 export const KEGS_OUT = shelfLabel('out', undefined, 'keg');
 
 /**
  * Where one station will take the thing in your hands. The dock has no shelf —
- * a stick is set down on a ramp lane — and a fuse set is never shelved either:
- * `partsOnJig` arms the Jig's cradle from the hands of whoever is standing on a
- * work tile, so those tiles are its drop zone.
+ * a stick is set down on a ramp lane.
+ *
+ * A fuse set has two destinations at one machine, which is N2's whole shape: the
+ * bin, once `inputShelf.accepts` lists `parts`, and the cradle, because
+ * `partsOnJig` still arms the Jig straight from the hands of whoever is standing
+ * on a work tile. The relay is not replaced by the receptacle — it is the faster
+ * path and one of the few two-player interactions the game has — so both light
+ * up and the player picks.
  */
 function acceptsAt(station: StationConfig, type: ItemType, onShelf: number): Tile[] | null {
     if (station.type === 'dock') return type === 'stick' ? [...station.workTiles] : null;
 
-    if (type === 'parts') {
-        return station.type === 'assembly' ? [...station.workTiles] : null;
-    }
-
+    const cradle = type === 'parts' && station.type === 'assembly' ? station.workTiles : [];
     const shelf = advertisedShelf(station, type);
-
-    if (!shelf) return null;
-
     // A shelf at its cap refuses the push and the server answers with a `bonk`
     // and no words, so a tile that pulses at a full shelf is a lie.
-    return onShelf < shelf.capacity ? [shelf.tile] : null;
+    const bin = shelf && onShelf < shelf.capacity ? [shelf.tile] : [];
+    const tiles = [...bin, ...cradle];
+
+    return tiles.length > 0 ? tiles : null;
 }
 
 /**

@@ -144,6 +144,7 @@ function shelfView(items: ItemState[]): JigShelfEntry[] {
         dents: item.dents,
         quality: item.quality,
         prime: item.prime,
+        fuseLength: item.fuseLength as FuseLength,
     }));
 }
 
@@ -215,6 +216,22 @@ function toFloor(world: World, itemId: string, tile: Tile): void {
     if (!placeBeside(world, item, tile)) world.log(`jig: no room beside ${tile.join(',')}`);
 }
 
+/**
+ * B banking a set in the machine's own bin. A shelf at capacity bonks and the set
+ * stays in the hands that fetched it — the same restraint `toFloor` shows, and
+ * the next tick reads those hands back as a swing waiting to happen.
+ */
+function bankParts(ctx: StationCtx, itemId: string): void {
+    const world = ctx.world;
+    const item = world.state.items.get(itemId);
+
+    if (item === undefined) return;
+
+    if (!shelfPush(world, ctx.station.st, 'in', item)) {
+        ctx.fx('bonk', ...centreOf(ctx.cfg.inputShelf?.tile ?? ctx.cfg.anchor));
+    }
+}
+
 /** The stick pops off the jig when A walks out mid-crimp (docs/17's drop table). */
 function popStick(ctx: StationCtx, effect: Extract<JigEffect, { e: 'dropStick' }>): void {
     const world = ctx.world;
@@ -268,6 +285,11 @@ function applyOne(ctx: StationCtx, effect: JigEffect): void {
 
         case 'partsToFloor':
             toFloor(world, effect.itemId, effect.tile);
+
+            return;
+
+        case 'shelfParts':
+            bankParts(ctx, effect.itemId);
 
             return;
 

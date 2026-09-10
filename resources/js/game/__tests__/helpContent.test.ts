@@ -1,5 +1,6 @@
 import type {
     DockMg,
+    ItemType,
     JigBPhase,
     JigMg,
     JigPhase,
@@ -10,6 +11,8 @@ import type {
 } from '@shared';
 import { describe, expect, it } from 'vitest';
 
+import { POST_LABEL } from '../render/helperPosts';
+
 import { type KeyEvents, Keys } from '../input/Keys';
 import { dockKeyAction } from '../minigames/Dock';
 import { bKeyOp, jigOverlay } from '../minigames/Jig';
@@ -17,10 +20,24 @@ import { FUSE_SET, PRIME_KEG } from '../nouns';
 import { LEGEND, chuteFor, keyPlan, outcomeLabel } from '../minigames/Slammer';
 import type { OverlayContext, OverlayKey } from '../minigames/types';
 import { type ArrowKey, emoteForArrow } from '../input/intent';
-import { HELP_HINT, type HelpRow, type HelpSection, helpSections } from '../ui/helpContent';
+import {
+    HELP_HINT,
+    type HelpFacts,
+    type HelpRow,
+    type HelpSection,
+    helpSections,
+} from '../ui/helpContent';
+import { shelfLabel } from '../render/dropTargets';
 
-/** Every shipped level's `carry.throwTiles` (`config/game/levels/*.json`). */
-const THROW_TILES = 2;
+/**
+ * What the help panel is told about the level the round is running, in the values
+ * every shipped level actually holds (`config/game/levels/*.json`): `throwTiles` 2,
+ * and an Assembly input shelf that takes kegs, its own casings and — since N2 —
+ * fuse sets. The shelf name is built by the same `shelfLabel` call that paints the
+ * sign on the floor, so a row quoting it cannot name paint that is not there.
+ */
+const SHIPPED_ACCEPTS: ItemType[] = ['keg', 'casing', 'parts'];
+const FACTS: HelpFacts = { throwTiles: 2, assemblyShelf: shelfLabel('in', SHIPPED_ACCEPTS, null) };
 
 function rowsOf(sections: ReturnType<typeof helpSections>): string[] {
     return sections.flatMap((s) => s.rows.map(([key, what]) => `${key} ${what}`));
@@ -33,14 +50,14 @@ function rowsOf(sections: ReturnType<typeof helpSections>): string[] {
  * presence in the panel a stuck player is told to open.
  */
 describe('when something catches', () => {
-    const rows = (): string => rowsOf(helpSections(null, THROW_TILES)).join(' | ');
+    const rows = (): string => rowsOf(helpSections(null, FACTS)).join(' | ');
 
     it('says a lit item burns down and takes the pile with it', () => {
         expect(rows()).toMatch(/burn/i);
     });
 
     it('names the key that puts a fire out', () => {
-        const fire = helpSections(null, THROW_TILES).find((s) => /catch/i.test(s.title));
+        const fire = helpSections(null, FACTS).find((s) => /catch/i.test(s.title));
         const stomp = fire?.rows.find(([, what]) => /stomp/i.test(what));
 
         expect(stomp?.[0]).toMatch(/space/i);
@@ -53,7 +70,7 @@ describe('when something catches', () => {
      * refusal for doing the correct thing.
      */
     it('says a blast bin takes a burning item and nothing else', () => {
-        const fire = helpSections(null, THROW_TILES).find((s) => /catch/i.test(s.title));
+        const fire = helpSections(null, FACTS).find((s) => /catch/i.test(s.title));
         const bin = fire?.rows.find(([key]) => /blast bin/i.test(key));
 
         expect(bin?.[1]).toMatch(/only|nothing else|not.*unlit/i);
@@ -62,7 +79,7 @@ describe('when something catches', () => {
 
 describe('helpSections', () => {
     it('always explains how to walk and how to close the help', () => {
-        const rows = rowsOf(helpSections(null, THROW_TILES)).join(' | ');
+        const rows = rowsOf(helpSections(null, FACTS)).join(' | ');
 
         expect(rows).toMatch(/WASD/i);
         expect(rows).toMatch(/walk/i);
@@ -70,13 +87,13 @@ describe('helpSections', () => {
     });
 
     it('leads with the station you are standing at, because that is what is unobvious', () => {
-        const [first] = helpSections('boom_powder', THROW_TILES);
+        const [first] = helpSections('boom_powder', FACTS);
 
         expect(first?.title).toMatch(/slammer|powder/i);
     });
 
     it('teaches the Slammer as mash, charge, release', () => {
-        const rows = rowsOf(helpSections('boom_powder', THROW_TILES)).join(' | ');
+        const rows = rowsOf(helpSections('boom_powder', FACTS)).join(' | ');
 
         expect(rows).toMatch(/mash/i);
         expect(rows).toMatch(/hold .*space/i);
@@ -85,14 +102,29 @@ describe('helpSections', () => {
     });
 
     it('warns that a late release sparks and a fourth mash spills', () => {
-        const rows = rowsOf(helpSections('boom_powder', THROW_TILES)).join(' | ');
+        const rows = rowsOf(helpSections('boom_powder', FACTS)).join(' | ');
 
         expect(rows).toMatch(/spark/i);
         expect(rows).toMatch(/spill|overflow/i);
     });
 
+    /**
+     * The Slammer's rows say a late release "throws a spark onto the pile"; the
+     * Jig's said nothing about the matching roll, and the Jig has one — a crimp
+     * miss on a dented casing rolls `hazards.sparks.crimpOnDented`. The dent dot
+     * was the least explained mark on the panel and it carries both consequences.
+     */
+    it('says a dented casing costs the perfect and can throw a spark', () => {
+        const rows = helpSections('assembly', FACTS)[0]?.rows ?? [];
+        const text = rows.map(([k, v]) => `${k} ${v}`).join(' | ');
+
+        expect(text).toMatch(/dent/i);
+        expect(text).toMatch(/never be perfect/i);
+        expect(text).toMatch(/spark/i);
+    });
+
     it('teaches the Jig as seat, pour, knots, crimp', () => {
-        const rows = rowsOf(helpSections('assembly', THROW_TILES)).join(' | ');
+        const rows = rowsOf(helpSections('assembly', FACTS)).join(' | ');
 
         expect(rows).toMatch(/seat/i);
         expect(rows).toMatch(/pour|fill/i);
@@ -101,7 +133,7 @@ describe('helpSections', () => {
     });
 
     it('teaches the Dock as set a stick then shove on the beep', () => {
-        const rows = rowsOf(helpSections('dock', THROW_TILES)).join(' | ');
+        const rows = rowsOf(helpSections('dock', FACTS)).join(' | ');
 
         expect(rows).toMatch(/lane|set/i);
         expect(rows).toMatch(/beep/i);
@@ -109,7 +141,7 @@ describe('helpSections', () => {
     });
 
     it('still lists the floor controls while you are at a station', () => {
-        const titles = helpSections('dock', THROW_TILES).map((s) => s.title.toLowerCase());
+        const titles = helpSections('dock', FACTS).map((s) => s.title.toLowerCase());
 
         expect(titles.some((t) => /floor|anywhere/.test(t))).toBe(true);
     });
@@ -128,7 +160,7 @@ describe('helpSections', () => {
 
 describe('the flow section', () => {
     it('spells out powder to assembly to the dock, which the floor never says', () => {
-        const flow = helpSections(null, THROW_TILES).find((s) => /the line/i.test(s.title));
+        const flow = helpSections(null, FACTS).find((s) => /the line/i.test(s.title));
         const rows = flow?.rows.map(([k, v]) => `${k} ${v}`).join(' | ') ?? '';
 
         expect(rows).toMatch(/powder/i);
@@ -141,7 +173,7 @@ describe('the flow section', () => {
     // (`feed()` in shared/src/sim/jig.ts), so a player who goes looking for them
     // is looking for something that does not exist anywhere on the floor.
     it('says the casings are automatic, so nobody goes hunting for them', () => {
-        const flow = helpSections(null, THROW_TILES).find((s) => /the line/i.test(s.title));
+        const flow = helpSections(null, FACTS).find((s) => /the line/i.test(s.title));
         const rows = flow?.rows.map(([k, v]) => `${k} ${v}`).join(' | ') ?? '';
 
         expect(rows).toMatch(/casing/i);
@@ -149,9 +181,98 @@ describe('the flow section', () => {
     });
 });
 
+/**
+ * The panel quotes two signs that are painted on the floor by `shelfLabel` out of
+ * the level's own `inputShelf.accepts`, and it used to quote them from a constant
+ * built for `['keg']`. N2 gave that shelf a third claimant, so the floor started
+ * reading KEGS · FUSE SETS IN while the panel still sent all three players to a
+ * KEGS IN that does not exist. The row is built from the same string the floor is.
+ */
+describe('the signs the flow section quotes', () => {
+    const assemblyRow = (): string => {
+        const flow = helpSections(null, FACTS).find((s) => /the line/i.test(s.title));
+        const row = flow?.rows.find(([key]) => /assembly/i.test(key));
+
+        return row ? row.join(' ') : '';
+    };
+
+    it('names the shelf the floor actually paints, whatever the level accepts', () => {
+        expect(assemblyRow()).toContain(FACTS.assemblyShelf);
+        expect(assemblyRow()).toContain(shelfLabel('in', SHIPPED_ACCEPTS, null));
+    });
+
+    it('follows the level rather than a constant, when the level takes only kegs', () => {
+        const kegsOnly = { ...FACTS, assemblyShelf: shelfLabel('in', ['keg'], null) };
+        const flow = helpSections(null, kegsOnly).find((s) => /the line/i.test(s.title));
+        const row = flow?.rows.find(([key]) => /assembly/i.test(key));
+
+        expect(row?.join(' ')).toContain('KEGS IN');
+        expect(row?.join(' ')).not.toContain(FACTS.assemblyShelf);
+    });
+});
+
+/**
+ * Major: the panel denied the feature N2 added. 'Assembly stocks its own, so a keg
+ * is the only thing you carry to it' was written when it was true; afterwards a
+ * fuse set was the second thing you carry there, and for a lone player loading the
+ * bin is the only way to arm the cradle at all — `partsOnJigTile` reads a body that
+ * has NOT joined, so an operator can never satisfy the hands path themselves. The
+ * one panel a stuck solo player is told to open was telling them it was impossible.
+ */
+describe('what the panel says you carry to Assembly', () => {
+    const rows = (station: 'assembly' | null): string =>
+        rowsOf(helpSections(station, FACTS)).join(' | ');
+
+    it('never claims a keg is the only thing carried to the machine', () => {
+        expect(rows(null)).not.toMatch(/only thing you carry/i);
+        expect(rows('assembly')).not.toMatch(/only thing you carry/i);
+    });
+
+    it('still says the casings are the part nobody fetches', () => {
+        expect(rows(null)).toMatch(/casing/i);
+        expect(rows(null)).toMatch(/never fetch/i);
+    });
+
+    it('names the fuse set as something you can carry to the bin yourself', () => {
+        expect(rows('assembly')).toMatch(new RegExp(`carry.*${FUSE_SET}|${FUSE_SET}.*carry`, 'i'));
+        expect(rows('assembly')).toMatch(/alone|on your own|by yourself/i);
+    });
+
+    it('keeps the relay as the other half of the row, so the pair still reads as a pair', () => {
+        expect(rows('assembly')).toMatch(/toss/i);
+        expect(rows('assembly')).toMatch(/cradle/i);
+    });
+});
+
+/**
+ * N4: "you can 'sit'/press E and get stuck on the squares around a station." The
+ * floor brackets and the helper panel both teach this now, but the panel a stuck
+ * player is told to open had nothing at all to say about the third way to join a
+ * machine — and that is the one a player finds by pressing E somewhere odd.
+ */
+describe('the flow section on lending a hand', () => {
+    const flow = (): string => {
+        const section = helpSections(null, FACTS).find((s) => /the line/i.test(s.title));
+
+        return section?.rows.map(([k, v]) => `${k} ${v}`).join(' | ') ?? '';
+    };
+
+    it('names the mark on the floor with the word painted on it', () => {
+        expect(flow()).toContain(POST_LABEL);
+    });
+
+    it('says the machine has to be running before the press is answered', () => {
+        expect(flow()).toMatch(/somebody is (already )?running|already working|being worked/i);
+    });
+
+    it('says how to stop helping, because walking off is the leave nobody guesses', () => {
+        expect(flow()).toMatch(/step off|walk off/i);
+    });
+});
+
 describe('the promise the flow section makes about the lighting', () => {
     function inYourHands(): string {
-        const flow = helpSections(null, THROW_TILES).find((section) => /the line/i.test(section.title));
+        const flow = helpSections(null, FACTS).find((section) => /the line/i.test(section.title));
         const row = flow?.rows.find(([key]) => /in your hands/i.test(key));
 
         return row ? row.join(' ') : '';
@@ -177,7 +298,7 @@ describe('the Boom Powder section', () => {
      * answered it with "E puts it down".
      */
     it('sends a full shelf keg to Assembly rather than onto the floor', () => {
-        const row = helpSections('boom_powder', THROW_TILES)[0]?.rows.find(([key]) => /shelf full/i.test(key));
+        const row = helpSections('boom_powder', FACTS)[0]?.rows.find(([key]) => /shelf full/i.test(key));
 
         expect(row?.[1]).toMatch(/assembly/i);
         expect(row?.[1]).toMatch(/floor|fire|groove/i);
@@ -186,7 +307,7 @@ describe('the Boom Powder section', () => {
 
 describe('the Assembly section', () => {
     it('does not send you off to find a casing the machine stocks for itself', () => {
-        const rows = rowsOf(helpSections('assembly', THROW_TILES)).join(' | ');
+        const rows = rowsOf(helpSections('assembly', FACTS)).join(' | ');
 
         expect(rows).toMatch(/seat/i);
         expect(rows).toMatch(/itself|its own|already there|stocked/i);
@@ -199,7 +320,7 @@ describe('the shout row', () => {
     const WORD = { help: 'HELP', stop: 'STOP', go: 'GO', what: '?' } as const;
 
     function shoutRow(): string {
-        return rowsOf(helpSections(null, THROW_TILES)).find((row) => /Shout/.test(row)) ?? '';
+        return rowsOf(helpSections(null, FACTS)).find((row) => /Shout/.test(row)) ?? '';
     }
 
     // The help panel shipped a mapping that disagreed with `intent.ts` on three
@@ -244,7 +365,7 @@ function keysNamedIn(row: HelpRow): OverlayKey[] {
 }
 
 function sectionFor(station: StationType): HelpSection {
-    const section = helpSections(station, THROW_TILES)[0];
+    const section = helpSections(station, FACTS)[0];
 
     if (!section) throw new Error(`no help section for ${station}`);
 
@@ -461,7 +582,7 @@ describe('the keys the Dock section names', () => {
 
 describe('the first thing a new player reads', () => {
     function flow(): HelpSection {
-        const section = helpSections(null, THROW_TILES).find((s) => /the line/i.test(s.title));
+        const section = helpSections(null, FACTS).find((s) => /the line/i.test(s.title));
 
         if (!section) throw new Error('the help has no flow section');
 
@@ -498,7 +619,7 @@ describe('the first thing a new player reads', () => {
         const row = flow().rows.find(([key]) => /assembly/i.test(key));
 
         expect(row?.join(' ')).toMatch(/face/i);
-        expect(row?.join(' ')).toMatch(/KEGS IN/);
+        expect(row?.join(' ')).toContain(FACTS.assemblyShelf);
     });
 });
 
@@ -510,7 +631,7 @@ describe('the nouns the help teaches', () => {
         const row = rowSaying('dock', /missed/i);
 
         expect(row.join(' ')).toMatch(/stick/i);
-        expect(rowsOf(helpSections('dock', THROW_TILES)).join(' ')).not.toMatch(/crate/i);
+        expect(rowsOf(helpSections('dock', FACTS)).join(' ')).not.toMatch(/crate/i);
     });
 
     it('calls the thing B fetches a fuse set, the word the panel uses', () => {
@@ -607,7 +728,7 @@ describe('the keys the floor sections name', () => {
 
     /** Both floor sections: the flow describes floor presses too. */
     function floorRows(): HelpRow[] {
-        return helpSections(null, THROW_TILES).flatMap((section) => section.rows);
+        return helpSections(null, FACTS).flatMap((section) => section.rows);
     }
 
     it('binds every key the floor rows name to the action the row promises', () => {
@@ -630,7 +751,7 @@ describe('the keys the floor sections name', () => {
     });
 
     it('gives every one of those five keys a row of its own', () => {
-        const keys = helpSections(null, THROW_TILES)
+        const keys = helpSections(null, FACTS)
             .flatMap((section) => section.rows)
             .map(([key]) => key);
 

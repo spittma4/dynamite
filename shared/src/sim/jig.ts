@@ -58,7 +58,13 @@ export interface JigMg {
     beatStartAt: number;
     rearmFrom: number;
     rearmAt: number;
-    seated: { dents: number; colour: 'red'; orderId: string } | null;
+    /**
+     * The casing in the jig, with the order it was seated under and that order's
+     * own fuse length — captured here because the order itself leaves `view.orders`
+     * when its truck settles it (`wantedFuse`). `''` is a seat made with nothing on
+     * the board.
+     */
+    seated: { dents: number; colour: 'red'; orderId: string; fuseLength: FuseLength } | null;
     fill: number;
     pour: { startAt: number; targetAt: number; beats: number; primeKeg: boolean } | null;
     keg: { quality: number; prime: boolean; poursLeft: number } | null;
@@ -70,6 +76,13 @@ export interface JigMg {
     cradle: JigCradle;
     cradleFuse: FuseLength;
     surfaceReadyAt: number;
+    /**
+     * The fuse the stick on the jig is for, so the hopper bin, the floor sign and
+     * the A panel all name one authoritative length instead of three guesses at
+     * it from `orderChip`. `''` is a day with no order to disagree with, and the
+     * machine will then take whatever is in the bin.
+     */
+    cradleWants: FuseLength;
     bPhase: JigBPhase;
     bPick: FuseLength;
     /**
@@ -114,6 +127,8 @@ export interface JigShelfEntry {
     dents: number;
     quality: number;
     prime: boolean;
+    /** `''` on everything but a banked `parts` set. */
+    fuseLength: FuseLength;
 }
 
 /** Everything the reducer is allowed to know about the world, built once per call. */
@@ -174,6 +189,8 @@ export type JigEffect =
     | { e: 'stockCasing'; dents: number }
     | { e: 'createParts'; fuseLength: FuseLength; sessionId: string }
     | { e: 'partsToFloor'; itemId: string; tile: Tile }
+    /** B banking a set in the machine's own bin; a refusal leaves it in their hands. */
+    | { e: 'shelfParts'; itemId: string }
     | { e: 'complete'; item: JigStickInit; perfect: boolean; handsOf: string }
     | { e: 'dropStick'; item: JigStickInit; origin: Tile; culpritId: string }
     | { e: 'abort' }
@@ -340,6 +357,7 @@ export function createJigState(cfg: JigConfig, tiles: JigTiles): JigState {
         cradle: 'empty',
         cradleFuse: '',
         surfaceReadyAt: 0,
+        cradleWants: '',
         bPhase: 'idle',
         bPick: 'long',
         bPickFromOrder: false,
@@ -394,6 +412,7 @@ export function toMg(state: JigState): JigMg {
         cradle: state.cradle,
         cradleFuse: state.cradleFuse,
         surfaceReadyAt: round3(state.surfaceReadyAt),
+        cradleWants: state.cradleWants,
         bPhase: state.bPhase,
         bPick: state.bPick,
         bPickFromOrder: state.bPickFromOrder,
@@ -442,6 +461,43 @@ function overfillAt(pour: { startAt: number; targetAt: number }): number {
     return pour.targetAt + OVERFILL_FRACTION * (pour.targetAt - pour.startAt);
 }
 
+/**
+ * The length the stick on the jig is for: the one captured when it was seated, or
+ * the next order the day will settle while nothing is seated. `''` is a seat with
+ * no order behind it, and a machine with no order to disagree with has no
+ * preference to defend — it takes whatever is in the bin.
+ *
+ * Held rather than re-derived, because `view.orders` is the **open** book and the
+ * seated order leaves it: `settleOrder` stamps it the moment its truck pulls off,
+ * so a length looked up by `seated.orderId` flipped to the next order's under a
+ * stick already in the jig. The machine then pulled the wrong-length set, skipped
+ * the matching one, and the Dock bonked WRONG FUSE three stations and one innocent
+ * hauler later — the exact outcome `takeFromShelf` exists to prevent.
+ */
+function wantedFuse(state: JigState, view: JigTickView): FuseLength {
+    const seated = state.seated;
+
+    if (seated !== null && seated.fuseLength !== '') return seated.fuseLength;
+
+    return view.orders[0]?.fuseLength ?? '';
+}
+
+/** The lowest-index set in the bin the machine is allowed to reach for, if any. */
+function usableSetOnShelf(state: JigState, view: JigTickView): JigShelfEntry | null {
+    const wanted = wantedFuse(state, view);
+
+    // Lowest index, not `shelfPull`'s newest-first: the bin drains in the order
+    // it filled, so nothing rots at the bottom of it across a length rollover.
+    for (const entry of view.shelf) {
+        if (entry.type !== 'parts') continue;
+        if (wanted !== '' && entry.fuseLength !== wanted) continue;
+
+        return entry;
+    }
+
+    return null;
+}
+
 export function stationStatus(
     state: JigState,
     view: JigTickView,
@@ -453,7 +509,19 @@ export function stationStatus(
             !rearming &&
             (!hasCasing(view) || !pourAvailable(state, view))) ||
         (state.phase === 'pour' && state.pour === null) ||
-        (state.phase === 'parts' && state.cradle === 'empty');
+        // A machine with the right material in its own hopper is not starved. The
+        // pour resolves before `takeFromShelf` ever sees the new phase, so without
+        // this clause every healthy reach flashes one 50 ms frame of red and blips
+        // the Groove for a shortage that was never there.
+        //
+        // `a === ''` is the other half of `takeFromShelf`'s guard and it has to be
+        // here too: `bail()` has no `parts` branch, so an A who walks off during the
+        // fuse wait leaves the phrase standing in it, and nothing can move again
+        // without an operator. Reported as `working` the machine looked fine for the
+        // rest of the shift — no red word, no lit apron, no bubble, nothing billed.
+        (state.phase === 'parts' &&
+            state.cradle === 'empty' &&
+            (state.a === '' || usableSetOnShelf(state, view) === null));
 
     if (starved) return { state: 'starved', progress: 0 };
     if (state.phase !== 'seat' || rearming) {
@@ -555,8 +623,10 @@ function onTick(state: JigState, view: JigTickView, rng: () => number): JigEffec
     }
 
     reconcileRoles(state, view, effects);
+    state.cradleWants = wantedFuse(state, view);
     feed(state, view, effects, rng);
     takeFromHands(state, view, effects);
+    takeFromShelf(state, view, effects);
     advanceB(state, view, effects);
     advancePhrase(state, view, effects, rng);
     resumeCycle(state, view, effects);
@@ -627,6 +697,50 @@ function takeFromHands(state: JigState, view: JigTickView, effects: JigEffect[])
     state.cradle = 'armed';
     state.cradleFuse = held.fuseLength;
     effects.push({ e: 'destroyItem', itemId: held.itemId });
+}
+
+/**
+ * The receptacle (N2): a fuse set is loaded into the machine the way a keg is,
+ * and the machine reaches into its own bin for it. Every guard earns its keep.
+ *
+ * `phase === 'parts'` is the whole defence of the relay — a cradle topped up
+ * whenever it was empty would bounce every one of B's tosses and litter the
+ * aisle, which would read as a bug and kill one of the game's few two-player
+ * interactions. Any `bPhase` but `idle` is deferred to for the same reason, and
+ * not only a swing already in the air: B's panel says HOLD SPACE TO SWING with no
+ * timing cue on it, so a B who waits for A to reach PARTS before pressing is
+ * doing what the screen told them, and the machine used to reach into the bin on
+ * that very tick and bounce their on-time Perfect into the aisle. While a set is
+ * fetching or in a B's hands the relay owns the arm; the bin is the path for the
+ * lone player and the hauler, which is who it was asked for.
+ *
+ * It takes only a set the seated order can use. Arming from a mismatch moves the
+ * punishment to the Dock's WRONG FUSE bonk, three stations and one innocent
+ * hauler later, which F15 §3 names as the worst property of the fuse system; a
+ * machine that refuses and says why pays for the stop where it was caused. A
+ * hauler who insists can still load a mismatch by hand.
+ *
+ * The reach lands on `'surface'` and pays the sloppy-toss tax rather than owning
+ * a cradle state of its own, which is what keeps the Perfect toss the only
+ * zero-latency channel. The client draws that bar from
+ * `surfaceReadyAt - SURFACE_TAX_SECONDS`, so tuning the reach apart from the toss
+ * means giving `JigMg` a `cradleFrom` field, not a second constant here.
+ */
+function takeFromShelf(state: JigState, view: JigTickView, effects: JigEffect[]): void {
+    if (state.phase !== 'parts' || state.cradle !== 'empty' || state.a === '') return;
+    if (state.bPhase !== 'idle') return;
+
+    const entry = usableSetOnShelf(state, view);
+
+    if (entry === null) return;
+
+    state.cradle = 'surface';
+    state.cradleFuse = entry.fuseLength;
+    state.surfaceReadyAt = view.now + SURFACE_TAX_SECONDS;
+    effects.push(
+        { e: 'consume', itemId: entry.itemId },
+        { e: 'destroyItem', itemId: entry.itemId },
+    );
 }
 
 function advanceB(state: JigState, view: JigTickView, effects: JigEffect[]): void {
@@ -939,8 +1053,15 @@ function seat(
     if (entry === undefined || entry.type !== 'casing') return;
     if (!pourAvailable(state, view)) return;
 
+    const order = view.orders.find((open) => open.orderId === view.activeOrderId);
+
     state.pendingSeat = true;
-    state.seated = { dents: entry.dents, colour: 'red', orderId: view.activeOrderId };
+    state.seated = {
+        dents: entry.dents,
+        colour: 'red',
+        orderId: view.activeOrderId,
+        fuseLength: order?.fuseLength ?? '',
+    };
     state.aTile = view.aTile;
     state.fill = 0;
     state.pour = null;
@@ -1002,6 +1123,19 @@ function rackInput(
 
         state.bPhase = 'fetching';
         state.bFetchDoneAt = view.now + FETCH_SECONDS;
+
+        return;
+    }
+
+    // Banking, the slow safe channel. B is the only producer of a fuse set, so
+    // without this the receptacle has no regular supply and the sign promises a
+    // channel nobody can use. No timing and no judgement: the toss stays the only
+    // way to earn the instant arm, which is what keeps the relay worth running.
+    if (op === 'stock') {
+        if (state.bPhase !== 'holding' || view.bParts === null) return;
+
+        state.bPhase = 'idle';
+        effects.push({ e: 'shelfParts', itemId: view.bParts.itemId });
 
         return;
     }

@@ -68,11 +68,43 @@ export function footprintOf(cfg: StationConfig, layout: LayoutConfig): Footprint
     return { bbox, machine };
 }
 
+/**
+ * The ring tiles a helper may take a post on: the ones orthogonally touching a
+ * work tile, which is what standing *with* the operator means.
+ *
+ * The floor ring does two jobs and only one of them is a join zone. F10 reads it
+ * as the fuel apron — `ringFuel`, `pickRingSparkTile`, the DANGER beacon and F06's
+ * `floorCount` all sum the whole thing, so it has to cover every tile a dropped
+ * keg could sit on and catch: twenty of them round `assembly-a`, which is both
+ * aisles and the whole walk-through under the machine. Handing all twenty to `E`
+ * as well made a lane a player crosses on every haul into a seat, and N4 is the
+ * report of exactly that: "you can 'sit'/press E and get stuck on the squares
+ * around a station". Four posts beside the operator is the mechanic; sixteen
+ * tiles of corridor was an accident of sharing one list.
+ *
+ * Derived rather than configured because the property that matters — a helper
+ * post touches the machine's working face — is a rule, not a number a designer
+ * tunes, and a `helperTiles` key in five level files is a rule that can drift
+ * from the work tiles it is about.
+ */
+export function helperPostsOf(cfg: StationConfig): Tile[] {
+    const adjacent = new Set<string>();
+
+    for (const [x, y] of cfg.workTiles) {
+        adjacent.add(tileKey(x - 1, y));
+        adjacent.add(tileKey(x + 1, y));
+        adjacent.add(tileKey(x, y - 1));
+        adjacent.add(tileKey(x, y + 1));
+    }
+
+    return cfg.floorRing.tiles.filter(([x, y]) => adjacent.has(tileKey(x, y)));
+}
+
 /** Every tile `E` can join from. Shelf and anchor tiles are furniture, not posts. */
 export function joinZoneOf(cfg: StationConfig): Set<string> {
     const zone = new Set<string>();
 
-    for (const [x, y] of [...cfg.workTiles, ...cfg.rackTiles, ...cfg.floorRing.tiles]) {
+    for (const [x, y] of [...cfg.workTiles, ...cfg.rackTiles, ...helperPostsOf(cfg)]) {
         zone.add(tileKey(x, y));
     }
 
@@ -85,9 +117,32 @@ export function roleForTile(cfg: StationConfig, tile: Tile): Role | null {
 
     if (holds(cfg.workTiles)) return 'work';
     if (holds(cfg.rackTiles)) return 'rack';
-    if (holds(cfg.floorRing.tiles)) return 'helper';
+    if (holds(helperPostsOf(cfg))) return 'helper';
 
     return null;
+}
+
+/**
+ * Whether the player is pinned to a post and has no legs until they leave it.
+ *
+ * Both sides read this one function because both sides act on it and a
+ * disagreement is visible as rubber-banding: the server stops integrating a
+ * pinned body (`game-server/src/sim/movement.ts`) while the client predicts WASD
+ * for every frame it is given (`scenes/Factory.update`), so a square the server
+ * has pinned and the client has not drifts and snaps, once per patch.
+ *
+ * A post is a work or rack tile at a `press` station. A helper holds no tile —
+ * `join` leaves `workTile` empty for them — and the dock is `stand`, where
+ * standing on the lane *is* the membership and taking the legs away would make
+ * leaving impossible.
+ */
+export function pinnedToPost(
+    player: { stationId: string; workTile: string },
+    cfg: { joinMode: StationConfig['joinMode'] } | undefined,
+): boolean {
+    if (player.stationId === '' || player.workTile === '') return false;
+
+    return cfg?.joinMode === 'press';
 }
 
 /**

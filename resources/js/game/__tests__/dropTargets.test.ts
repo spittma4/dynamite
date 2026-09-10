@@ -66,6 +66,27 @@ const LEVEL = {
 /** Nothing on any shelf, which is every case but the full-shelf ones. */
 const EMPTY: ReadonlyMap<string, number> = new Map();
 
+/**
+ * The same Assembly once `inputShelf.accepts` gains `parts` (N2). "There should
+ * be a receptacle for fuses like there is for boom… You input the materials into
+ * the station the same" — so the fuse set is advertised at the shelf like every
+ * other material, and the work tiles stay a target beside it rather than instead
+ * of it: `partsOnJig` still arms the cradle straight from a hauler's hands, and
+ * the fetch-and-toss relay is one of the few two-player interactions the game
+ * has.
+ */
+const WITH_FUSES = {
+    ...LEVEL,
+    stations: [
+        POWDER,
+        station({
+            ...ASSEMBLY,
+            inputShelf: { tile: [12, 9], capacity: 8, accepts: ['keg', 'casing', 'parts'] },
+        } as Partial<StationConfig> & Pick<StationConfig, 'id' | 'type'>),
+        DOCK,
+    ],
+} as unknown as LevelConfig;
+
 describe('dropTargets', () => {
     it('sends a keg to the shelf that says it accepts kegs', () => {
         const tiles = dropTargets('keg', LEVEL, EMPTY).flatMap((t) => t.tiles);
@@ -125,12 +146,13 @@ describe('dropTargets', () => {
     });
 
     /**
-     * A fuse set is never shelved: `partsOnJig` in the server's jig arms the
-     * cradle from the hands of whoever is standing on a work tile. Before this
-     * the floor stayed dark while the player held the one thing the station was
-     * stopped for, and the help promised it would light up.
+     * `partsOnJig` in the server's jig arms the cradle from the hands of whoever
+     * is standing on a work tile. Before this the floor stayed dark while the
+     * player held the one thing the station was stopped for, and the help
+     * promised it would light up. On a level whose shelf does not list `parts`
+     * the cradle is still the only destination; the receptacle cases are below.
      */
-    it('lights the jig work tiles for a fuse set, which no shelf accepts', () => {
+    it('lights the jig work tiles for a fuse set, whatever the shelf accepts', () => {
         const target = dropTargets('parts', LEVEL, EMPTY).find((t) => t.stationId === 'assembly-a');
 
         expect(target?.tiles).toEqual([
@@ -229,6 +251,70 @@ describe('shelfLabel', () => {
 
     it('falls back to a bare OUT when the level says nothing about the output', () => {
         expect(shelfLabel('out', undefined, null)).toBe('OUT');
+    });
+});
+
+describe('the fuse receptacle', () => {
+    /**
+     * Two input paradigms for one machine, and the odd one out was the one the
+     * owner found kludgey. The shelf is now a destination for a fuse set, so a
+     * hauler loads one the way they load a keg — walk into the striped zone, face
+     * the hopper, press E.
+     */
+    it('offers the shelf as well as the cradle once the shelf accepts a fuse set', () => {
+        const target = dropTargets('parts', WITH_FUSES, EMPTY).find(
+            (t) => t.stationId === 'assembly-a',
+        );
+
+        expect(target?.tiles).toContainEqual([12, 9]);
+    });
+
+    /**
+     * The cradle is not replaced by the bin. A fuse set put into the hands of the
+     * operator standing on a work tile still arms the jig with no bin hop at all,
+     * which is the fast path a crew running the relay depends on.
+     */
+    it('keeps the work tiles lit, so the hand-off is still a destination', () => {
+        const target = dropTargets('parts', WITH_FUSES, EMPTY).find(
+            (t) => t.stationId === 'assembly-a',
+        );
+
+        expect(target?.tiles).toContainEqual([13, 8]);
+        expect(target?.tiles).toContainEqual([14, 8]);
+    });
+
+    it('names the fuse set on the sign, in the plural the floor already uses', () => {
+        const accepts = ['keg', 'casing', 'parts'] as ItemType[];
+
+        expect(shelfLabel('in', accepts, null)).toBe(`KEGS · ${pluralOf('parts')} IN`);
+    });
+
+    /**
+     * A full shelf still has the cradle. The bin is refusing and the work tiles
+     * are not, so the floor paints both facts rather than dropping the station.
+     */
+    it('keeps the cradle when the bin is at its cap, and marks the bin refusing', () => {
+        const full = new Map([['assembly-a', 8]]);
+        const live = dropTargets('parts', WITH_FUSES, full).find(
+            (t) => t.stationId === 'assembly-a',
+        );
+
+        expect(live?.tiles).toEqual([
+            [13, 8],
+            [14, 8],
+        ]);
+        expect(blockedTargets('parts', WITH_FUSES, full)).toEqual([
+            { stationId: 'assembly-a', tiles: [[12, 9]] },
+        ]);
+    });
+
+    it('still offers nothing but the cradle on a level whose shelf refuses them', () => {
+        const target = dropTargets('parts', LEVEL, EMPTY).find((t) => t.stationId === 'assembly-a');
+
+        expect(target?.tiles).toEqual([
+            [13, 8],
+            [14, 8],
+        ]);
     });
 });
 

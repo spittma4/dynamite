@@ -16,13 +16,18 @@ export const KEG_TINTS = {
     full: 0xffffff,
 } as const;
 
-export const GLYPH_COLOURS: Record<string, number> = {
+/**
+ * `satisfies` rather than an annotation so a named read — `GLYPH_COLOURS.casing`,
+ * which `minigames/Jig.ts` paints its chips with — is a `number` rather than a
+ * `number | undefined`. The one dynamic read still has `UNKNOWN_GLYPH` behind it.
+ */
+export const GLYPH_COLOURS = {
     keg: KEG_TINTS.full,
     casing: 0xc9c1a8,
     stick: 0xd93b2b,
     crate: 0x8b6b3e,
     parts: 0x9aa4b0,
-};
+} satisfies Record<string, number>;
 
 /**
  * The quality spectrum as a name (contracts §3): a dud is grey and deflated, a
@@ -86,7 +91,9 @@ export function glyphTint(item: GlyphItem): GlyphTint {
         return { colour: KEG_TINTS.full, halo };
     }
 
-    return { colour: GLYPH_COLOURS[item.type] ?? UNKNOWN_GLYPH, halo };
+    const known: Record<string, number> = GLYPH_COLOURS;
+
+    return { colour: known[item.type] ?? UNKNOWN_GLYPH, halo };
 }
 
 /**

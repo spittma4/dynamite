@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { TILE_PX, type ItemType, type StationConfig } from '@shared';
 
 import { pluralOf } from '../render/dropTargets';
-import { AUTO, fillRows, hopperOf, outlineOf } from '../render/hopper';
+import { ANY, AUTO, fillRows, fuseBinOf, hopperOf, outlineOf } from '../render/hopper';
 
 /**
  * The furniture on a shelf tile (F15 §2). Everything here is pixels and words,
@@ -286,5 +286,171 @@ describe('fillRows', () => {
 describe('the word on a silo', () => {
     it('says the machine feeds itself, in one short word read down the bin', () => {
         expect(AUTO).toBe('AUTO');
+    });
+});
+
+/**
+ * The receptacle (N2). "There should be a receptacle for fuses like there is for
+ * boom — having to just drop them in at the assembly line's feet or carry it
+ * over as the operator is kludgey and doesn't make sense. You input the materials
+ * into the station the same." So `assembly-a.inputShelf.accepts` gains `parts`
+ * and the fuse set gets the bin every other material already had.
+ */
+const WITH_FUSES = station({
+    id: 'assembly-a',
+    type: 'assembly',
+    anchor: [13, 3],
+    workTiles: [
+        [13, 5],
+        [14, 5],
+    ],
+    rackTiles: [[13, 7]],
+    inputShelf: { tile: [11, 4], capacity: 8, accepts: ['keg', 'casing', 'parts'] },
+    outputShelf: { tile: [16, 4], capacity: 4 },
+});
+
+describe('the fuse bin on the intake face', () => {
+    it('is a bin like the others, in the order the shelf accepts them', () => {
+        const bins = hopperOf(WITH_FUSES, 'in', [])?.bins ?? [];
+
+        expect(bins.map((bin) => bin.type)).toEqual(['keg', 'casing', 'parts']);
+    });
+
+    it('is a funnel you pour into, not a silo the machine stocks for itself', () => {
+        const bin = hopperOf(WITH_FUSES, 'in', [])?.bins[2];
+
+        expect(bin?.kind).toBe('funnel');
+        expect(bin?.selfStocked).toBe(false);
+    });
+
+    it('carries the name the floor signs give a pile of them', () => {
+        const bin = hopperOf(WITH_FUSES, 'in', [])?.bins[2];
+
+        expect(bin?.label).toBe(pluralOf('parts'));
+    });
+
+    it('fills with the sets banked in it against the shelf cap', () => {
+        const bins = hopperOf(WITH_FUSES, 'in', ['keg', 'parts', 'parts'])?.bins ?? [];
+
+        expect(bins.map((bin) => bin.count)).toEqual([1, 0, 2]);
+        expect(bins[2]?.fill).toBe(0.25);
+    });
+});
+
+/**
+ * Three bins will not fit in 28 px: at the old share-of-one-tile split the keg
+ * funnel came out 12 px wide and the AUTO silo 3.6 px, which is narrower than
+ * the word read down it. The intake *side* of a machine is as wide as the bins
+ * standing on it, and it grows inward — the tile a hauler faces stays the aiming
+ * point, and the frontage it borrows is machine wall nobody walks on.
+ */
+describe('how wide the intake face is', () => {
+    const span = (s: StationConfig, side: 'in' | 'out'): number => {
+        const bins = hopperOf(s, side, [])?.bins ?? [];
+
+        return Math.max(...bins.map((b) => b.box.x1)) - Math.min(...bins.map((b) => b.box.x0));
+    };
+
+    it('is one shelf tile for a face with a single bin', () => {
+        expect(span(POWDER, 'out')).toBeLessThanOrEqual(TILE_PX);
+    });
+
+    it('grows with every bin after the first', () => {
+        expect(span(WITH_FUSES, 'in')).toBeGreaterThan(span(ASSEMBLY, 'in'));
+        expect(span(ASSEMBLY, 'in')).toBeGreaterThan(span(POWDER, 'out'));
+    });
+
+    it('grows into the machine, never out into the aisle the hauler walks', () => {
+        const bins = hopperOf(WITH_FUSES, 'in', [])?.bins ?? [];
+        const aisleEdge = 11 * TILE_PX;
+
+        // The shelf is on the left face, so the machine is to the right of it and
+        // the face may only reach that way.
+        expect(Math.min(...bins.map((b) => b.box.x0))).toBeGreaterThanOrEqual(aisleEdge);
+        expect(Math.max(...bins.map((b) => b.box.x1))).toBeGreaterThan(12 * TILE_PX);
+    });
+
+    it('puts the first type it accepts nearest the aisle', () => {
+        const bins = hopperOf(WITH_FUSES, 'in', [])?.bins ?? [];
+
+        expect(bins[0]?.box.x0).toBeLessThan(bins[2]?.box.x0 ?? 0);
+    });
+
+    it('leaves no gap between any two of them', () => {
+        const bins = hopperOf(WITH_FUSES, 'in', [])?.bins ?? [];
+
+        expect(bins[0]?.box.x1).toBe(bins[1]?.box.x0);
+        expect(bins[1]?.box.x1).toBe(bins[2]?.box.x0);
+    });
+
+    /**
+     * The silo is the bin that had to stay legible. Its width was a share of the
+     * face, so it shrank with every type added to `accepts` — at three bins it
+     * came out 3.6 px, narrower than the 7 px AUTO read down it, which put the
+     * one genuinely new fact the hoppers carry across the funnel beside it. A
+     * silo is not somewhere anybody aims, so its width is fixed and the bins a
+     * player does aim at share what is left.
+     */
+    it('keeps the silo the same width however many bins join it', () => {
+        const width = (s: StationConfig): number => {
+            const box = hopperOf(s, 'in', [])?.bins[1]?.box;
+
+            return (box?.x1 ?? 0) - (box?.x0 ?? 0);
+        };
+
+        expect(width(WITH_FUSES)).toBe(width(ASSEMBLY));
+        expect(width(WITH_FUSES)).toBeGreaterThanOrEqual(7);
+    });
+});
+
+/**
+ * What the fuse bin says beyond how full it is. A fuse set is the one material
+ * on the shelf that can be the *wrong* one: `usableSetOnShelf`
+ * (`shared/src/sim/jig.ts`) only arms the cradle from a set the seated order can
+ * use, and a bin full of LONG sets under a SHORT order stops the machine exactly
+ * as dead as an empty one. So the bin names the length the machine will reach
+ * for, in the rack's own three voices.
+ */
+describe('fuseBinOf', () => {
+    it('names the length the machine is waiting for', () => {
+        expect(fuseBinOf('short', []).tag).toBe('SHORT');
+        expect(fuseBinOf('long', []).tag).toBe('LONG');
+    });
+
+    it('says ANY on a day with no order to disagree with', () => {
+        expect(fuseBinOf('', []).tag).toBe(ANY);
+        expect(ANY).toBe('ANY');
+    });
+
+    it('is idle while nothing is banked, whatever the order wants', () => {
+        expect(fuseBinOf('short', []).tone).toBe('idle');
+        expect(fuseBinOf('', []).tone).toBe('idle');
+    });
+
+    it('is set once the bin holds a length the machine can use', () => {
+        const bin = fuseBinOf('short', ['long', 'short']);
+
+        expect(bin.tone).toBe('set');
+        expect(bin.banked).toBe(2);
+        expect(bin.usable).toBe(1);
+    });
+
+    /**
+     * The only amber state on the bin, and the reason it exists: every set in
+     * there is the wrong length, so the machine will not touch one and the
+     * 3/8 on the shelf is a lie about being stocked.
+     */
+    it('warns when everything banked is the wrong length', () => {
+        const bin = fuseBinOf('short', ['long', 'long']);
+
+        expect(bin.tone).toBe('warn');
+        expect(bin.usable).toBe(0);
+    });
+
+    it('counts every set as usable when the machine has no preference', () => {
+        const bin = fuseBinOf('', ['long', 'short']);
+
+        expect(bin.tone).toBe('set');
+        expect(bin.usable).toBe(2);
     });
 });

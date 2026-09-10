@@ -12,6 +12,7 @@ import type { AudioSettings } from '../audio/cues';
 import { HUD_HEIGHT, TOAST_MAX, TOAST_MS } from '../constants';
 import { GROOVE, NOTHING_ON_THE_BOARD, ORDER_BOARD } from '../nouns';
 import type { Connection } from '../net/connection';
+import { kegShelfSign } from '../render/dropTargets';
 import { BANNER_COLOURS, BOARD_COLOURS, TOAST_COLOURS, UI, lineColour } from '../render/palette';
 import { HELP_HINT, helpSections } from './helpContent';
 import type { Factory } from '../scenes/Factory';
@@ -394,7 +395,11 @@ export class Hud {
 
         if (!open) return;
 
-        const sections = helpSections(station, this.scene.levelConfig.carry.throwTiles);
+        const level = this.scene.levelConfig;
+        const sections = helpSections(station, {
+            throwTiles: level.carry.throwTiles,
+            assemblyShelf: kegShelfSign(level),
+        });
         const width = Math.min(560, this.scene.floorWidth - 48);
         // Height is finalised after the rows are laid out, since wrapping decides it.
         const lines = sections.reduce((n, s) => n + s.rows.length + 2, 0);

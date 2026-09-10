@@ -355,6 +355,29 @@ function tileTaken(station: Station, key: string, exclude: string): boolean {
     return false;
 }
 
+/**
+ * Whether every work tile is held, which is what makes a helper post live.
+ *
+ * A helper is the second pair of hands on a machine somebody is running, so on a
+ * machine nobody is running there is nothing to be the second pair of — and that
+ * is also every accidental press N4 reports, because the body crossing an idle
+ * station's apron is a hauler on their way somewhere. F05 §Open questions named
+ * this exact condition as the fix if playtests showed the mistake; they did.
+ *
+ * The clipboard is deliberately not read. A new operator still reading theirs is
+ * on the post and about to work it, and a helper who had to wait out somebody
+ * else's three seconds would be refused for a reason nothing on screen explains.
+ */
+function fullyManned(station: Station): boolean {
+    const held = new Set<string>();
+
+    for (const member of station.members.values()) {
+        if (member.role === 'work') held.add(member.tile);
+    }
+
+    return station.cfg.workTiles.every(([x, y]) => held.has(tileKey(x, y)));
+}
+
 function join(world: World, station: Station, player: PlayerState, tile: Tile, role: Role): void {
     const sessionId = world.sessionIdOf(player);
     const key = tileKey(tile[0], tile[1]);
@@ -381,7 +404,11 @@ function join(world: World, station: Station, player: PlayerState, tile: Tile, r
     player.workTile = role === 'helper' ? '' : key;
     player.clipboardUntil = now + clip;
 
-    if (press) {
+    // A post is a place you stand still; a helper has no post, and pinning them
+    // to a ring tile is the whole of N4's "get stuck" — the server froze the legs
+    // while the client went on predicting them, so WASD rubber-banded. They keep
+    // their legs, and `syncHelpers` lets them walk out of the job.
+    if (press && role !== 'helper') {
         player.x = tile[0] + 0.5;
         player.y = tile[1] + 0.5;
         player.moving = false;
@@ -495,6 +522,7 @@ export function onInteract(world: World, player: PlayerState): boolean {
     const role = roleForTile(target.cfg, tile);
 
     if (role === null) return false;
+    if (role === 'helper' && !fullyManned(target)) return false;
     if (role !== 'helper' && tileTaken(target, key, world.sessionIdOf(player))) return false;
 
     join(world, target, player, tile, role);
@@ -654,6 +682,33 @@ function syncStandMembers(world: World, station: Station): void {
     }
 }
 
+/**
+ * A helper keeps their legs, so walking off the post is how they leave — the one
+ * exit nobody has to be taught. `stand` membership already works this way
+ * (`syncStandMembers`), and this is the same rule applied to the one `press` role
+ * that has no post to be pinned to.
+ *
+ * Only helpers: an operator is frozen at the tile centre and an F10 knockback
+ * that shoved them off it must not also take their machine away mid-rep.
+ */
+function syncHelpers(world: World, station: Station): void {
+    for (const member of [...station.members.values()]) {
+        if (member.role !== 'helper') continue;
+
+        const player = playerOf(world, member.sessionId);
+
+        if (player === undefined) {
+            station.members.delete(member.sessionId);
+
+            continue;
+        }
+
+        if (roleForTile(station.cfg, tileOfPlayer(world, player)) !== 'helper') {
+            leave(world, player, 'stepOff');
+        }
+    }
+}
+
 /** Steps 2–3: the curve, and the bodies it has no room for. */
 function staff(world: World, station: Station): void {
     const { cfg, st } = station;
@@ -755,6 +810,7 @@ function tickStation(world: World, station: Station, dt: number): void {
     // emptied would otherwise seat the repairer as its operator on the very
     // next tick, because standing on the lane is the whole membership.
     if (station.cfg.joinMode === 'stand' && !offline) syncStandMembers(world, station);
+    if (station.cfg.joinMode === 'press') syncHelpers(world, station);
 
     staff(world, station);
 

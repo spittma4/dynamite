@@ -8,7 +8,7 @@ import { type JigStall, apron, outwardSide, shortageOf } from '../render/intake'
 
 /** The ways the Jig stops, as `StationState.mg` reports them. */
 function stall(over: Partial<JigStall> = {}): JigStall {
-    return { phase: 'seat', cradle: 'empty', keg: null, pour: null, ...over };
+    return { phase: 'seat', cradle: 'empty', keg: null, pour: null, cradleWants: '', ...over };
 }
 
 const SEAT = stall();
@@ -26,7 +26,13 @@ function station(over: Partial<StationConfig> & Pick<StationConfig, 'id' | 'type
     } as unknown as StationConfig;
 }
 
-/** Shelf at x=9, machine to its right: the bbox spans x 9–12, so the aisle is left. */
+/**
+ * Shelf at x=9, machine to its right: the bbox spans x 9–12, so the aisle is left.
+ * `accepts` is every shipped level's `assembly-a.inputShelf.accepts`, including the
+ * `parts` N2 added — the fixture that still said `['keg', 'casing']` is the reason
+ * 2,137 green tests did not notice the floor shouting NEED FUSE SETS at a casing
+ * starve.
+ */
 const SHELF_ON_THE_LEFT = station({
     id: 'assembly-a',
     type: 'assembly',
@@ -35,7 +41,7 @@ const SHELF_ON_THE_LEFT = station({
         [11, 5],
         [12, 5],
     ],
-    inputShelf: { tile: [9, 5], capacity: 8, accepts: ['keg', 'casing'] },
+    inputShelf: { tile: [9, 5], capacity: 8, accepts: ['keg', 'casing', 'parts'] },
     outputShelf: { tile: [12, 6], capacity: 4 },
 });
 
@@ -119,7 +125,7 @@ describe('the face a shelf is on', () => {
                 [14, 5],
             ],
             rackTiles: [[13, 7]],
-            inputShelf: { tile: [11, 4], capacity: 8, accepts: ['keg', 'casing'] },
+            inputShelf: { tile: [11, 4], capacity: 8, accepts: ['keg', 'casing', 'parts'] },
             outputShelf: { tile: [16, 4], capacity: 4 },
         });
 
@@ -224,12 +230,41 @@ describe('shortageOf', () => {
     it('asks for a fuse set, not a keg, while the Jig waits on an empty cradle', () => {
         const shortage = shortageOf(SHELF_ON_THE_LEFT, ['casing'] as ItemType[], PARTS);
 
-        expect(shortage?.sentence).toBe(`NEED A ${FUSE_SET} — RACK`);
+        expect(shortage?.sentence).toMatch(new RegExp(`^NEED A ${FUSE_SET}`));
         expect(shortage?.sentence).not.toMatch(/KEG/);
     });
 
-    it('does not light the intake zone for a fuse: it is fetched from the rack', () => {
-        expect(shortageOf(SHELF_ON_THE_LEFT, [], PARTS)?.haul).toBe(false);
+    /**
+     * The sentence used to end '— RACK', which was the only place a fuse set came
+     * from. Since N2 the bin takes one too, so naming the rack as the answer is
+     * now half true and the half it leaves out is the one a lone player needs.
+     * What never changes is which length will fit: `usableSetOnShelf`
+     * (`shared/src/sim/jig.ts`) refuses a set the seated order cannot use, and a
+     * fetch of the wrong one is a walk for nothing.
+     */
+    it('names the length the machine will take, which is the part you can get wrong', () => {
+        const wants = stall({ phase: 'parts', cradleWants: 'short' });
+
+        expect(shortageOf(SHELF_ON_THE_LEFT, [], wants)?.sentence).toBe(
+            `NEED A ${FUSE_SET} — SHORT`,
+        );
+    });
+
+    it('names no length on a day with no order to disagree with', () => {
+        expect(shortageOf(SHELF_ON_THE_LEFT, [], PARTS)?.sentence).toBe(`NEED A ${FUSE_SET}`);
+    });
+
+    /**
+     * It used to leave the zone dim, because a fuse set never crossed this shelf.
+     * It does now: `assembly-a.inputShelf.accepts` lists `parts` and
+     * `takeFromShelf` arms the cradle out of the bin, so carrying one into the
+     * striped zone is an answer to this stop — and for a crew with nobody at the
+     * rack it is the only answer. The zone lights for the same reason it lights
+     * for a keg.
+     */
+    it('lights the intake zone for a fuse, which the bin now takes', () => {
+        expect(shortageOf(SHELF_ON_THE_LEFT, [], PARTS)?.haul).toBe(true);
+        expect(shortageOf(SHELF_ON_THE_LEFT, [], PARTS)?.act).toBe(true);
     });
 
     /**
@@ -269,6 +304,56 @@ describe('shortageOf', () => {
 
         expect(shortage?.sentence).toMatch(/CASING/);
         expect(shortage?.haul).toBe(false);
+    });
+
+    /**
+     * The phantom errand in its second costume. `haulableInputs` lists `parts`
+     * since N2, so a routine casing starve — a keg on the shelf, the casings run
+     * dry — matched the `missing` scan and painted NEED FUSE SETS with `haul` and
+     * `act` both true: a hauler sent across the floor for a fuse set while the
+     * machine is waiting on the casings it prints for itself. The `parts` shortage
+     * has exactly one owner, the `phase === 'parts'` branch above, because that is
+     * the only state in which the machine is actually holding out for one.
+     */
+    it('never names a fuse set while the machine is stopped for something else', () => {
+        expect(shortageOf(SHELF_ON_THE_LEFT, ['keg'] as ItemType[], SEAT)).toEqual({
+            sentence: 'CASINGS COMING',
+            haul: false,
+            act: false,
+        });
+        expect(shortageOf(SHELF_ON_THE_LEFT, ['keg', 'casing'] as ItemType[], SEAT)).toBeNull();
+        expect(shortageOf(SHELF_ON_THE_LEFT, ['casing'] as ItemType[], SEAT)?.sentence).toBe(
+            NEED_KEG,
+        );
+    });
+
+    /**
+     * One grammar for one fact. The panel of the person standing there says
+     * 'NEED A FUSE SET — LONG', so the floor may never say 'NEED FUSE SETS' —
+     * the plural reads as a standing order to keep hauling, which is how a shelf
+     * reaches its cap and jams the restock the machine depends on.
+     */
+    it('never pluralises the fuse set the way a stock list would', () => {
+        const sentences = [SEAT, POUR, PARTS, stall({ phase: 'parts', cradleWants: 'long' })].map(
+            (jig) => shortageOf(SHELF_ON_THE_LEFT, ['keg'] as ItemType[], jig)?.sentence ?? '',
+        );
+
+        expect(sentences.join(' | ')).not.toContain(`${FUSE_SET}S`);
+    });
+
+    /**
+     * A bin full of sets the seated order cannot use is the receptacle's own dead
+     * end (`usableSetOnShelf` skips every one of them) and a keg cannot be pushed
+     * onto a full shelf — so naming a haul there sends a hauler to a bonk. The
+     * full shelf is read before any errand, for both stops.
+     */
+    it('cries full before naming a haul, whatever filled the shelf', () => {
+        const sets = Array<ItemType>(8).fill('parts' as ItemType);
+
+        expect(shortageOf(SHELF_ON_THE_LEFT, sets, SEAT)?.sentence).toBe(SHELF_FULL);
+        expect(shortageOf(SHELF_ON_THE_LEFT, sets, SEAT)?.haul).toBe(false);
+        expect(shortageOf(SHELF_ON_THE_LEFT, sets, stall({ phase: 'pour', pour: null }))?.sentence)
+            .toBe(SHELF_FULL);
     });
 
     it('says nothing once the casing has landed and the shelf is stocked', () => {

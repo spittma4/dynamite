@@ -1,7 +1,8 @@
 import type { EmoteKind, StationType } from '@shared';
 
 import { FUSE_SET, INTAKE_ZONE, ORDER_BOARD, PRIME_KEG } from '../nouns';
-import { KEGS_IN } from '../render/dropTargets';
+import { pluralOf } from '../render/dropTargets';
+import { POST_LABEL } from '../render/helperPosts';
 import { type ArrowKey, emoteForArrow } from '../input/intent';
 import { throwDistance } from './format';
 
@@ -11,6 +12,22 @@ export type HelpRow = readonly [string, string];
 export interface HelpSection {
     title: string;
     rows: HelpRow[];
+}
+
+/**
+ * What the panel has to be told about the level this round is running. Both are
+ * paint a player will be standing in front of, so neither may be a constant here.
+ *
+ * `assemblyShelf` used to be exactly that — `KEGS_IN`, built for `['keg']` — and N2
+ * gave that shelf a third claimant, so the floor read KEGS · FUSE SETS IN while
+ * this panel sent every player to a sign the floor does not have. It comes off
+ * `kegShelfSign`, which is the same `shelfLabel` call that paints it.
+ */
+export interface HelpFacts {
+    /** `level.carry.throwTiles` — the one number in the floor rows. */
+    throwTiles: number;
+    /** The IN sign on the machine a keg is carried to, as the floor paints it. */
+    assemblyShelf: string;
 }
 
 /**
@@ -104,16 +121,28 @@ const STATIONS: Record<StationType, HelpSection> = {
     assembly: {
         title: 'Assembly — the Jig',
         rows: [
-            ['← →  then Space', 'Seat a casing. The Jig stocks its own, so one is always waiting. Dented ones can never be perfect.'],
+            [
+                '← →  then Space',
+                'Seat a casing. The Jig stocks its own, so one is always waiting.',
+            ],
             ['Space', 'Pour: tap as the fill reaches the mark. A damp or dud keg pours slower.'],
             ['← or →', 'Knots: tap the lane each knot arrives on as it hits the eyelet.'],
             // Lead with the channel everyone has. The panel is showing a needle
             // crossing a gold band 87 px wide; "the third ratchet click" named
             // an event only a hearing player can count.
             ['Space', 'Crimp: tap as the needle reaches the third click line.'],
+            // N1: the dot on the chip was the least explained mark on the panel
+            // and it decides the cycle twice over — `isPrimeStick` refuses on
+            // `dents > 0` before it reads a grade, and a crimp miss on a dented
+            // casing rolls `hazards.sparks.crimpOnDented`. The Slammer's rows have
+            // always named their spark; the Jig's named neither of its own.
+            [
+                'A dented one',
+                'The dimples on the chip. It can never be perfect, and a missed crimp on one throws a spark onto the pile.',
+            ],
             [
                 'At the rack',
-                `The order picks the ${FUSE_SET.toLowerCase()} for you — the lit bin is the right one. ← short · → long to override. Hold Space to fetch and swing · release to toss it to A's cradle.`,
+                `The order picks the ${FUSE_SET.toLowerCase()} for you — the lit bin is the right one. ← short · → long to override. Hold Space to fetch and swing · release to toss it to A's cradle · ↓ banks it in the machine's own ${pluralOf('parts')} bin instead, which A reaches into while the phrase waits.`,
             ],
         ],
     },
@@ -141,28 +170,43 @@ const STATIONS: Record<StationType, HelpSection> = {
  * machine — five reads and forty words before a new player could learn which
  * of the three stations to walk to first, while all three shouted for hands.
  */
-const FLOW: HelpSection = {
-    title: 'Start here — the line',
-    rows: [
-        [
-            '1 · Boom Powder',
-            'Start here. It makes the kegs, and every other station is waiting on one.',
+function flowSection(assemblyShelf: string): HelpSection {
+    return {
+        title: 'Start here — the line',
+        rows: [
+            [
+                '1 · Boom Powder',
+                'Start here. It makes the kegs, and every other station is waiting on one.',
+            ],
+            [
+                '2 · Assembly',
+                `Carry a keg into ${INTAKE_ZONE}, face the ${assemblyShelf} shelf and press E. A keg, a casing and a ${FUSE_SET.toLowerCase()} become a stick.`,
+            ],
+            // The casings are the part nobody fetches; the fuse set is not, and the
+            // row used to say a keg was the only thing you carry here — which denied
+            // N2's receptacle in the one panel a stuck player opens, and with it the
+            // only way a lone operator ever arms the cradle: `partsOnJigTile` reads a
+            // body that has *not* joined, so A can never load one from their own hands.
+            [
+                'Casings',
+                `Never fetch them — Assembly stocks its own. The ${FUSE_SET.toLowerCase()} is the other thing you carry there: same shelf, same press, and it lands in the ${pluralOf('parts')} bin. It is the only way to arm the jig on your own.`,
+            ],
+            ['3 · The Dock', 'Walk the stick to a ramp lane and shove it onto the truck.'],
+            // N4: the third way to join a machine, and the only one a player finds by
+            // accident. The brackets only answer `E` once the machine is manned, and
+            // whether another body helps is the staffing curve's business — so the row
+            // promises the panel will say which, rather than claiming it always helps.
+            [
+                POST_LABEL,
+                'The yellow brackets beside a machine somebody is already running. Press E there to lend a hand; the panel says whether you are helping or in the way. Step off the bracket to stop.',
+            ],
+            [
+                'In your hands',
+                'Every place with a job for what you are holding lights up. The bare floor takes anything, and charges you for it.',
+            ],
         ],
-        [
-            '2 · Assembly',
-            `Carry a keg into ${INTAKE_ZONE}, face the ${KEGS_IN} shelf and press E. A keg and a casing become a stick.`,
-        ],
-        [
-            'Casings',
-            'Never fetch them. Assembly stocks its own, so a keg is the only thing you carry to it.',
-        ],
-        ['3 · The Dock', 'Walk the stick to a ramp lane and shove it onto the truck.'],
-        [
-            'In your hands',
-            'Every place with a job for what you are holding lights up. The bare floor takes anything, and charges you for it.',
-        ],
-    ],
-};
+    };
+}
 
 /**
  * The one system in the game with a countdown on it, and until now the only one
@@ -199,10 +243,11 @@ const FIRE: HelpSection = {
  * because that is the part nobody can guess; the floor controls stay below it
  * so the two are never in separate screens.
  */
-export function helpSections(station: StationType | null, throwTiles: number): HelpSection[] {
-    const floor = floorSection(throwTiles);
+export function helpSections(station: StationType | null, facts: HelpFacts): HelpSection[] {
+    const floor = floorSection(facts.throwTiles);
+    const flow = flowSection(facts.assemblyShelf);
 
-    if (station && STATIONS[station]) return [STATIONS[station], FLOW, FIRE, floor];
+    if (station && STATIONS[station]) return [STATIONS[station], flow, FIRE, floor];
 
-    return [FLOW, FIRE, floor];
+    return [flow, FIRE, floor];
 }

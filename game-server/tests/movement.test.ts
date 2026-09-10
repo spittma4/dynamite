@@ -134,7 +134,13 @@ describe('movementSystem freezing', () => {
     const frozen: Array<[string, (world: World, player: PlayerState) => void]> = [
         ['stunned', (_world, player): void => void (player.stunnedUntil = 1)],
         ['in a chore', (_world, player): void => void (player.chore = 'sweep')],
-        ['at a press station', (_world, player): void => void (player.stationId = 'powder-a')],
+        [
+            'on a press station post',
+            (_world, player): void => {
+                player.stationId = 'powder-a';
+                player.workTile = '4,5';
+            },
+        ],
         ['driven off', (_world, player): void => void (player.drivenOffUntil = 1)],
         ['disconnected', (world): void => world.setConnected('session-0', false)],
     ];
@@ -166,6 +172,22 @@ describe('movementSystem freezing', () => {
     it('does not freeze a player standing at a stand station', () => {
         const player = walker((_world, standing) => {
             standing.stationId = 'dock-a';
+        });
+
+        expect(player.speed).toBeCloseTo(4, 9);
+        expect(player.x).toBeCloseTo(10.7, 9);
+    });
+
+    /**
+     * N4: a helper has no post and no gesture, so freezing them froze a body the
+     * client went on predicting — WASD rubber-banded, which is the reported
+     * "stuck". Walking off the post is how a helper leaves (`syncHelpers`), and
+     * that needs legs. A helper is the one press member with `workTile === ''`.
+     */
+    it('does not freeze a helper standing in a press station aisle', () => {
+        const player = walker((_world, helper) => {
+            helper.stationId = 'powder-a';
+            helper.workTile = '';
         });
 
         expect(player.speed).toBeCloseTo(4, 9);
@@ -204,6 +226,7 @@ describe('movementSystem push', () => {
         const mover = place(world, 'session-1', 11.2, AISLE_Y);
 
         anchored.stationId = 'powder-a';
+        anchored.workTile = '4,5';
         intend(world, 'session-1', -1, 0, 1);
         world.tick(0.05);
 

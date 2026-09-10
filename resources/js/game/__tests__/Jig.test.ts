@@ -3,6 +3,7 @@ import {
     type AssemblyMinigame,
     type JigGrade,
     type JigMg,
+    type MgOp,
     type PlayerState,
     type PourConfig,
     type StationState,
@@ -13,14 +14,18 @@ import { describe, expect, it } from 'vitest';
 
 import { FUSE_SET, HANDS_FULL } from '../nouns';
 import { rackCaption } from '../render/fuseRack';
+import { GLYPH_COLOURS } from '../render/stationGlyphs';
+import { UI } from '../render/palette';
 
 import {
     AISLE_BODY,
     AISLE_ITEM,
     CASINGS_COMING,
+    CASINGS_LABEL,
     CLICK_FLASH_SECONDS,
     CRADLE_FULL,
     CRADLE_LABEL,
+    DENT_NOTE,
     JIG_COLOURS,
     type JigSpan,
     KEG_STRIP,
@@ -31,10 +36,12 @@ import {
     SHELF_FULL,
     SHELF_FULL_HANDS,
     bKeyOp,
+    bStockOp,
     bandsAround,
     blockColour,
     beatMarks,
     casingDings,
+    casingsLabel,
     clickFlash,
     closeAt,
     fractionIn,
@@ -61,7 +68,7 @@ import {
     spaceOp,
     tossBands,
 } from '../minigames/Jig';
-import type { OverlayContext } from '../minigames/types';
+import type { OverlayContext, OverlayKey } from '../minigames/types';
 import { pluralOf } from '../render/dropTargets';
 import { shortageOf } from '../render/intake';
 
@@ -110,6 +117,7 @@ function mg(overrides: Partial<JigMg> = {}): JigMg {
         cradle: 'empty',
         cradleFuse: '',
         surfaceReadyAt: 0,
+        cradleWants: '',
         bPhase: 'idle',
         bPick: 'long',
         bPickFromOrder: false,
@@ -603,6 +611,21 @@ describe('the key map', () => {
         expect(bKeyOp('idle', false)).toBeNull();
         expect(bKeyOp('fetching', true)).toBeNull();
     });
+
+    /**
+     * The `stock` op existed on the wire, in the contracts table and in four server
+     * tests, and nothing in the client could ever send it: `bKeyOp` is B's whole key
+     * map and it returns only fetch, swing and toss. B is the only producer of a
+     * fuse set, so the bin the same pass added had no supply route at all — its only
+     * filling was join the rack, fetch, ESC off it, walk round to the hopper and
+     * press E, which is more kludgey than the complaint N2 was raised about.
+     */
+    it('gives B the bin on its own key, and only with a set in hand', () => {
+        expect(bStockOp('holding')).toBe('stock');
+        expect(bStockOp('idle')).toBeNull();
+        expect(bStockOp('fetching')).toBeNull();
+        expect(bStockOp('swinging')).toBeNull();
+    });
 });
 
 describe('primeFlash', () => {
@@ -813,6 +836,8 @@ function textStub(written: WrittenLabel[]): Record<string, unknown> {
 }
 
 const PANEL_W = 896;
+/** What the picker's chips are drawn on, so the chip has to stand off it. */
+const PANEL_BG = UI.panel;
 const PANEL_H = 192;
 
 /**
@@ -840,10 +865,29 @@ const LEVEL = {
  */
 function panelLabels(
     state: JigMg,
-    shelf: readonly { id: string; type: string }[],
+    shelf: readonly { id: string; type: string; dents?: number }[],
     over: { carrying?: string; now?: number; sessionId?: string } = {},
 ): WrittenLabel[] {
+    return mountPanel(state, shelf, over).written;
+}
+
+/**
+ * The same mounted panel, with the ops it sent and a way to press a key into it.
+ * A key map is only real if the overlay actually *takes* the key: a press the
+ * overlay declines falls through to the floor, where `E` at a work tile is a leave
+ * and a `stock` nothing ever sent is an op the server can never receive.
+ */
+function mountPanel(
+    state: JigMg,
+    shelf: readonly { id: string; type: string; dents?: number }[],
+    over: { carrying?: string; now?: number; sessionId?: string } = {},
+): {
+    written: WrittenLabel[];
+    ops: MgOp[];
+    press: (key: OverlayKey, down?: boolean) => boolean;
+} {
     const written: WrittenLabel[] = [];
+    const ops: MgOp[] = [];
     const now = over.now ?? 10;
     const station = {
         mg: JSON.stringify(state),
@@ -866,9 +910,14 @@ function panelLabels(
         sessionId: over.sessionId ?? 'A1',
         state: {
             stations: new Map([['assembly', station]]),
-            items: new Map(shelf.map((item) => [item.id, { type: item.type, dents: 0 }])),
+            items: new Map(
+                shelf.map((item) => [item.id, { type: item.type, dents: item.dents ?? 0 }]),
+            ),
         },
         serverClock: () => now,
+        send: (op: MgOp) => {
+            ops.push(op);
+        },
     }) as unknown as OverlayContext;
 
     const overlay = jigOverlay();
@@ -880,7 +929,11 @@ function panelLabels(
         now,
     );
 
-    return written.filter((label) => label.visible);
+    return {
+        written: written.filter((label) => label.visible),
+        ops,
+        press: (key, down = true) => overlay.onKey(key, down, false),
+    };
 }
 
 function panelText(
@@ -1190,6 +1243,33 @@ describe('the fuse rack as a first-timer reads it', () => {
         expect(lines).not.toContain(rackCaption('long', 'long', true).text);
     });
 
+    /**
+     * The other half of the key: the legend is where B learns the bin exists, and
+     * the state line is where they learn it while a set is in their hands and the
+     * choice is live. Without either, a key nothing names is a key nobody presses.
+     */
+    it('names the bin key in the legend and again while a set is in hand', () => {
+        const legend = rack().find((line) => line.includes('ESC bail')) ?? '';
+
+        expect(legend).toContain('↓');
+        expect(legend.toLowerCase()).toContain('bin');
+        expect(rack({ bPhase: 'holding' }).join(' ')).toContain('↓');
+    });
+
+    it('sends the bank the server is waiting for when B presses it', () => {
+        const holding = mountPanel(mg({ bPhase: 'holding' }), [keg, casing], { sessionId: 'B1' });
+
+        expect(holding.press('down')).toBe(true);
+        expect(holding.ops).toContain('stock');
+
+        const idle = mountPanel(mg({ bPhase: 'idle' }), [keg, casing], { sessionId: 'B1' });
+
+        // Still eaten: a ↓ at the rack must never fall through to the floor, where
+        // it is a step out of the station.
+        expect(idle.press('down')).toBe(true);
+        expect(idle.ops).not.toContain('stock');
+    });
+
     // 'o-1' is the database's name for an order, not the player's.
     it('never puts a raw order id on the panel', () => {
         const lines = rack({
@@ -1315,5 +1395,100 @@ describe('the two sentences a packed shelf needs', () => {
     it('tells full hands to put theirs down before trying', () => {
         expect(SHELF_FULL_HANDS).toContain('PUT YOURS DOWN');
         expect(SHELF_FULL_HANDS).toContain('LIFT ONE OFF');
+    });
+});
+
+/**
+ * N1: "Idk what the three red squares indicated tbh. I can pick one... Maybe it's
+ * the charge strength?" Two faults in one picker. Nothing named the chips, so a
+ * player guessed; and `JIG_COLOURS.casing` was 0xd62828 against a `miss` of
+ * 0xd9463d — 1.17:1, the same brightness — so the material you are about to use
+ * was painted the colour of failure. The dent dots were 0x101014, the panel's own
+ * background, and nothing said what a dent costs.
+ */
+describe('the casing chips', () => {
+    const casing = (id: string, dents = 0): { id: string; type: string; dents: number } => ({
+        id,
+        type: 'casing',
+        dents,
+    });
+
+    it('is the one colour a casing is painted everywhere', () => {
+        expect(JIG_COLOURS.casing).toBe(GLYPH_COLOURS.casing);
+    });
+
+    it('is not the colour of failure, by name or by brightness', () => {
+        expect(JIG_COLOURS.casing).not.toBe(JIG_COLOURS.miss);
+        expect(JIG_COLOURS.casing).not.toBe(JIG_COLOURS.overfill);
+        // The old red was 1.17:1 against the alarm, which is no separation at all.
+        expect(contrastOf(JIG_COLOURS.casing, JIG_COLOURS.miss)).toBeGreaterThanOrEqual(2);
+    });
+
+    it('stands off the panel it is drawn on, which the old red barely did', () => {
+        expect(contrastOf(JIG_COLOURS.casing, PANEL_BG)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('paints a dent as a shadow on the card rather than a hole in the panel', () => {
+        expect(JIG_COLOURS.dent).not.toBe(PANEL_BG);
+        expect(contrastOf(JIG_COLOURS.dent, JIG_COLOURS.casing)).toBeGreaterThanOrEqual(3);
+    });
+
+    it('keeps the dark text on a lit rack bin as its own colour', () => {
+        expect(JIG_COLOURS.ink).not.toBe(JIG_COLOURS.dent);
+        expect(contrastOf(JIG_COLOURS.ink, JIG_COLOURS.picked)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    /**
+     * The rule `.ai/rules/minigames.md` records, applied to the other material on
+     * this machine. `parts` was 0xc8a951 while the floor glyph and the hopper drew
+     * the same object in `GLYPH_COLOURS.parts`, which put the casing and the fuse set
+     * — the two materials a player actually compares here — 1.26:1 apart, 1.13:1 to a
+     * deuteranope. The guarded pairs were casing/miss, casing/panel, dent/casing and
+     * ink/picked; material against material was the comparison nobody was checking.
+     */
+    it('paints a fuse set the colour a fuse set is everywhere else', () => {
+        expect(JIG_COLOURS.parts).toBe(GLYPH_COLOURS.parts);
+        expect(JIG_COLOURS.picked).not.toBe(JIG_COLOURS.parts);
+        // A floor, not a target: 1.40:1 as painted, against 1.26:1 for the old gold.
+        // The waxed card and the galvanised slate are both mid-tone, so the pair is
+        // weak by luminance whichever way round it is painted — which is why neither
+        // is ever asked to carry a fact alone (both are labelled, and they are drawn
+        // on opposite halves of two different panels). Separating them properly means
+        // moving `GLYPH_COLOURS.parts`, and that moves the floor glyph and the hopper
+        // bin with it; this guard is here so they can never collapse together again.
+        expect(contrastOf(JIG_COLOURS.casing, JIG_COLOURS.parts)).toBeGreaterThan(1.3);
+    });
+});
+
+describe('what the picker says the chips are', () => {
+    it('names them, so nobody has to guess at a charge strength', () => {
+        expect(casingsLabel([{ dents: 0 }, { dents: 0 }])).toBe(CASINGS_LABEL);
+    });
+
+    it('says what a dent costs the moment one is on the shelf', () => {
+        expect(casingsLabel([{ dents: 0 }, { dents: 1 }])).toBe(`${CASINGS_LABEL} · ${DENT_NOTE}`);
+        expect(DENT_NOTE).toMatch(/PERFECT/);
+    });
+
+    it('ignores a dent count too small to draw a ding for', () => {
+        expect(casingsLabel([{ dents: 0.4 }])).toBe(CASINGS_LABEL);
+    });
+
+    it('writes the name on the panel at the phase the chips are drawn', () => {
+        const texts = panelLabels(mg({ phase: 'seat' }), [
+            { id: 'k-1', type: 'keg' },
+            { id: 'c-1', type: 'casing', dents: 0 },
+        ]).map((label) => label.text);
+
+        expect(texts).toContain(CASINGS_LABEL);
+    });
+
+    it('writes the dent warning on the panel when a dented casing is on the shelf', () => {
+        const texts = panelLabels(mg({ phase: 'seat' }), [
+            { id: 'k-1', type: 'keg' },
+            { id: 'c-1', type: 'casing', dents: 2 },
+        ]).map((label) => label.text);
+
+        expect(texts).toContain(`${CASINGS_LABEL} · ${DENT_NOTE}`);
     });
 });
