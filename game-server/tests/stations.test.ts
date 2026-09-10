@@ -144,9 +144,9 @@ function memberOf(world: World, id: string, sessionId: string): Member {
  */
 function crowdPowder(world: World): void {
     const tiles: [number, number][] = [
-        [5, 4],
-        [3, 4],
-        [4, 4],
+        [4, 5],
+        [3, 5],
+        [5, 5],
     ];
 
     tiles.forEach((tile, i) => {
@@ -198,7 +198,7 @@ describe('build', () => {
         expect(powder.type).toBe('boom_powder');
         expect(powder.line).toBe('a');
         expect(powder.anchorX).toBe(4);
-        expect(powder.anchorY).toBe(2);
+        expect(powder.anchorY).toBe(3);
         expect(powder.state).toBe('idle');
         expect(powder.inputCap).toBe(0);
         expect(powder.outputCap).toBe(6);
@@ -219,7 +219,7 @@ describe('build', () => {
         const world = makeWorld();
         const station = stationOf(world, 'powder-a');
 
-        expect(station.ring).toHaveLength(9);
+        expect(station.ring).toHaveLength(16);
         expect(station.mg).toBeDefined();
         expect(station.machine.length).toBeGreaterThan(0);
         expect(stationsSystem.name).toBe('stations');
@@ -247,17 +247,18 @@ describe('joining a press station', () => {
     });
 
     it('joins on E, snaps the avatar and starts the clipboard', () => {
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
-        player.x = 5.9;
+        // Still inside the work tile, but off its centre and walking: E snaps.
+        player.x = 4.9;
         player.moving = true;
         world.state.clock = 10;
 
         expect(onInteract(world, player)).toBe(true);
         expect(player.stationId).toBe('powder-a');
-        expect(player.workTile).toBe('5,4');
-        expect(player.x).toBe(5.5);
-        expect(player.y).toBe(4.5);
+        expect(player.workTile).toBe('4,5');
+        expect(player.x).toBe(4.5);
+        expect(player.y).toBe(5.5);
         expect(player.moving).toBe(false);
         expect(player.clipboardUntil).toBe(13);
         expect(copy.clipboard).toContain(player.bubble);
@@ -265,7 +266,7 @@ describe('joining a press station', () => {
     });
 
     it('refuses a join with full hands and leaves the press to F06', () => {
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         player.carrying = 'k-1';
 
@@ -274,11 +275,11 @@ describe('joining a press station', () => {
     });
 
     it('refuses a work tile another member already holds', () => {
-        const first = standOn(world, 'session-0', [5, 4]);
+        const first = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, first);
 
-        const second = standOn(world, 'session-1', [5, 4]);
+        const second = standOn(world, 'session-1', [4, 5]);
 
         expect(onInteract(world, second)).toBe(false);
         expect(second.stationId).toBe('');
@@ -293,14 +294,14 @@ describe('joining a press station', () => {
     });
 
     it('waives the clipboard on a return inside the memory window and charges it after', () => {
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 5;
         leave(world, player);
 
         world.state.clock = 60;
-        standOn(world, 'session-0', [5, 4]);
+        standOn(world, 'session-0', [4, 5]);
         onInteract(world, player);
 
         // No clipboard at all: it expires on the tick it was handed out, and
@@ -310,14 +311,14 @@ describe('joining a press station', () => {
 
         leave(world, player);
         world.state.clock = 121;
-        standOn(world, 'session-0', [5, 4]);
+        standOn(world, 'session-0', [4, 5]);
         onInteract(world, player);
 
         expect(player.clipboardUntil).toBe(124);
     });
 
     it('leaves on a second E when the module does not want the press', () => {
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         spyOn(world, 'powder-a');
@@ -333,28 +334,29 @@ describe('a stand station', () => {
     it('gains and loses members from the tick as a player walks the lanes', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'dock-a');
-        const player = standOn(world, 'session-0', [23, 4]);
+        const player = standOn(world, 'session-0', [22, 4]);
 
-        player.x = 23.9;
+        player.x = 22.9;
         world.reindexPlayers();
         tick(world, 0.05);
 
         expect(player.stationId).toBe('dock-a');
-        expect(player.workTile).toBe('23,4');
+        expect(player.workTile).toBe('22,4');
         // No clipboard at all: it expires on the tick it was handed out, and
         // no fresh line goes up (the stale one is `bubblesSystem`'s to sweep).
         expect(player.clipboardUntil).toBe(world.now);
         expect(player.bubbleUntil).toBeLessThanOrEqual(world.now);
-        expect(player.x).toBe(23.9);
+        expect(player.x).toBe(22.9);
         expect(spy.joins).toEqual([{ sessionId: 'session-0', role: 'work' }]);
 
-        standOn(world, 'session-0', [23, 5]);
+        standOn(world, 'session-0', [23, 4]);
         tick(world, 0.05);
 
-        expect(player.workTile).toBe('23,5');
+        expect(player.workTile).toBe('23,4');
         expect(spy.leaves).toEqual([]);
 
-        standOn(world, 'session-0', [21, 5]);
+        // Clear of the dock's ring, which now reaches back to x 20 on rows 5-6.
+        standOn(world, 'session-0', [19, 5]);
         tick(world, 0.05);
 
         expect(player.stationId).toBe('');
@@ -365,7 +367,7 @@ describe('a stand station', () => {
     it('sends E to the module even with full hands and ignores a leave message', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'dock-a');
-        const player = standOn(world, 'session-0', [23, 4]);
+        const player = standOn(world, 'session-0', [22, 4]);
 
         tick(world, 0.05);
         player.carrying = 's-1';
@@ -382,7 +384,7 @@ describe('a stand station', () => {
     it('ejects a member on a programmatic leave, which is how F10 empties a machine', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'dock-a');
-        const player = standOn(world, 'session-0', [23, 4]);
+        const player = standOn(world, 'session-0', [22, 4]);
 
         tick(world, 0.05);
 
@@ -401,7 +403,7 @@ describe('staffing', () => {
         const world = runningWorld(3);
         const st = stateOf(world, 'assembly-a');
 
-        onInteract(world, standOn(world, 'session-0', [13, 9]));
+        onInteract(world, standOn(world, 'session-0', [13, 5]));
         tick(world, 0.05);
 
         expect(st.workers).toBe(0);
@@ -413,7 +415,7 @@ describe('staffing', () => {
         expect(st.workers).toBe(1);
         expect(st.efficiency).toBeCloseTo(0.6, 6);
 
-        onInteract(world, standOn(world, 'session-1', [14, 9]));
+        onInteract(world, standOn(world, 'session-1', [14, 5]));
         world.state.clock = 8;
         tick(world, 0.05);
 
@@ -425,9 +427,9 @@ describe('staffing', () => {
         const world = runningWorld(3);
         const st = stateOf(world, 'powder-a');
         const tiles: [number, number][] = [
-            [5, 4],
-            [3, 4],
-            [4, 4],
+            [4, 5],
+            [3, 5],
+            [5, 5],
         ];
 
         // Distinct join times: the newest body is the one with nothing to do.
@@ -463,9 +465,9 @@ describe('interrupts', () => {
     it('spends the aisle before the machine, whoever arrived last', () => {
         const world = runningWorld(3);
         const tiles: [number, number][] = [
-            [3, 4],
-            [4, 4],
-            [5, 4],
+            [3, 5],
+            [5, 5],
+            [4, 5],
         ];
 
         // Two bodies mill on the ring and the third takes the work tile last,
@@ -531,7 +533,7 @@ describe('interrupts', () => {
 
         // Back through the door: the schedule starts over rather than firing on arrival.
         world.state.clock = due + 2;
-        onInteract(world, standOn(world, 'session-1', [3, 4]));
+        onInteract(world, standOn(world, 'session-1', [3, 5]));
         world.state.clock = due + 3;
         tick(world, 0.05);
 
@@ -546,9 +548,9 @@ describe('interrupts', () => {
         const world = runningWorld(4);
         const st = stateOf(world, 'dock-a');
         const lanes: [number, number][] = [
+            [22, 4],
             [23, 4],
-            [23, 5],
-            [23, 6],
+            [24, 4],
         ];
 
         lanes.forEach((tile, i) => {
@@ -561,7 +563,7 @@ describe('interrupts', () => {
         expect(st.interruptsPerSecond).toBe(0);
 
         // The fourth lane is one body past the dock's peak of three.
-        standOn(world, 'session-3', [23, 7]);
+        standOn(world, 'session-3', [25, 4]);
         world.state.clock = 2;
         tick(world, 0.05);
 
@@ -625,7 +627,7 @@ describe('the cycle', () => {
     it('gates beginCycle on the re-arm floor and on empty hands', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -668,7 +670,7 @@ describe('the cycle', () => {
     it('shelves the output, hands it over when the shelf is full, and bumps the tally', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -707,7 +709,7 @@ describe('the cycle', () => {
     it('forfeits an executing cycle when the operator leaves', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -735,7 +737,7 @@ describe('the cycle', () => {
     it('writes the module status verbatim and honours setProgress', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -756,7 +758,7 @@ describe('the cycle', () => {
     it('aborts a rep without moving the re-arm floor, and publishes mg only on a change', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -782,7 +784,7 @@ describe('the cycle', () => {
 
     it('never feeds a station off its own floor ring', () => {
         const world = runningWorld(1);
-        const player = standOn(world, 'session-0', [13, 9]);
+        const player = standOn(world, 'session-0', [13, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -800,7 +802,7 @@ describe('the cycle', () => {
 
     it('reads starved from the module and only from the input shelf', () => {
         const world = runningWorld(1);
-        const player = standOn(world, 'session-0', [13, 9]);
+        const player = standOn(world, 'session-0', [13, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -826,7 +828,7 @@ describe('mini-game input', () => {
     it('drops ops during the clipboard and forwards the raw timestamp after it', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         onMg(world, player, { stationId: 'powder-a', op: 'mash', t: 1234, v: 'l' });
@@ -846,7 +848,7 @@ describe('mini-game input', () => {
     it('routes the mg and leave messages and the action fallback through the handlers', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -873,7 +875,7 @@ describe('jam, pause and damage', () => {
     it('freezes on jam and resumes without counting the jammed seconds', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -909,7 +911,7 @@ describe('jam, pause and damage', () => {
     it('holds ops off while paused', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         world.state.clock = 4;
@@ -928,7 +930,7 @@ describe('jam, pause and damage', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
         const st = stateOf(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         st.state = 'damaged';
         st.progress = 0.4;
@@ -966,7 +968,7 @@ describe('jam, pause and damage', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'dock-a');
         const st = stateOf(world, 'dock-a');
-        const player = standOn(world, 'session-0', [23, 4]);
+        const player = standOn(world, 'session-0', [22, 4]);
 
         tick(world, 0.05);
 
@@ -1001,7 +1003,7 @@ describe('a seat going away', () => {
     it('takes the player off the station on disconnect', () => {
         const world = runningWorld(1);
         const spy = spyOn(world, 'powder-a');
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         onInteract(world, player);
         onPlayerLeft(world, 'session-0');
@@ -1033,7 +1035,7 @@ describe('the modules', () => {
      */
     it('takes a keg off the real Slammer verbs, from the handler to the shelf', () => {
         const world = runningWorld(1);
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         function mg(op: string, t: number, v?: string): void {
             dispatchMessage(world, ROOM, 'session-0', 'mg', { stationId: 'powder-a', op, t, v });
@@ -1066,7 +1068,7 @@ describe('the modules', () => {
 
     it('reads E at a module that declines the press as a leave, re-arm floor or not', () => {
         const world = runningWorld(1);
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         world.state.clock = 104;
         dispatchMessage(world, ROOM, 'session-0', 'interact', { t: 0 });
@@ -1085,7 +1087,7 @@ describe('the modules', () => {
 describe('the tick contract', () => {
     it('is registered in SYSTEMS and does nothing in the lobby', () => {
         const world = makeWorld({ players: 1 });
-        const player = standOn(world, 'session-0', [5, 4]);
+        const player = standOn(world, 'session-0', [4, 5]);
 
         world.tick(0.05);
 

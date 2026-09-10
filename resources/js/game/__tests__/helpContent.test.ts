@@ -26,6 +26,40 @@ function rowsOf(sections: ReturnType<typeof helpSections>): string[] {
     return sections.flatMap((s) => s.rows.map(([key, what]) => `${key} ${what}`));
 }
 
+/**
+ * The Slammer's rows introduce two nouns nobody else picks up — 'a spark' and
+ * 'the pile' — and then no section anywhere said what to do about either. Fire
+ * is the one system in this game with a countdown on it, and it had zero
+ * presence in the panel a stuck player is told to open.
+ */
+describe('when something catches', () => {
+    const rows = (): string => rowsOf(helpSections(null, THROW_TILES)).join(' | ');
+
+    it('says a lit item burns down and takes the pile with it', () => {
+        expect(rows()).toMatch(/burn/i);
+    });
+
+    it('names the key that puts a fire out', () => {
+        const fire = helpSections(null, THROW_TILES).find((s) => /catch/i.test(s.title));
+        const stomp = fire?.rows.find(([, what]) => /stomp/i.test(what));
+
+        expect(stomp?.[0]).toMatch(/space/i);
+    });
+
+    /**
+     * The two gold tiles are the only place a burning item can be made safe, and
+     * `blockedForItems` refuses an unlit one with no explanation anywhere — so a
+     * first-timer who guesses right and carries a normal keg over gets a wordless
+     * refusal for doing the correct thing.
+     */
+    it('says a blast bin takes a burning item and nothing else', () => {
+        const fire = helpSections(null, THROW_TILES).find((s) => /catch/i.test(s.title));
+        const bin = fire?.rows.find(([key]) => /blast bin/i.test(key));
+
+        expect(bin?.[1]).toMatch(/only|nothing else|not.*unlit/i);
+    });
+});
+
 describe('helpSections', () => {
     it('always explains how to walk and how to close the help', () => {
         const rows = rowsOf(helpSections(null, THROW_TILES)).join(' | ');

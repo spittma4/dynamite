@@ -358,6 +358,20 @@ export interface LevelConfig {
     day: DayConfig;
     players: PlayersConfig;
     layout: string;
+    /**
+     * ADR 0015, default `true`: the floor reads left to right in process order
+     * and every machine wears its input on its left face and its output on its
+     * right. `false` turns those four checks off in `validateLevelOnLayout` and
+     * is only legal beside a `flowExemption`.
+     */
+    flowRightward?: boolean;
+    /**
+     * Why this level's line is deliberately tangled. Required by
+     * `validateLevelConfig` when `flowRightward` is `false`, and rejected
+     * without it, so the exemption is an argument in the file rather than a
+     * flag somebody flipped.
+     */
+    flowExemption?: string;
     groove: GrooveConfig;
     clipboardSeconds: number;
     clipboardMemorySeconds?: number;

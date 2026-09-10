@@ -2,7 +2,7 @@ import type { FuseLength, LevelConfig, OrderState, OrdersConfig, TruckPhase } fr
 import { truckSchedule } from '@shared';
 
 import { fuseLabel, orderPlace } from '../minigames/Jig';
-import { TRUCK_LEAVING, truckIn, truckLeaves } from '../nouns';
+import { NOTHING_ON_THE_BOARD, TRUCK_LEAVING, truckIn, truckLeaves } from '../nouns';
 import { productPlural } from '../render/dropTargets';
 
 /**
@@ -111,6 +111,28 @@ function rowFor(order: BoardOrder, place: string, view: BoardView): BoardRow {
     if (cell.urgent) return { text, tone: 'urgent' };
 
     return { text, tone: place === orderPlace(0) ? 'now' : 'waiting' };
+}
+
+/**
+ * The one line the board prop on the wall carries, under the word ORDERS: what
+ * the order being worked wants. The wall at [18,3] is the surface every hauler
+ * walks past between Assembly and the Dock, and it drew nothing but its own name
+ * — so the only place the required length appeared in world space was the rack,
+ * which a hauler never stands at. The wording is the Tab board's own fuse column,
+ * so the two cannot drift into two spellings.
+ */
+export function wallBoardLine(orders: Iterable<BoardOrder>): string {
+    const open: BoardOrder[] = [];
+
+    for (const order of orders) if (order.status === 'open') open.push(order);
+
+    open.sort((a, b) => compareOrderIds(a.id, b.id));
+
+    const first = open[0];
+
+    if (first === undefined) return NOTHING_ON_THE_BOARD;
+
+    return `${fuseLabel(first.fuseLength as FuseLength)} FUSE`;
 }
 
 /**

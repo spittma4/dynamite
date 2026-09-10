@@ -35,6 +35,7 @@ import {
     PRIME_KEG,
 } from '../nouns';
 import { KEGS_OUT, pluralOf, producedBy, shelfLabel } from '../render/dropTargets';
+import { RACK_COLOURS, rackBins, rackCaption } from '../render/fuseRack';
 import { KEG_WORD, kegLook } from '../render/stationGlyphs';
 import type { Factory } from '../scenes/Factory';
 import type { MinigameOverlay, OverlayContext, OverlayFactory, OverlayKey } from './types';
@@ -119,6 +120,16 @@ const GRADE_COLOURS: Record<JigGrade, number> = {
  */
 export const CRADLE_FULL = 'CRADLE FULL';
 export const AISLE_BODY = 'BODY IN THE AISLE';
+
+/**
+ * Two different things block the aisle and they needed two sentences. A body is
+ * a toss *note* — somebody walked through the arc, wore the set, and moved on.
+ * An item lying there is a standing refusal: `mg.aisleBlocked` is
+ * `view.aisleFloorItem` and nothing else, and while it is true every swing is
+ * silently dropped (`shared/src/sim/jig.ts:985`). Drawn as BODY IN THE AISLE it
+ * named the wrong cause, pointed at nobody, and never said what to press.
+ */
+export const AISLE_ITEM = 'SOMETHING ON THE AISLE — E TO LIFT IT';
 
 const NOTE_LABELS: Record<Exclude<JigNote, ''>, string> = {
     early: 'EARLY',
@@ -246,7 +257,7 @@ export const CRADLE_LABEL: Record<JigCradle, string> = {
  * named neither the receiver nor the stake, so a first-timer could not learn
  * from it that the jig is stopped until the toss lands.
  */
-export const RACK_STAKE = 'The jig is stopped until a fuse set lands in the cradle.';
+export const RACK_STAKE = `The jig is stopped until a ${FUSE_SET.toLowerCase()} lands in the cradle.`;
 
 /** The header that turns two loose chips into the reason for the SHORT/LONG press. */
 export const ORDER_STRIP_LABEL = 'NEXT ORDERS WANT';
@@ -1342,22 +1353,52 @@ class JigOverlay implements MinigameOverlay {
             });
         }
 
-        const picks: FuseLength[] = ['short', 'long'];
+        // The bins, and the reason the lit one is lit. `reconcileRoles` derives
+        // `bPick` from the active order the moment a body takes the rack tile
+        // (`shared/src/sim/jig.ts:575`), so the pick is already right — and drawn
+        // as a lone highlight it read as a default the player was being tested
+        // on. The bin the *order* wants is marked separately, and the caption
+        // beside them says the game has already reached in and chosen.
+        const wanted = mg.orderChip[0]?.fuseLength ?? '';
+        const bins = rackBins(
+            { x0: ctx.width / 2 - 60, y0: STRIP_Y - 4, x1: ctx.width / 2 + 72, y1: STRIP_Y + 20 },
+            mg.bPick,
+            wanted,
+        );
 
-        picks.forEach((fuse, i) => {
-            const chosen = mg.bPick === fuse;
-            const x = ctx.width / 2 - 60 + i * 70;
+        for (const bin of bins) {
+            const { x0, y0, x1, y1 } = bin.box;
 
-            g.fillStyle(chosen ? JIG_COLOURS.parts : JIG_COLOURS.track, 1);
-            g.fillRoundedRect(x, STRIP_Y - 4, 62, 24, 4);
-            labels.write(`pick-${fuse}`, x + 31, STRIP_Y + 8, fuseLabel(fuse), {
+            g.fillStyle(bin.picked ? JIG_COLOURS.parts : JIG_COLOURS.track, 1);
+            g.fillRoundedRect(x0, y0, x1 - x0, y1 - y0, 4);
+
+            if (bin.wanted) {
+                g.lineStyle(2, RACK_COLOURS[bin.warn ? 'warn' : 'set'], 1);
+                g.strokeRoundedRect(x0, y0, x1 - x0, y1 - y0, 4);
+            }
+
+            labels.write(`pick-${bin.fuse}`, (x0 + x1) / 2, (y0 + y1) / 2, bin.label, {
                 size: 12,
-                bold: chosen,
-                colour: chosen ? JIG_COLOURS.dent : JIG_COLOURS.label,
+                bold: bin.picked,
+                colour: bin.picked ? JIG_COLOURS.dent : JIG_COLOURS.label,
                 originX: 0.5,
                 originY: 0.5,
             });
-        });
+        }
+
+        // Left of the bins, on their own row: the caption is the thing the bins
+        // are an answer to, so it is read first, going right. With nothing on the
+        // board the order strip already says so and a second copy is noise.
+        if (wanted !== '') {
+            const caption = rackCaption(mg.bPick, wanted, mg.bPickFromOrder);
+
+            labels.write('pick-why', PAD, STRIP_Y + 8, caption.text, {
+                size: 12,
+                bold: true,
+                colour: RACK_COLOURS[caption.tone],
+                originY: 0.5,
+            });
+        }
 
         // What the keys are for, under the choice they explain. Without it the
         // panel is a key list beside two loose chips, and B cannot learn from the
@@ -1379,7 +1420,7 @@ class JigOverlay implements MinigameOverlay {
         }
 
         if (mg.aisleBlocked) {
-            labels.write('badge-aisle', ctx.width - PAD, TRACK_Y + TRACK_H + 44, AISLE_BODY, {
+            labels.write('badge-aisle', ctx.width - PAD, TRACK_Y + TRACK_H + 44, AISLE_ITEM, {
                 size: 12,
                 bold: true,
                 colour: JIG_COLOURS.miss,

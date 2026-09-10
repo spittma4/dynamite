@@ -313,10 +313,10 @@ describe('the one-line layout', () => {
         expect(rawLayout.key).toBe('one-line');
     });
 
-    it('draws 28 by 18 tiles with 118 solid ones', () => {
+    it('draws 28 by 18 tiles with 158 solid ones', () => {
         expect([layout.width, layout.height]).toEqual([28, 18]);
-        expect(layout.walls).toHaveLength(118);
-        expect(new Set(layout.walls).size).toBe(118);
+        expect(layout.walls).toHaveLength(158);
+        expect(new Set(layout.walls).size).toBe(158);
     });
 
     it('walls the whole border except the factory door', () => {
@@ -330,26 +330,23 @@ describe('the one-line layout', () => {
             expect(isWall([layout.width - 1, y])).toBe(true);
         }
 
-        expect(layout.spawn).toEqual([14, 17]);
+        // The door is the one-tile gap at [14,17]; the crew materialises one tile
+        // inside it, because `spawnTiles` needs six distinct tiles for six bodies
+        // and a tile in the wall row only has four neighbours on the floor.
+        expect(isWall([14, 17])).toBe(false);
+        expect(layout.spawn).toEqual([14, 16]);
     });
 
     it('walls the machines, the shelves and the furniture', () => {
         const solid: Tile[] = [
-            ...rectTiles([3, 2, 3, 3]), // Boom Powder footprint
-            [6, 2],
-            [6, 3],
-            [6, 4], // Powder output shelf
-            ...rectTiles([12, 6, 4, 2]), // the jig
-            [11, 6],
-            [11, 7], // Assembly input shelf
-            [12, 10],
-            [13, 10], // Assembly output shelf
-            [8, 1], // beacon pole
-            [16, 1],
-            [17, 1],
-            [18, 1], // order board
-            [16, 6], // tool cart
-            [26, 5], // countdown sign
+            // ADR 0015: both machines are two rows of furniture on rows 3-4, and
+            // every shelf is a tile of that furniture on a left or right face.
+            ...rectTiles([3, 3, 5, 2]), // Boom Powder, out-shelf at [7,4]
+            ...rectTiles([11, 3, 6, 2]), // Assembly, in-shelf at [11,4], out at [16,4]
+            [6, 3], // beacon pole
+            [18, 3], // order board
+            [1, 4], // tool cart
+            [26, 4], // countdown sign
             [10, 15], // broom hook
             ...rectTiles([22, 0, 5, 1]), // the dock door
         ];
@@ -360,16 +357,19 @@ describe('the one-line layout', () => {
     it('leaves everything a player stands on walkable', () => {
         const walkable: Tile[] = [
             [4, 5], // Powder work tile
-            [13, 8],
-            [14, 8], // Assembly work tiles
-            [16, 8], // Assembly rack tile
+            [13, 5],
+            [14, 5], // Assembly work tiles
+            [13, 7], // Assembly rack tile
             ...layout.ramp,
             ...rectTiles(layout.truckBay),
             ...rectTiles(layout.breakRoom),
             ...layout.blastBins,
             layout.props.returnsPile,
             layout.spawn,
-            [15, 8], // the aisle tile a missed toss lands on
+            [13, 6], // the aisle tile a missed toss lands on
+            [8, 4],
+            [10, 4], // the two standing tiles of the Powder-to-Assembly haul
+            [17, 4], // where a hauler pulls a crate off Assembly's out-shelf
             [9, 15], // the break-room door
         ];
 
@@ -390,32 +390,93 @@ describe('the one-line layout', () => {
     });
 
     it('puts the props and the bin where the fiction needs them', () => {
-        expect(layout.blastBins).toEqual([[1, 8]]);
-        expect(layout.orderBoard).toEqual([16, 1]);
+        // Two bins now, one at each end of the band: with the whole line on rows
+        // 3-7 a stick lit at the dock was eleven tiles from the only bin and
+        // `hazards.fuseSeconds` is 6.
+        expect(layout.blastBins).toEqual([
+            [1, 7],
+            [19, 7],
+        ]);
+        expect(layout.orderBoard).toEqual([18, 3]);
         expect(layout.breakRoom).toEqual([3, 14, 6, 3]);
         expect(layout.props).toEqual({
-            toolCart: [16, 6],
-            countdownSign: [26, 5],
-            returnsPile: [21, 8],
+            toolCart: [1, 4],
+            countdownSign: [26, 4],
+            returnsPile: [18, 6],
             broomHook: [10, 15],
         });
     });
 
-    it('names only the powder station on a beacon pole', () => {
-        expect(layout.beaconPoles).toEqual({ 'powder-a': [8, 1] });
+    /**
+     * One pole per station that can go red. `tickBeacons` reddens anything with
+     * a floor ring and the client draws no lamp, no stripes and no alarm without
+     * a pole to hang them on, so Assembly and the Dock each got one — and every
+     * pole stands clear of the tile above a shelf, which is where the hopper is.
+     */
+    it('gives every station with a danger ring a pole to show it on', () => {
+        expect(layout.beaconPoles).toEqual({
+            'powder-a': [6, 3],
+            'assembly-a': [12, 3],
+            'dock-a': [21, 3],
+        });
+    });
+
+    it('leaves the first open row clear for the hat rack F17 hangs at 8,8', () => {
+        const neighbours: Tile[] = [];
+
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) neighbours.push([8 + dx, 8 + dy]);
+        }
+
+        const claimed = new Set(
+            level('level-01-basic-flow').stations.flatMap((s) =>
+                [...s.workTiles, ...s.rackTiles, ...s.floorRing.tiles].map(([x, y]) =>
+                    tileKey(x, y),
+                ),
+            ),
+        );
+
+        for (const tile of neighbours) {
+            expect({ tile, wall: isWall(tile) }).toEqual({ tile, wall: false });
+            expect(claimed.has(tileKey(tile[0], tile[1]))).toBe(false);
+        }
+    });
+});
+
+describe('the haul ADR 0015 straightened', () => {
+    const baseline = level('level-01-basic-flow');
+    const powderOut = stationOf(baseline, 'powder-a').outputShelf?.tile as Tile;
+    const assembly = stationOf(baseline, 'assembly-a');
+    const assemblyIn = assembly.inputShelf?.tile as Tile;
+    const assemblyOut = assembly.outputShelf?.tile as Tile;
+
+    it('runs both hauls along one row, so neither ever climbs', () => {
+        // ADR 0015: a hauler leaving one machine is already standing on the row
+        // the next machine wants. The old floor dropped four rows then climbed
+        // six, which is what made "where do I put this?" a question at all.
+        const nearestLane = layout.ramp[0] as Tile;
+
+        expect([powderOut[1], assemblyIn[1], assemblyOut[1], nearestLane[1]]).toEqual([4, 4, 4, 4]);
     });
 
     it('keeps Powder a haul away from Assembly and Assembly a run from the dock', () => {
-        // docs/02: "Powder is 6 tiles from Assembly", "the dock is far enough
-        // that the truck horn causes a run".
-        const powderWork: Tile = [4, 5];
-        const assemblyIn: Tile = [11, 7];
-        const assemblyOut: Tile = [13, 10];
-        const nearestLane: Tile = [22, 4];
+        // docs/02 wants Powder a haul from Assembly and the dock far enough that
+        // the truck horn causes a run. Four tiles and six, along row 4.
+        const nearestLane = layout.ramp[0] as Tile;
 
-        expect(assemblyIn[0] - powderWork[0]).toBe(7);
-        expect(nearestLane[0] - assemblyOut[0]).toBe(9);
-        expect(assemblyOut[1] - nearestLane[1]).toBe(6);
+        expect(assemblyIn[0] - powderOut[0]).toBe(4);
+        expect(nearestLane[0] - assemblyOut[0]).toBe(6);
+    });
+
+    it('asks the crew for two strides out and five back, at 4 tiles a second', () => {
+        // What a hauler actually walks: from the tile outward of one shelf to the
+        // tile outward of the next. `movement.tilesPerSecond` is 4, so this is
+        // the haul's half-second cost and the number any retune argues against.
+        const tps = (baseline.movement?.tilesPerSecond ?? LEVEL_DEFAULTS.movement.tilesPerSecond);
+
+        expect(tps).toBe(4);
+        expect(assemblyIn[0] - 1 - (powderOut[0] + 1)).toBe(2);
+        expect((layout.ramp[0] as Tile)[0] - (assemblyOut[0] + 1)).toBe(5);
     });
 });
 
@@ -453,14 +514,14 @@ describe('every station on the shipped layout', () => {
             }
         }
 
-        expect(seen.size).toBe(23 + 40 + 29);
+        expect(seen.size).toBe(16 + 20 + 15);
     });
 
     it('gives every shelf a tile to work from', () => {
         const shelves: Tile[] = [
-            [6, 3], // Powder output
-            [11, 7], // Assembly input
-            [13, 10], // Assembly output
+            [7, 4], // Powder output, pulled from [8,4]
+            [11, 4], // Assembly input, poured into from [10,4]
+            [16, 4], // Assembly output, pulled from [17,4]
         ];
 
         for (const [x, y] of shelves) {

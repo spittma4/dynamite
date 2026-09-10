@@ -673,7 +673,7 @@ describe('validateLevelOnLayout', () => {
 
     it('refuses a work tile inside a wall', () => {
         const { level, layout } = pair();
-        level.stations[1]!.workTiles[0] = [12, 8];
+        level.stations[1]!.workTiles[0] = [12, 4];
 
         expect(validateLevelOnLayout(level, layout).join('\n')).toMatch(/workTiles/);
     });
@@ -697,16 +697,18 @@ describe('validateLevelOnLayout', () => {
 
         // The assembly anchor, its input shelf and its output shelf are all walls
         // in the fixture, and that is exactly right.
-        expect(layout.walls).toContain(packTile(12, 8, layout.width));
-        expect(layout.walls).toContain(packTile(12, 9, layout.width));
-        expect(layout.walls).toContain(packTile(12, 11, layout.width));
+        expect(layout.walls).toContain(packTile(13, 3, layout.width));
+        expect(layout.walls).toContain(packTile(11, 4, layout.width));
+        expect(layout.walls).toContain(packTile(16, 4, layout.width));
         expect(validateLevelOnLayout(level, layout)).toEqual([]);
     });
 
     it('refuses a shelf nobody can stand next to', () => {
         const { level, layout } = pair();
 
-        for (const t of [[11, 9], [13, 9], [12, 10]] as const) {
+        // The input shelf at [11,4] already has walls above and to its right; bury
+        // the last two neighbours and nobody can pour into it.
+        for (const t of [[10, 4], [11, 5]] as const) {
             layout.walls.push(packTile(t[0], t[1], layout.width));
         }
 
@@ -739,6 +741,37 @@ describe('validateLevelOnLayout', () => {
         layout.beaconPoles['casing-a'] = [5, 12];
 
         expect(validateLevelOnLayout(level, layout).join('\n')).toMatch(/casing-a/);
+    });
+
+    /**
+     * `tickBeacons` reddens every station that has a floor ring, but the client
+     * hangs the whole danger channel off the pole — no pole, no lamp, no hazard
+     * stripes round the pile, and the `alarm` cue's own `seenAs` names both. A
+     * station that can go red with nothing on screen to say so is worse than one
+     * that cannot go red at all.
+     */
+    it('refuses a station with a danger ring and nowhere to show it', () => {
+        const { level, layout } = pair();
+        delete layout.beaconPoles['assembly-a'];
+
+        expect(validateLevelOnLayout(level, layout).join('\n')).toMatch(
+            /assembly-a\.floorRing: a ring with no beaconPole/,
+        );
+    });
+
+    /**
+     * The hopper's body rises into the tile above its shelf (`render/hopper.ts`),
+     * which is what keeps 56 px of funnel off a tile somebody walks on. On the
+     * re-laid floor that tile is always machine wall; this is the rule that keeps
+     * it that way rather than leaving the drawing to hope.
+     */
+    it('refuses a shelf with walkable floor above it', () => {
+        const { level, layout } = pair();
+        layout.walls = layout.walls.filter((i) => i !== packTile(11, 3, layout.width));
+
+        expect(validateLevelOnLayout(level, layout).join('\n')).toMatch(
+            /assembly-a\.inputShelf: 11,3 above it is not machine/,
+        );
     });
 });
 

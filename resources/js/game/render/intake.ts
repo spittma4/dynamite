@@ -15,30 +15,25 @@ import { SELF_STOCKED, haulableInputs, pluralOf } from './dropTargets';
  */
 
 /**
- * The station's own x extent. This is the horizontal half of the bbox that
- * `footprintOf` in `shared/src/sim/stations.ts` builds — that bbox spans the
- * station's named tiles and nothing from the layout, so the two agree.
- */
-function xSpan(station: StationConfig): { x0: number; x1: number } {
-    const xs = [station.anchor[0]];
-
-    for (const [x] of [...station.workTiles, ...station.rackTiles]) xs.push(x);
-
-    if (station.inputShelf) xs.push(station.inputShelf.tile[0]);
-    if (station.outputShelf) xs.push(station.outputShelf.tile[0]);
-
-    return { x0: Math.min(...xs), x1: Math.max(...xs) };
-}
-
-/**
  * Which way a shelf tile faces away from its machine: -1 for left, 1 for right.
  * The aisle a player walks is on that side, so it is where the shelf's label
- * and its apron go.
+ * and its apron go — and, since F15, which way the hopper standing on the tile
+ * opens.
+ *
+ * Measured against the tiles the crew stands on, which is how
+ * `checkFlowDirection` measures the same thing (ADR 0015 rules 1 and 3: an
+ * in-tray is left of `workTiles`, an out-tray is right of them). It used to be
+ * measured against the middle of the whole footprint, and the footprint
+ * contains the shelves and the rack — so on the floor the game shipped with,
+ * `assembly-a`'s midpoint sat at 13.5 and its output shelf at x 13 came back
+ * -1 along with its input shelf at x 11. Both faces of one machine labelled
+ * into the same aisle. The rule the validator now enforces is the rule this
+ * reads, so the two cannot disagree about which face a player is standing at.
  */
 export function outwardSide(station: StationConfig, tile: Tile): -1 | 1 {
-    const { x0, x1 } = xSpan(station);
+    const workMinX = Math.min(...station.workTiles.map(([x]) => x));
 
-    return tile[0] <= (x0 + x1) / 2 ? -1 : 1;
+    return tile[0] < workMinX ? -1 : 1;
 }
 
 /**

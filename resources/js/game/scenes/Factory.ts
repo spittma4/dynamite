@@ -271,6 +271,7 @@ export class Factory extends Phaser.Scene {
         avatars.update(state, conn.sessionId, me ? predictor.pose : null, serverNow, nowMs);
         this.floorView?.setTiles(state.spillTiles, state.scorchTiles);
         this.floorView?.setBeacons(state.stations, serverNow);
+        this.floorView?.setOrderBoard(state.orders.values());
         this.stationViewHost?.update(serverNow);
     }
 

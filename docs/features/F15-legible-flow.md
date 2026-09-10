@@ -1,5 +1,19 @@
 # F15 — Making the line legible: hoppers, the fuse rack, and the re-laid floor
-**Status:** [ ] Design reviewed · [ ] Implemented · [ ] Unit tests green · [ ] Verified in the running app
+**Status:** [x] Design reviewed · [x] Implemented · [x] Unit tests green · [ ] Verified in the running app
+
+**In-app pass outstanding.** Everything below is unit-tested — `shared` 445, `game-server` 619,
+client 932, four typechecks clean — but the eight screenshot steps under "In-app verification"
+need a signed-in session on `/factories/{factory}/play`, which is the one box an agent cannot
+tick for itself. `npm run build` has been run so the bundle on `https://dynamite.test` carries
+these changes.
+
+**Deviations from this doc, all recorded as amendments in ADR 0015:** the opt-out is
+`flowRightward` + `flowExemption` rather than `notes`; spawn is `[14, 16]`; `checkFlowDirection`
+re-checks the exemption itself; two rules were added that the re-lay turned out to need (a shelf's
+northern neighbour must be a wall, and a station with a floor ring must have a beacon pole, so
+`one-line.json` now names three poles rather than one); and the rack's three captions live in
+`render/fuseRack.ts` rather than `copy.json`, which this doc's own Risks section anticipated —
+none of them names an order by id, because the panel is pinned to never printing one.
 **Owns:** `resources/js/game/render/hopper.ts` · `resources/js/game/render/fuseRack.ts` · `resources/js/game/__tests__/{hopper,fuseRack}.test.ts` · `shared/tests/flowDirection.test.ts`
 **Touches** (contracts §12 — one line each, except the geometry files, which are the largest touch in this doc; see "Landing order" under Risks):
 - **F12** — `config/game/layouts/one-line.json` (whole file) · the six geometry keys — `anchor`, `workTiles`, `rackTiles`, `inputShelf`, `outputShelf`, `floorRing` — of the three station blocks in each of the five `config/game/levels/*.json` · `shared/tests/levels.test.ts` (one `describe` over the shipped files) · `config/game/copy.json` (one top-level `flow` section) · `shared/src/copy.ts` (the matching field on the `Copy` interface — a JSON key with no field is unreachable from TypeScript, `shared/src/copy.ts:32-55`)

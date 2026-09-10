@@ -77,6 +77,57 @@ describe('outwardSide', () => {
     });
 });
 
+/**
+ * The face a shelf is on is read off the station's own work tiles, the way
+ * `checkFlowDirection` reads it (`shared/src/config/validate.ts`, ADR 0015
+ * rules 1 and 3): an in-tray is left of the tiles the crew stands on and an
+ * out-tray is right of them.
+ *
+ * It used to be read off the middle of the footprint, and the footprint
+ * includes the shelves and the rack — so on the floor the game shipped with,
+ * `assembly-a`'s midpoint was 13.5 and its output shelf at x 13 resolved to
+ * -1 along with its input shelf at x 11. Both faces of one machine labelled
+ * into the same aisle, and the out tray's caption was drawn over the in tray's.
+ */
+describe('the face a shelf is on', () => {
+    /** The geometry ADR 0015 retired: the rack at x 16 drags the midpoint right. */
+    const ZIGZAG = station({
+        id: 'assembly-a',
+        type: 'assembly',
+        anchor: [12, 6],
+        workTiles: [
+            [13, 8],
+            [14, 8],
+        ],
+        rackTiles: [[16, 8]],
+        inputShelf: { tile: [11, 7], capacity: 8, accepts: ['keg'] },
+        outputShelf: { tile: [13, 10], capacity: 4 },
+    });
+
+    it('sends the two faces of one machine to opposite aisles', () => {
+        expect(outwardSide(ZIGZAG, [11, 7])).toBe(-1);
+        expect(outwardSide(ZIGZAG, [13, 10])).toBe(1);
+    });
+
+    it('agrees with the re-laid floor, where the rule is the geometry', () => {
+        const relaid = station({
+            id: 'assembly-a',
+            type: 'assembly',
+            anchor: [13, 3],
+            workTiles: [
+                [13, 5],
+                [14, 5],
+            ],
+            rackTiles: [[13, 7]],
+            inputShelf: { tile: [11, 4], capacity: 8, accepts: ['keg', 'casing'] },
+            outputShelf: { tile: [16, 4], capacity: 4 },
+        });
+
+        expect(outwardSide(relaid, [11, 4])).toBe(-1);
+        expect(outwardSide(relaid, [16, 4])).toBe(1);
+    });
+});
+
 describe('apron', () => {
     it('is the shelf tile plus the floor tile in front of it', () => {
         expect(apron(SHELF_ON_THE_LEFT)).toEqual([

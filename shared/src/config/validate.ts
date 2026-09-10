@@ -3,8 +3,9 @@ import type { ErrorObject, ValidateFunction } from 'ajv';
 
 import schema from './schema.json';
 import { LEVEL_DEFAULTS, applyDefaults } from './defaults';
-import { STATION_SHORT } from '../sim/constants';
+import { STATION_FLOW, STATION_SHORT } from '../sim/constants';
 import { inBounds, packTile, tileKey } from '../sim/tiles';
+import type { Line } from '../schema/types';
 import type {
     AssemblyMinigame,
     BoomPowderMinigame,
@@ -348,6 +349,29 @@ function checkStations(level: LevelConfig, errors: string[]): void {
     }
 }
 
+/**
+ * ADR 0015's escape hatch, shaped so nobody reaches it by drift. The boolean
+ * turns the flow rules off and the string is the argument for turning them off,
+ * and neither is legal without the other. `notes` would have been the cheaper
+ * place to demand the argument and is not one: every shipped level carries a
+ * kilobyte of it, so the ceremony would have been satisfied by prose written
+ * about something else.
+ */
+function checkFlowExemption(level: LevelConfig, errors: string[]): void {
+    const argued = (level.flowExemption ?? '').trim() !== '';
+
+    if (level.flowRightward === false && !argued) {
+        errors.push(
+            'flowRightward: false needs a flowExemption saying why this floor ' +
+                'does not read left to right',
+        );
+    }
+
+    if (level.flowRightward !== false && level.flowExemption !== undefined) {
+        errors.push('flowExemption: only means something with flowRightward false');
+    }
+}
+
 function checkRecipesAndOrders(level: LevelConfig, errors: string[]): void {
     const types = new Set(level.stations.map((s) => s.type));
     const products = new Set<string>();
@@ -444,6 +468,7 @@ function semanticErrors(level: LevelConfig): string[] {
 
     checkTempo(level, floors, errors);
     checkStations(level, errors);
+    checkFlowExemption(level, errors);
     checkRecipesAndOrders(level, errors);
     checkScaling(level, errors);
     checkDayAndPlayers(level, errors);
@@ -575,6 +600,133 @@ function shelfTilesOf(station: StationConfig): [string, Tile][] {
     return shelves;
 }
 
+/** The x/y extent of a station's named tiles — the set `footprintOf` spans. */
+interface Extent {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+}
+
+function extentOf(station: StationConfig): Extent {
+    const tiles: Tile[] = [station.anchor, ...station.workTiles, ...station.rackTiles];
+
+    for (const [, tile] of shelfTilesOf(station)) tiles.push(tile);
+
+    const xs = tiles.map((t) => t[0]);
+    const ys = tiles.map((t) => t[1]);
+
+    return {
+        minX: Math.min(...xs),
+        maxX: Math.max(...xs),
+        minY: Math.min(...ys),
+        maxY: Math.max(...ys),
+    };
+}
+
+function rows(lo: number, hi: number): string {
+    return lo === hi ? `row ${lo}` : `rows ${lo}-${hi}`;
+}
+
+/**
+ * Where a hauler stands to take this station's work away: the out-shelf's row,
+ * or the rows its crew works on when it has no shelf to leave anything on.
+ */
+function outFaceRows(station: StationConfig): [number, number] {
+    if (station.outputShelf) {
+        const y = station.outputShelf.tile[1];
+
+        return [y, y];
+    }
+
+    const ys = station.workTiles.map((t) => t[1]);
+
+    return [Math.min(...ys), Math.max(...ys)];
+}
+
+/**
+ * ADR 0015: the floor reads left to right in process order and every machine
+ * wears its input on its left face and its output on its right, so "pull from
+ * the left, push to the right, walk right" is learned once and never re-learned.
+ * A rule a designer can only follow beats a sign a player has to read at every
+ * station.
+ *
+ * Rack tiles are exempt from the face rules — a rack is the station's own
+ * supply, fetched by its own crew, and nothing is ever hauled to it.
+ *
+ * The opt-out defends itself rather than trusting its other half. The rule that
+ * `flowRightward: false` has to be argued for lives in `checkFlowExemption`, and
+ * `validateLevelOnLayout` is exported and callable on its own — so a caller that
+ * reached for the geometry check alone would otherwise honour an opt-out the
+ * level validator would have rejected.
+ */
+function checkFlowDirection(level: LevelConfig, errors: string[]): void {
+    if (level.flowRightward === false && (level.flowExemption ?? '').trim() !== '') return;
+
+    const lines = new Map<Line, StationConfig[]>();
+
+    for (const station of level.stations) {
+        const line = lines.get(station.line) ?? [];
+
+        line.push(station);
+        lines.set(station.line, line);
+    }
+
+    for (const stations of lines.values()) {
+        const chain = [...stations].sort(
+            (a, b) => STATION_FLOW.indexOf(a.type) - STATION_FLOW.indexOf(b.type),
+        );
+
+        for (const station of chain) {
+            const xs = station.workTiles.map((t) => t[0]);
+            const workMinX = Math.min(...xs);
+            const workMaxX = Math.max(...xs);
+
+            if (station.outputShelf && station.outputShelf.tile[0] <= workMaxX) {
+                errors.push(
+                    `${station.id}.outputShelf: x ${station.outputShelf.tile[0]} is not right ` +
+                        `of the work tiles, which reach x ${workMaxX}`,
+                );
+            }
+
+            if (station.inputShelf && station.inputShelf.tile[0] >= workMinX) {
+                errors.push(
+                    `${station.id}.inputShelf: x ${station.inputShelf.tile[0]} is not left ` +
+                        `of the work tiles, which start at x ${workMinX}`,
+                );
+            }
+        }
+
+        for (let i = 1; i < chain.length; i++) {
+            const previous = chain[i - 1] as StationConfig;
+            const next = chain[i] as StationConfig;
+            const from = extentOf(previous);
+            const to = extentOf(next);
+
+            if (to.minX <= from.maxX) {
+                errors.push(
+                    `${next.id}: its leftmost tile at x ${to.minX} is not right of ` +
+                        `${previous.id}'s rightmost at x ${from.maxX}`,
+                );
+            }
+
+            const [lo, hi] = outFaceRows(previous);
+
+            // A hauler leaving one machine should already be standing on a row
+            // the next one wants, so the out-face has only to reach the next
+            // station's rows, not sit on one particular tile of them.
+            if (lo > to.maxY || hi < to.minY) {
+                const path = previous.outputShelf ? 'outputShelf' : 'workTiles';
+
+                errors.push(
+                    `${previous.id}.${path}: its out-face at ${rows(lo, hi)} misses ` +
+                        `${next.id}'s ${rows(to.minY, to.maxY)}`,
+                );
+            }
+        }
+    }
+}
+
 /** Contracts §8: the level's tiles have to make sense on the map it names. */
 export function validateLevelOnLayout(level: LevelConfig, layout: LayoutConfig): string[] {
     const errors: string[] = [];
@@ -637,8 +789,24 @@ export function validateLevelOnLayout(level: LevelConfig, layout: LayoutConfig):
             if (!reachable) {
                 errors.push(`${station.id}.${path}: ${tile.join(',')} has no tile to work from`);
             }
+
+            // The hopper standing on a shelf is 56 px tall and grows upward into
+            // the machine (`resources/js/game/render/hopper.ts`), which is the
+            // only reason it never covers a tile somebody walks on. ADR 0015
+            // constrains a shelf's x and says nothing about what is above it, so
+            // this is the rule that keeps the drawing's one assumption true.
+            const above: Tile = [tile[0], tile[1] - 1];
+
+            if (isInside(layout, above) && !isWall(layout, walls, above)) {
+                errors.push(
+                    `${station.id}.${path}: ${above.join(',')} above it is not machine, ` +
+                        'so the hopper would stand on walkable floor',
+                );
+            }
         }
     }
+
+    checkFlowDirection(level, errors);
 
     const dock = level.stations.find((s) => s.type === 'dock');
 
@@ -660,6 +828,20 @@ export function validateLevelOnLayout(level: LevelConfig, layout: LayoutConfig):
 
     for (const id of Object.keys(layout.beaconPoles)) {
         if (!stationIds.has(id)) errors.push(`beaconPoles.${id}: no such station`);
+    }
+
+    // `tickBeacons` reddens every station that has a floor ring, but the client
+    // hangs the entire danger channel off the pole: `DangerBeaconView.update`
+    // clears its stripes when the layout names no pole for the station, and so
+    // does `Floor.setBeacons`. A ring with no pole is a station that goes red on
+    // the server with no lamp, no stripes and no alarm anywhere on screen.
+    for (const station of level.stations) {
+        if (station.floorRing.tiles.length === 0) continue;
+        if (layout.beaconPoles[station.id] !== undefined) continue;
+
+        errors.push(
+            `${station.id}.floorRing: a ring with no beaconPole has nowhere to show its danger`,
+        );
     }
 
     return errors;

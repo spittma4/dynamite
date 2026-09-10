@@ -12,9 +12,11 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { FUSE_SET, HANDS_FULL } from '../nouns';
+import { rackCaption } from '../render/fuseRack';
 
 import {
     AISLE_BODY,
+    AISLE_ITEM,
     CASINGS_COMING,
     CLICK_FLASH_SECONDS,
     CRADLE_FULL,
@@ -110,6 +112,7 @@ function mg(overrides: Partial<JigMg> = {}): JigMg {
         surfaceReadyAt: 0,
         bPhase: 'idle',
         bPick: 'long',
+        bPickFromOrder: false,
         bFetchDoneAt: 0,
         swingStartAt: 0,
         aisleBlocked: false,
@@ -1137,6 +1140,56 @@ describe('the fuse rack as a first-timer reads it', () => {
         expect(lines.join(' ')).toContain('LONG');
     });
 
+    /**
+     * The defect F15 went after. `reconcileRoles` sets `state.bPick` from
+     * `view.orders[0]` the moment a body takes the rack tile
+     * (`shared/src/sim/jig.ts:575`), so the pick is already correct — but
+     * nothing on the panel connected the lit bin to the order chip two rows
+     * above it, and it read as "LONG is selected" rather than "the order wants
+     * LONG and it is already selected". A first-time B never learned that the
+     * choice existed, was meaningful, or was currently right.
+     */
+    it('says the order has already picked the fuse, in the bins row', () => {
+        const lines = rack({
+            bPick: 'long',
+            bPickFromOrder: true,
+            orderChip: [{ orderId: 'o-1', fuseLength: 'long' }],
+        });
+
+        expect(lines).toContain(rackCaption('long', 'long', true).text);
+    });
+
+    /**
+     * The same bin, the opposite claim: an order-derived pick follows the next
+     * rollover on its own and B's does not, so the panel says which one is on
+     * screen rather than taking credit for a press B made.
+     */
+    it('credits B once B has overridden the pre-pick', () => {
+        const lines = rack({
+            bPick: 'long',
+            bPickFromOrder: false,
+            orderChip: [{ orderId: 'o-1', fuseLength: 'long' }],
+        });
+
+        expect(lines).toContain(rackCaption('long', 'long', false).text);
+        expect(lines).not.toContain(rackCaption('long', 'long', true).text);
+    });
+
+    it('names the length the order wants when the pick is on the other bin', () => {
+        const lines = rack({
+            bPick: 'long',
+            orderChip: [{ orderId: 'o-1', fuseLength: 'short' }],
+        });
+
+        expect(lines).toContain(rackCaption('long', 'short', false).text);
+    });
+
+    it('says nothing about a want while the board is empty', () => {
+        const lines = rack({ bPick: 'long', orderChip: [] });
+
+        expect(lines).not.toContain(rackCaption('long', 'long', true).text);
+    });
+
     // 'o-1' is the database's name for an order, not the player's.
     it('never puts a raw order id on the panel', () => {
         const lines = rack({
@@ -1196,13 +1249,30 @@ describe('the words the jig uses for its own state', () => {
         });
 
         expect(badges).toContain(CRADLE_FULL);
-        expect(badges).toContain(AISLE_BODY);
         expect(popFor({ who: 'b', step: 'toss', grade: 'miss', note: 'full', at: 0 })?.text).toContain(
             CRADLE_FULL,
         );
         expect(popFor({ who: 'b', step: 'toss', grade: 'miss', note: 'body', at: 0 })?.text).toContain(
             AISLE_BODY,
         );
+    });
+
+    /**
+     * `aisleBlocked` is `view.aisleFloorItem` and nothing else — `bodyOnAisle` is
+     * a separate field the reducer never folds into it. So the standing badge was
+     * telling a player at the rack there was a BODY IN THE AISLE with nobody
+     * within four tiles, and never naming the thing that was actually there or
+     * what to do about it.
+     */
+    it('names the thing on the aisle rather than a body nobody can see', () => {
+        const badges = panelText(mg({ aisleBlocked: true }), [keg, casing], { sessionId: 'B1' });
+
+        expect(badges).toContain(AISLE_ITEM);
+        expect(badges).not.toContain(AISLE_BODY);
+    });
+
+    it('says how to clear it, because the swing is refused until somebody does', () => {
+        expect(AISLE_ITEM).toContain('E');
     });
 });
 

@@ -188,3 +188,75 @@ faces.
 - **`shared/src/config/schema.json`** — declare `flowRightward: { "type": "boolean" }` on the
   `LevelConfig` root so Laravel's schema pass accepts the key (F01 validates by path against
   this same file).
+
+## Amendment (2026-09-10) — the exemption is its own field, not `notes`
+
+As accepted, this ADR said a level opting out of the rule argues for it in `notes`. The
+implementation deviated and the deviation is **ratified**: the opt-out is the pair
+`flowRightward: false` plus `flowExemption: "<why>"`, and validation rejects either half alone.
+
+The reason is that `notes` already exists and every shipped level carries a kilobyte of it, so
+"the level must argue for its exemption" would have been satisfied by prose written about
+something else entirely — the ceremony would pass while meaning nothing. A dedicated required
+field cannot be satisfied by accident: you cannot turn the rule off without writing down why,
+and a stray `flowExemption` with the flag unset is itself an error, so the two cannot drift
+apart.
+
+No shipped level uses the opt-out. It exists for a future level whose lesson genuinely needs a
+tangled floor, and that level will have to say so out loud in a diff.
+
+## Amendment (2026-09-10) — spawn moved to [14, 16]
+
+The re-lay moved `spawn` from `[14, 17]` to `[14, 16]`, which is one tile off F15's map. It
+fixes a defect that predates this ADR: on the shipped layout, six players could not spawn on six
+distinct tiles. It is the smallest change that fixes it and it leaves the door gap where F15
+wants it.
+
+## Amendment (2026-09-10) — the geometry check defends its own opt-out
+
+The two halves of the opt-out were enforced by two functions with nothing holding them
+together: `checkFlowDirection` inside `validateLevelOnLayout` skipped on `flowRightward === false`
+alone, while the rule that the flag needs a `flowExemption` lived in `validateLevelConfig`. The
+shipped path calls both, so nothing was broken today — but `validateLevelOnLayout` is exported
+and callable on its own, and a caller that reached for the geometry check alone honoured a bare
+`flowRightward: false` the level validator would have thrown out.
+
+`checkFlowDirection` now skips only for `flowRightward === false` **and** a non-empty
+`flowExemption`. It re-checks a rule the other validator already owns, which is duplication with
+its reason: the rule can only be turned off by a level that has actually argued for it, whichever
+validator the caller reached for. Contracts §8 records which function holds which half.
+
+## Amendment (2026-09-10) — two rules the re-lay turned out to need
+
+Both are in `validateLevelOnLayout`, beside the tile invariants, and both are drawing
+preconditions promoted to rules because the drawing had no way to defend itself:
+
+- **The tile above a shelf tile is a wall.** The hopper F15 §2 specifies is 56 px of furniture
+  that rises out of the shelf tile into the machine above it. On the re-laid floor every shelf
+  has machine above it, and nothing said it had to — ADR 0015's rules constrain a shelf's x and
+  say nothing about its y, so the first level to put walkable floor above a shelf would silently
+  paint a funnel over a tile players walk on.
+- **A station with a floor ring needs a beacon pole.** `tickBeacons` reddens every station that
+  has a ring, and the client hangs the whole danger channel off the pole: no pole, no lamp, no
+  hazard stripes round the pile, no alarm. `one-line.json` named a pole for `powder-a` only, so
+  a pile inside Assembly's own ring — the tile a hauler drops a keg on — turned the station red
+  on the server and drew nothing at all. `assembly-a` now has a pole at `[12, 3]` and `dock-a`
+  one at `[21, 3]`; both are machine wall inside their own footprints, and both stand clear of
+  the tile above a shelf, which is where the hopper is.
+
+## Amendment (2026-09-10) — the pre-pick follows the order, and says whose it is
+
+F15 task 6 landed as specified. `JigMg` gains `bPickFromOrder`, and `reconcileRoles` re-derives
+`bPick` from the active order on every tick while it is true, B is at the rack and `bPhase` is
+`idle`, rather than only when the rack occupant changes.
+
+The gap it closes is the second of F15's three diagnosed defects: derived once, the pick expired
+on its own. A B who took the rack tile and stayed there kept the fuse length of whatever order
+was live when they arrived, through every rollover, for the rest of the shift, and the bill
+arrived three stations downstream in somebody else's hands.
+
+The flag is not bookkeeping. It is the difference between two sentences that mark the same bin
+and mean opposite things about who is holding it: `THIS ORDER WANTS LONG — ALREADY PICKED` is a
+promise the sim keeps at the next rollover, and `YOUR PICK — LONG` is one it does not. B's
+override stays honest — pressing `←`/`→` stops the re-derive, pressing back onto the order's own
+length starts it again — so the sim never quietly undoes a choice a player made.

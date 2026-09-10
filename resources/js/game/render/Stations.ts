@@ -2,6 +2,7 @@ import {
     type Copy,
     type DockMg,
     type FactoryState,
+    type FuseLength,
     type JigMg,
     type LayoutConfig,
     type LevelConfig,
@@ -22,6 +23,17 @@ import Phaser from 'phaser';
 import { lineColour } from './palette';
 import { blockedTargets, dropTargets, producedBy, shelfLabel } from './dropTargets';
 import { type Shortage, apron, outwardSide, shortageOf } from './intake';
+import {
+    AUTO,
+    type Hopper,
+    type HopperBin,
+    fillRows,
+    hopperOf,
+    outlineOf,
+    surfaceOf,
+    throatOf,
+} from './hopper';
+import { RACK_COLOURS, rackBins, rackCaption, rackTileBox } from './fuseRack';
 import { type GlyphItem, drawItemGlyph } from './stationGlyphs';
 import { JIG_COLOURS, parseJigMg } from '../minigames/Jig';
 import type { Factory, FactoryConn } from '../scenes/Factory';
@@ -46,7 +58,19 @@ const RING_DASH = 5;
 const RING_GAP = 4;
 const GLYPH_PX = 8;
 const GLYPH_GAP = 2;
-const SHELF_INSET = 3;
+/** A glyph sitting on a hopper's fill, which is read from further away. */
+const BIN_GLYPH_PX = 12;
+const AUTO_PX = 7;
+const HOPPER_EDGE = 2;
+/** Where the out tray's slot grid sits in its chute, as a fraction of the body. */
+const CHUTE_GRID_ROW = 0.35;
+/** The spool on a rack bin: a coil with a tail as long as the fuse it holds. */
+const SPOOL_R = 3;
+const RACK_TAG_PX = 7;
+/** The bin's own name, read down its 11 px face. */
+const BIN_NAME_PX = 7;
+/** The rack caption is a sentence, so it wraps rather than crossing the Dock. */
+const RACK_WRAP_PX = TILE_PX * 6;
 const PROGRESS_RADIUS = 24;
 const PROGRESS_WIDTH = 4;
 const PROGRESS_TRACK_ALPHA = 0.25;
@@ -87,6 +111,15 @@ export const STATION_COLOURS = {
     ring: 0x9a9a9a,
     shelf: 0x2a2a33,
     shelfEdge: 0x6a6a78,
+    /**
+     * What is in a hopper. Deliberately not the line colour: `LINE_COLOURS.a` is
+     * 0xd62828 and `alert` below is 0xd9463d, about 1.16:1 apart across a 2 px
+     * edge — so a healthy filling tray was painted in this floor's own colour for
+     * a fault, and the full-tray alarm was invisible against the contents it was
+     * drawn around. A pale neutral clears WCAG's 3:1 boundary bar against `alert`
+     * and leaves the glyphs riding on it legible by their own dark outline.
+     */
+    fill: 0xdfe3ea,
     counter: 0xffffff,
     alert: 0xd9463d,
     damaged: 0x9a9a9a,
@@ -322,6 +355,8 @@ interface ShelfBox {
     accepts?: ItemType[];
     centre: { x: number; y: number };
     counter: Phaser.GameObjects.Text;
+    /** The furniture: the same hopper with nothing in it, so the boxes are fixed. */
+    hopper: Hopper;
 }
 
 /** One station: the furniture painted once, the state painted when it changes. */
@@ -334,6 +369,8 @@ class StationSprite {
     private readonly bubbleText: Phaser.GameObjects.Text;
     private readonly shelves: ShelfBox[] = [];
     private readonly apronTiles: Tile[];
+    /** Which length the rack is set to, under the bins, for everyone not at it. */
+    private readonly captionLabel: Phaser.GameObjects.Text | null;
     private readonly intake: { aisle: Tile; toward: -1 | 1 } | null;
     private readonly centre: { x: number; y: number };
     private readonly top: number;
@@ -395,14 +432,41 @@ class StationSprite {
         layer.add(this.container);
 
         for (const shelf of shelvesOf(cfg)) {
+            const hopper = hopperOf(cfg, shelf.kind, []);
+
+            if (!hopper) continue;
+
             const counter = text(scene, '', COUNTER_PX);
 
-            counter.setPosition(
-                (shelf.tile[0] + 0.5) * TILE_PX,
-                (shelf.tile[1] + 1) * TILE_PX + COUNTER_GAP,
-            );
+            // On the furniture, not under the tile: below the tile it was a number
+            // you walked over to read, on the one surface whose whole job is to be
+            // read from the other side of the floor. Centred on the shelf rather
+            // than on a bin's throat, because `shelfCounter` counts the whole
+            // shelf and each bin's column is its own type — two kegs and three
+            // casings drew a quarter-full keg funnel with '5/8' sitting on it.
+            counter.setPosition((hopper.tile[0] + 0.5) * TILE_PX, hopper.throat.y);
             counter.setOrigin(0.5, 0);
             this.container.add(counter);
+
+            // A silo is fed by a pipe from inside the machine, so it says so.
+            // `haulableInputs` already keeps casings off the floor sign; this is
+            // the same fact in the silhouette, where a hauler will see it first.
+            for (const bin of hopper.bins) {
+                if (!bin.selfStocked) continue;
+
+                const at = throatOf(bin);
+                const auto = text(scene, AUTO, AUTO_PX, hex(STATION_COLOURS.ring));
+
+                // Read down the silo. At 8 px across a 6.5 px bin the word ran
+                // over the keg funnel's mouth beside it and off the tile on the
+                // other side, so the one genuinely new fact the hoppers carry —
+                // do not go hunting for casings — was reading as a label on the
+                // funnel.
+                auto.setPosition(at.x, at.y);
+                auto.setOrigin(0.5, 0.5);
+                auto.setAngle(-90);
+                this.container.add(auto);
+            }
 
             // Grey boxes teach nothing: say what the shelf is for. The IN sign is
             // the primary mark on the floor, so it goes big and in the intake's own
@@ -443,7 +507,37 @@ class StationSprite {
                     y: (shelf.tile[1] + 0.5) * TILE_PX,
                 },
                 counter,
+                hopper,
             });
+        }
+
+        const rack = cfg.rackTiles[0];
+
+        if (rack) {
+            // The same sentence the B panel draws, in the same colour, a row below
+            // the tile. The label here used to name the PICK — 'LONG FUSE' — which
+            // is the one wording on the tile that is actively wrong at the moment
+            // it matters: when the pick and the order disagree, the only words on
+            // the floor were the ones naming the wrong length.
+            this.captionLabel = text(scene, '', SIGN_PX, hex(RACK_COLOURS.idle), true, RACK_WRAP_PX);
+            this.captionLabel.setPosition((rack[0] + 0.5) * TILE_PX, (rack[1] + 1.2) * TILE_PX);
+            this.captionLabel.setOrigin(0.5, 0);
+            this.captionLabel.setVisible(false);
+            this.container.add(this.captionLabel);
+
+            // SHORT and LONG were told apart on the floor by a 3 px spool tail
+            // against a 7 px one. The name is read down the bin because an 11 px
+            // bin has no room for it across.
+            for (const bin of rackBins(rackTileBox(rack), '', '')) {
+                const name = text(scene, bin.label, BIN_NAME_PX, hex(JIG_COLOURS.label));
+
+                name.setOrigin(0.5, 0.5);
+                name.setPosition((bin.box.x0 + bin.box.x1) / 2, (bin.box.y0 + bin.box.y1) / 2);
+                name.setAngle(-90);
+                this.container.add(name);
+            }
+        } else {
+            this.captionLabel = null;
         }
 
         this.paintStatics(bbox, machine);
@@ -464,6 +558,8 @@ class StationSprite {
         }
 
         const mg = this.readMg(st.mg);
+        const jig = this.cfg.type === 'assembly' ? (mg as JigMg | null) : null;
+        const rack = rackState(jig);
         const glyphs = this.shelves.map((shelf) => ({ shelf, ...shelfContents(st, shelf, state) }));
         const inShelf = glyphs.find(({ shelf }) => shelf.kind === 'in');
         const shortage = this.shortage(inShelf, mg, handsFull);
@@ -480,6 +576,7 @@ class StationSprite {
             label?.text ?? '',
             bubble,
             lit ? 'lit' : '',
+            `${rack.picked}~${rack.wanted}`,
             [...occupied].sort().join(' '),
             glyphs
                 .map(({ count, items }) =>
@@ -499,6 +596,8 @@ class StationSprite {
         if (lit) this.paintApron(this.dynamic, APRON_LIT_ALPHA);
 
         this.paintOccupied(occupied);
+
+        if (this.cfg.rackTiles.length > 0) this.paintRack(rack);
 
         for (const { shelf, items, count } of glyphs) this.paintShelf(shelf, items, count);
 
@@ -557,6 +656,7 @@ class StationSprite {
         this.dynamic.clear();
         this.stateText.setVisible(false);
         this.bubbleText.setVisible(false);
+        this.captionLabel?.setVisible(false);
 
         for (const shelf of this.shelves) shelf.counter.setVisible(false);
     }
@@ -587,7 +687,11 @@ class StationSprite {
 
         for (const [x, y] of this.cfg.floorRing.tiles) this.dashedTile(x, y);
 
-        for (const shelf of this.shelves) this.paintShelfBox(shelf);
+        for (const shelf of this.shelves) {
+            for (const bin of shelf.hopper.bins) this.paintBin(g, bin);
+        }
+
+        this.paintRackBins(g);
 
         // Last, so the stripes cross the shelf box as well as the aisle: on the
         // shipped level the shelf tile is part of the machine block, and a zone
@@ -654,22 +758,78 @@ class StationSprite {
         }
     }
 
-    private paintShelfBox(shelf: ShelfBox): void {
-        const g = this.statics;
-        const x = shelf.tile[0] * TILE_PX + SHELF_INSET;
-        const y = shelf.tile[1] * TILE_PX + SHELF_INSET;
-        const size = TILE_PX - SHELF_INSET * 2;
-        const rows = Math.ceil(shelf.cap / 2);
-
+    /**
+     * One bin of a hopper, empty: the dark interior and the walls. Furniture,
+     * so it goes into the statics once. The interior is painted with the same
+     * bands the fill column uses, at fill 1, because a funnel has a kink in it
+     * and Phaser fills convex runs — one primitive, two jobs.
+     */
+    private paintBin(g: Phaser.GameObjects.Graphics, bin: HopperBin): void {
         g.fillStyle(STATION_COLOURS.shelf, 0.95);
-        g.fillRect(x, y, size, size);
-        g.lineStyle(1, STATION_COLOURS.shelfEdge, 1);
-        g.strokeRect(x, y, size, size);
 
-        for (let row = 1; row < rows; row++) {
-            const at = y + (size / rows) * row;
+        for (const row of fillRows({ ...bin, fill: 1 })) g.fillRect(row.x, row.y, row.w, row.h);
 
-            g.lineBetween(x, at, x + size, at);
+        this.strokeBin(g, bin, STATION_COLOURS.shelfEdge);
+    }
+
+    /**
+     * The walls. A funnel is left open at the top — you pour into it — and a
+     * silo is closed and fed from inside the machine, which is the whole
+     * difference between a bin a player fills and one they must not chase.
+     */
+    private strokeBin(
+        g: Phaser.GameObjects.Graphics,
+        bin: HopperBin,
+        colour: number,
+    ): void {
+        const points = outlineOf(bin);
+
+        g.lineStyle(HOPPER_EDGE, colour, 1);
+
+        for (let i = 1; i < points.length; i++) {
+            const from = points[i - 1];
+            const to = points[i];
+
+            if (from && to) g.lineBetween(from.x, from.y, to.x, to.y);
+        }
+
+        if (bin.kind !== 'silo') return;
+
+        const lid = points[0];
+        const end = points[points.length - 1];
+
+        if (!lid || !end) return;
+
+        g.lineBetween(lid.x, lid.y, end.x, end.y);
+        g.lineBetween((lid.x + end.x) / 2, lid.y - 4, (lid.x + end.x) / 2, lid.y + 4);
+    }
+
+    /**
+     * The rack as two bins rather than one orange tile edge (F15 §3): SHORT on
+     * the left, LONG on the right, each with a spool whose tail is as long as
+     * the fuse it holds. Drawn for every client, whether or not anybody is
+     * standing at the station, because the point of it is to be read from the
+     * aisle by somebody who never opens the panel.
+     */
+    private paintRackBins(g: Phaser.GameObjects.Graphics): void {
+        for (const tile of this.cfg.rackTiles) {
+            for (const bin of rackBins(rackTileBox(tile), '', '')) {
+                const { x0, y0, x1, y1 } = bin.box;
+
+                g.fillStyle(JIG_COLOURS.track, 1);
+                g.fillRoundedRect(x0, y0, x1 - x0, y1 - y0, 2);
+                g.lineStyle(1, STATION_COLOURS.rack, 1);
+                g.strokeRoundedRect(x0, y0, x1 - x0, y1 - y0, 2);
+                g.fillStyle(JIG_COLOURS.parts, 1);
+                g.fillCircle((x0 + x1) / 2, y0 + SPOOL_R + 2, SPOOL_R);
+                g.lineStyle(1, JIG_COLOURS.label, 1);
+                g.lineBetween(
+                    (x0 + x1) / 2,
+                    y0 + SPOOL_R + 2,
+                    (x0 + x1) / 2,
+                    y0 + SPOOL_R + 2 + bin.tail,
+                );
+            }
         }
     }
 
@@ -688,22 +848,37 @@ class StationSprite {
         }
     }
 
+    /**
+     * What is in the hopper, at the size the room reads it at: a column of the
+     * station's line colour rising to `count / capacity`, one glyph per bin
+     * sitting on its surface, and the walls repainted in the alert colour once
+     * the tray is at its cap — because a full out tray is what puts the next keg
+     * in the operator's hands (ADR 0012), and that is the whole room's business.
+     *
+     * The per-item slot grid stays on the out tray and is dropped from the in
+     * tray. Nobody chooses an item off an input shelf — `startPour` takes the
+     * first keg by shelf order — whereas an out tray of kegs is where you can
+     * see which one gleams, which is what `glyphTint` draws the halo for.
+     */
     private paintShelf(shelf: ShelfBox, items: GlyphItem[], count: number): void {
-        const slots = slotOffsets(shelf.cap, GLYPH_PX, GLYPH_GAP);
+        const g = this.dynamic;
+        const types = items.map((item) => item.type as ItemType);
+        const hopper = hopperOf(this.cfg, shelf.kind, types) ?? shelf.hopper;
 
-        items.forEach((item, index) => {
-            const slot = slots[index];
+        for (const bin of hopper.bins) {
+            if (bin.fill > 0) {
+                g.fillStyle(bin.selfStocked ? STATION_COLOURS.ring : STATION_COLOURS.fill, 1);
 
-            if (!slot) return;
+                for (const row of fillRows(bin)) g.fillRect(row.x, row.y, row.w, row.h);
+            }
 
-            drawItemGlyph(
-                this.dynamic,
-                item,
-                shelf.centre.x + slot.x,
-                shelf.centre.y + slot.y,
-                GLYPH_PX,
-            );
-        });
+            // Only the bins a player can fill. On the AUTO silo the alert stroke
+            // said a bin nobody must chase was in trouble, which is the opposite
+            // of what its closed silhouette is there to say.
+            if (hopper.full && !bin.selfStocked) this.strokeBin(g, bin, STATION_COLOURS.alert);
+
+            this.paintBinContents(shelf, bin, items);
+        }
 
         const counter = shelfCounter(count, shelf.cap);
 
@@ -713,6 +888,83 @@ class StationSprite {
 
         shelf.counter.setText(counter.text);
         shelf.counter.setColor(hex(counter.colour));
+    }
+
+    private paintBinContents(shelf: ShelfBox, bin: HopperBin, items: GlyphItem[]): void {
+        const { x0, x1, top, bottom } = bin.box;
+
+        if (shelf.kind === 'out') {
+            const slots = slotOffsets(shelf.cap, GLYPH_PX, GLYPH_GAP);
+            const at = { x: (x0 + x1) / 2, y: top + (bottom - top) * CHUTE_GRID_ROW };
+
+            items.forEach((item, index) => {
+                const slot = slots[index];
+
+                if (slot) drawItemGlyph(this.dynamic, item, at.x + slot.x, at.y + slot.y, GLYPH_PX);
+            });
+
+            return;
+        }
+
+        // One glyph per bin, riding on what is in it, rather than one per item:
+        // an in tray is read as "is there a keg in there", never as "which keg".
+        const item = items.find((entry) => entry.type === bin.type);
+
+        if (!item) return;
+
+        drawItemGlyph(
+            this.dynamic,
+            item,
+            (x0 + x1) / 2,
+            surfaceOf(bin) + BIN_GLYPH_PX / 2,
+            BIN_GLYPH_PX,
+        );
+    }
+
+    /**
+     * Which bin the rack is set to, and which one the order on the board wants.
+     * They are marked separately on purpose: `reconcileRoles` derives `bPick`
+     * from the active order (`shared/src/sim/jig.ts:575`), so on a lit bin alone
+     * the answer arrives looking exactly like a default nobody chose.
+     */
+    private paintRack({ picked, wanted, fromOrder }: RackState): void {
+        const g = this.dynamic;
+
+        // The floor and the overlay cannot disagree, because they are one call.
+        // With nothing on the board the caption is the empty-book line and the
+        // bins stay unmarked; with nobody at the rack it states the want and
+        // claims no pick.
+        const caption = rackCaption(picked, wanted, fromOrder);
+
+        this.captionLabel?.setVisible(true);
+        this.captionLabel?.setText(caption.text);
+        this.captionLabel?.setColor(hex(RACK_COLOURS[caption.tone]));
+
+        for (const tile of this.cfg.rackTiles) {
+            for (const bin of rackBins(rackTileBox(tile), picked, wanted)) {
+                const { x0, y0, x1, y1 } = bin.box;
+
+                if (bin.picked) {
+                    g.fillStyle(STATION_COLOURS.rack, 0.5);
+                    g.fillRoundedRect(x0, y0, x1 - x0, y1 - y0, 2);
+                }
+
+                if (!bin.wanted) continue;
+
+                // Amber, not red: a pick that disagrees is pressure, not a
+                // fault. Nothing has gone wrong until the stick reaches the ramp.
+                const colour = RACK_COLOURS[bin.warn ? 'warn' : 'set'];
+
+                g.lineStyle(2, colour, 1);
+
+                if (bin.warn) g.strokeRoundedRect(x0, y0, x1 - x0, y1 - y0, 2);
+
+                const mid = (x0 + x1) / 2;
+
+                g.lineBetween(mid - RACK_TAG_PX / 2, y0 - RACK_TAG_PX, mid, y0 - 2);
+                g.lineBetween(mid, y0 - 2, mid + RACK_TAG_PX / 2, y0 - RACK_TAG_PX);
+            }
+        }
     }
 
     private paintProgress(progress: number): void {
@@ -778,6 +1030,38 @@ function text(
     label.setStroke('#000000', 3);
 
     return label;
+}
+
+interface RackState {
+    /** `bPick`: what B's next fetch will pull off the rack. */
+    picked: FuseLength;
+    /** What the order at the top of the board asks for. */
+    wanted: FuseLength;
+    /** `bPickFromOrder`: the game made this pick, not the player at the rack. */
+    fromOrder: boolean;
+}
+
+/**
+ * The rack's two facts, out of a blob that is cast rather than validated:
+ * `parseJigMg` hands back whatever JSON was on the wire, and the floor reads it
+ * for every assembly station on every level — including one whose server has
+ * not written a chip into it yet.
+ *
+ * There is no pick until somebody is standing at the rack. `bPick` is seeded
+ * `'long'` at `createJigState` (`shared/src/sim/jig.ts:336`) and is only ever
+ * derived from the order inside `if (state.b !== b)` (`:569-575`), so from the
+ * whistle onward the wire carries `bPick: 'long'` with `b: ''`. Read as a pick,
+ * that painted LONG FUSE on the floor and struck the order's own bin in the
+ * urgent amber for every order that wanted SHORT — a default dressed as a choice
+ * the crew was already failing, which is the complaint this feature exists to
+ * answer, moved out of the overlay and drawn larger.
+ */
+function rackState(mg: JigMg | null): RackState {
+    return {
+        picked: mg?.b ? (mg.bPick ?? '') : '',
+        wanted: (mg?.orderChip ?? [])[0]?.fuseLength ?? '',
+        fromOrder: mg?.bPickFromOrder ?? true,
+    };
 }
 
 function shelvesOf(

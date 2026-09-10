@@ -33,6 +33,13 @@
         "notes": {
             "type": "string"
         },
+        "flowRightward": {
+            "type": "boolean"
+        },
+        "flowExemption": {
+            "type": "string",
+            "minLength": 1
+        },
         "day": {
             "type": "object",
             "additionalProperties": false,

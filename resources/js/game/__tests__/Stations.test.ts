@@ -37,6 +37,9 @@ const {
     stripeSegments,
 } = await import('../render/Stations');
 const { JIG_COLOURS } = await import('../minigames/Jig');
+const { BOARD_COLOURS, LINE_COLOURS } = await import('../render/palette');
+const { AUTO } = await import('../render/hopper');
+const { rackCaption } = await import('../render/fuseRack');
 
 /**
  * The station layer's decisions (F05 §Client). Every one of them is a function
@@ -467,6 +470,15 @@ class FakeText {
         return this;
     }
 
+    angle = 0;
+
+    /** A bin name is read down an 11 px bin, so the rotation is part of the fix. */
+    setAngle(value: number): this {
+        this.angle = value;
+
+        return this;
+    }
+
     x = 0;
     y = 0;
 
@@ -508,6 +520,7 @@ const GRAPHICS_OPS = [
     'fillCircle',
     'strokeCircle',
     'fillRoundedRect',
+    'strokeRoundedRect',
     'lineBetween',
     'beginPath',
     'arc',
@@ -515,38 +528,57 @@ const GRAPHICS_OPS = [
     'clear',
 ] as const;
 
+/**
+ * Rows 3-4 of the shipped `one-line.json`, packed the way the layout packs them:
+ * Boom Powder x3-7 and Assembly x11-16, two rows of machine each. It is what
+ * puts a wall above every shelf tile.
+ */
+const MACHINE_WALLS = [
+    ...[3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16].map((x) => 3 * 28 + x),
+    ...[3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16].map((x) => 4 * 28 + x),
+];
+
+/**
+ * The re-laid floor (ADR 0015, `config/game/levels/*.json`), copied off disk
+ * rather than approximated: every machine is two rows of furniture on rows 3–4,
+ * the crew stands on row 5, and each shelf is a tile of that furniture on a left
+ * or right face. Nothing here is a shape this repo does not ship — the retired
+ * zigzag survives only where a test is about the zigzag, named `ZIGZAG` where it
+ * appears, the way `intake.test.ts` keeps it.
+ */
+
 /** The shipped Boom Powder: an out tray and nothing anybody brings to it. */
 const POWDER_CFG = {
     id: 'powder-a',
     type: 'boom_powder',
     line: 'a',
     joinMode: 'press',
-    anchor: [4, 2],
-    workTiles: [[5, 4]],
+    anchor: [4, 3],
+    workTiles: [[4, 5]],
     rackTiles: [],
-    outputShelf: { tile: [7, 3], capacity: 6 },
-    floorRing: { tiles: [[3, 4]] },
+    outputShelf: { tile: [7, 4], capacity: 6 },
+    floorRing: { tiles: [[3, 5]] },
 };
 
 /**
- * The shipped Assembly (`config/game/levels/*.json`): the IN shelf sits at 11,7
- * on the left edge of a machine that spans x 11–16, so the aisle a hauler walks
- * — and the apron — is the tile at 10,7.
+ * The shipped Assembly: the IN shelf sits at 11,4 on the left face of a machine
+ * that spans x 11–16, so the aisle a hauler walks — and the apron — is 10,4, and
+ * the OUT chute at 16,4 hands out on the right face towards the Dock.
  */
 const ASSEMBLY_CFG = {
     id: 'assembly-a',
     type: 'assembly',
     line: 'a',
     joinMode: 'press',
-    anchor: [12, 6],
+    anchor: [13, 3],
     workTiles: [
-        [13, 8],
-        [14, 8],
+        [13, 5],
+        [14, 5],
     ],
-    rackTiles: [[16, 8]],
-    inputShelf: { tile: [11, 7], capacity: 8, accepts: ['keg', 'casing'] },
-    outputShelf: { tile: [13, 10], capacity: 4 },
-    floorRing: { tiles: [[10, 8]] },
+    rackTiles: [[13, 7]],
+    inputShelf: { tile: [11, 4], capacity: 8, accepts: ['keg', 'casing'] },
+    outputShelf: { tile: [16, 4], capacity: 4 },
+    floorRing: { tiles: [[12, 5]] },
 };
 
 /** What each machine makes, which is where an out tray gets its noun. */
@@ -596,7 +628,10 @@ function harness(
     };
     const container = (): unknown => ({ add: () => {}, destroy: () => {} });
     const level = { stations: extras.stations ?? [POWDER_CFG], recipes: RECIPES };
-    const layout = { width: 28, height: 14, walls: [2 * 28 + 4, 6 * 28 + 12] };
+    // Rows 3-4 of the re-laid floor: Boom Powder x3-7 and Assembly x11-16, which
+    // is what makes each shelf's northern neighbour machine rather than floor —
+    // the hopper's one precondition, now a rule in `validateLevelOnLayout`.
+    const layout = { width: 28, height: 18, walls: MACHINE_WALLS };
     const stations = new Map<string, unknown>(extras.rows ?? []);
 
     if (stationRow) stations.set('powder-a', stationRow);
@@ -772,16 +807,18 @@ const WAITING_ON_A_FUSE = JSON.stringify({ phase: 'parts', cradle: 'empty', keg:
 /** Between the two sticks one keg pours: the machine is stocked, the shelf is bare. */
 const KEG_IN_THE_MACHINE = JSON.stringify({ phase: 'seat', cradle: 'empty', keg: { poursLeft: 1 } });
 
-/** The shipped dock: two ramp lanes, no shelf of any kind. */
+/** The shipped dock: ramp lanes along row 4, no shelf of any kind. */
 const DOCK_CFG = {
     id: 'dock-a',
     type: 'dock',
     line: 'a',
     joinMode: 'stand',
-    anchor: [22, 3],
+    anchor: [22, 1],
     workTiles: [
         [22, 4],
         [23, 4],
+        [24, 4],
+        [25, 4],
     ],
     rackTiles: [],
     floorRing: { tiles: [[21, 4]] },
@@ -822,8 +859,8 @@ describe('the intake apron', () => {
         // where the playtester read it as "KEGS · CAS".
         expect(sign).toBeDefined();
         expect(sign?.x).toBe(10.5 * TILE_PX);
-        expect(sign?.y).toBeGreaterThan(7 * TILE_PX);
-        expect(sign?.y).toBeLessThan(8 * TILE_PX);
+        expect(sign?.y).toBeGreaterThan(4 * TILE_PX);
+        expect(sign?.y).toBeLessThan(5 * TILE_PX);
     });
 
     it('lights up when you walk in carrying what the shelf takes', () => {
@@ -1177,6 +1214,23 @@ function hueOf(colour: number): number {
     return (raw * 60 + 360) % 360;
 }
 
+/** sRGB relative luminance, for the one thing hue cannot answer. */
+function luminance(colour: number): number {
+    const channel = (shift: number): number => {
+        const v = ((colour >> shift) & 0xff) / 255;
+
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+
+    return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
+}
+
+function contrastRatio(a: number, b: number): number {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+
+    return (hi + 0.05) / (lo + 0.05);
+}
+
 function hueGap(a: number, b: number): number {
     const gap = Math.abs(hueOf(a) - hueOf(b));
 
@@ -1245,5 +1299,312 @@ describe('who calls for hands at the whistle', () => {
         h.post();
 
         expect(h.texts.some((t) => t.text === STATION_COPY.needHands && t.visible)).toBe(true);
+    });
+});
+
+/**
+ * The hopper (F15 §2). A shelf used to be a grey box with 8 px glyphs laid into
+ * it and an `n/cap` string a gap below the tile — and from the Dock end of the
+ * floor a tray holding one keg looked exactly like a tray holding six. "Boom
+ * Powder is drowning Assembly" is the sentence the whole game is built to make
+ * sayable while pointing, and it needs a silhouette, not a label.
+ */
+describe('the hopper standing on a shelf tile', () => {
+    /** Every op that painted in the fill colour at full alpha. */
+    const filled = (ops: string[]): string[] =>
+        ops.filter((op) => op === `fillStyle:${STATION_COLOURS.fill},1`);
+
+    /**
+     * The fill column used to be `lineColour('a')` = 0xd62828 and the full-tray
+     * alarm stroke two lines later is 0xd9463d: about 1.16:1 across a 2 px edge.
+     * So a healthy filling tray was painted in the exact colour this floor
+     * reserves for a fault, and the one thing an out tray exists to shout — "I am
+     * at my cap, the next keg goes in your hands" (ADR 0012) — was invisible
+     * against its own contents. 3:1 is WCAG's bar for a graphical boundary.
+     */
+    it('keeps the alarm colour legible against what the tray is holding', () => {
+        expect(contrastRatio(STATION_COLOURS.fill, STATION_COLOURS.alert)).toBeGreaterThanOrEqual(3);
+        expect(contrastRatio(LINE_COLOURS.a, STATION_COLOURS.alert)).toBeLessThan(1.5);
+    });
+
+    it('paints no fill column while the tray is empty', () => {
+        const h = harness(row({ state: 'idle' }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(filled(h.ops)).toEqual([]);
+    });
+
+    it('paints one as soon as something is on the tray', () => {
+        const h = harness(row({ state: 'idle', outputShelf: ['k-1'] }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(filled(h.ops).length).toBeGreaterThan(0);
+    });
+
+    /**
+     * The counter was positioned a `COUNTER_GAP` *below* the shelf tile: a
+     * number you had to walk over and read, on the one surface whose whole job
+     * is to be read from the other side of the room.
+     */
+    it('reads its count on the throat rather than under the tile', () => {
+        const h = harness(row({ state: 'idle', outputShelf: ['k-1'] }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const counter = h.texts.find((t) => t.text === '1/6');
+
+        // Boom Powder's out chute stands on 7,4, so its throat is inside rows 3-4
+        // and a counter a `COUNTER_GAP` under the tile would be past y 5.
+        expect(counter?.visible).toBe(true);
+        expect(counter?.y).toBeGreaterThan(3 * TILE_PX);
+        expect(counter?.y).toBeLessThan(5 * TILE_PX);
+    });
+
+    // A full out tray is what puts the next keg in the operator's hands
+    // (ADR 0012), so it is the whole room's business, not the operator's.
+    it('outlines the tray in the alert colour once it is at the cap', () => {
+        const six = row({ state: 'idle', outputShelf: ['k-1', 'k-1', 'k-1', 'k-1', 'k-1', 'k-1'] });
+        const h = harness(six);
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.ops.some((op) => op.startsWith(`lineStyle:2,${STATION_COLOURS.alert}`))).toBe(true);
+        expect(h.texts.some((t) => t.text === '6/6')).toBe(true);
+    });
+
+    /**
+     * `feed()` stocks Assembly's casings itself, one a tick, because Casing Prep
+     * is M2. A funnel you cannot pour into is a lie a player only learns by
+     * walking a casing errand that does not exist.
+     */
+    it('gives the type the machine stocks for itself a closed silo, not a funnel', () => {
+        const h = harness(null, assembly({ state: 'idle', inputShelf: ['c-1'] }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.texts.some((t) => t.text === AUTO && t.visible)).toBe(true);
+    });
+
+    it('still lets the apron stripes through on the tile below it', () => {
+        const h = harness(null, assembly({ state: 'idle', inputShelf: ['c-1'] }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(apronStrokes(h.ops, APRON_ALPHA).length).toBeGreaterThan(0);
+    });
+
+    /**
+     * 'AUTO' at 8 px monospace is ~19 px and the silo is 6.5 px wide, so centred
+     * on the silo's throat it ran right across the keg funnel's mouth — reading as
+     * a label on the funnel, which inverts what it says. It is read down the silo
+     * for the same reason the rack's bin names are.
+     */
+    it('reads AUTO down the silo rather than across the funnel beside it', () => {
+        const h = harness(null, assembly({ state: 'idle', inputShelf: ['c-1'] }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const auto = h.texts.find((t) => t.text === AUTO);
+        const funnelRight = 11 * TILE_PX + (TILE_PX - 28) / 2 + (28 * 1) / 1.3;
+
+        expect(auto?.visible).toBe(true);
+        expect(auto?.angle).not.toBe(0);
+        expect(auto?.x).toBeGreaterThan(funnelRight);
+    });
+
+    /**
+     * The alert stroke means "this tray is at cap and the next item goes into the
+     * operator's hands" (ADR 0012). On the AUTO silo it said a bin the player must
+     * not chase is in trouble, which is the opposite of what the closed silhouette
+     * is there for.
+     */
+    it('reddens only the bins a player can fill', () => {
+        const full = assembly({
+            state: 'idle',
+            inputShelf: ['k-1', 'k-1', 'k-1', 'k-1', 'c-1', 'c-1', 'c-1', 'c-1'],
+        });
+        const h = harness(null, full);
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const alert = h.ops.filter((op) => op.startsWith(`lineStyle:2,${STATION_COLOURS.alert}`));
+
+        expect(alert).toHaveLength(1);
+    });
+
+    /**
+     * The number and the column it sat on were two different facts: `hopperOf`
+     * gives each bin its own type's count while `shelfCounter` counts everything
+     * on the shelf, and the counter was anchored to the first fillable bin's
+     * throat. Two kegs and three casings painted a keg funnel a quarter full with
+     * '5/8' sitting on it. The count belongs to the shelf, so it is drawn on the
+     * shelf's own face, between the bins rather than on one of them.
+     */
+    it('counts the shelf on the shelf, not on one of its bins', () => {
+        const h = harness(
+            null,
+            assembly({ state: 'idle', inputShelf: ['k-1', 'k-1', 'c-1', 'c-1', 'c-1'] }),
+        );
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const counter = h.texts.find((t) => t.text === '5/8');
+
+        expect(counter?.visible).toBe(true);
+        expect(counter?.x).toBe(11.5 * TILE_PX);
+    });
+});
+
+/**
+ * The fuse rack, as everybody who is not standing at it sees it (F15 §3). It
+ * was one orange tile outline: nothing about it said there were two lengths to
+ * choose between, let alone which one the order on the board wanted.
+ */
+describe('the fuse rack from across the floor', () => {
+    /**
+     * `StationState.mg`, with the three fields the rack is drawn from. `b` is
+     * load-bearing: `bPick` is seeded 'long' at `createJigState` and is only ever
+     * derived from the order once somebody takes the rack tile, so the pick means
+     * nothing until `b` names them.
+     */
+    const rackMg = (bPick: string, wants: string, b = 'B1'): string =>
+        JSON.stringify({
+            phase: 'seat',
+            cradle: 'empty',
+            b,
+            bPick,
+            orderChip: wants === '' ? [] : [{ orderId: 'o-1', fuseLength: wants }],
+        });
+
+    /** Everything drawn inside the rack tile, which the shipped Assembly puts at 13,7. */
+    const onRack = (ops: string[], op: string): string[] =>
+        ops.filter((entry) => {
+            const [name, args] = entry.split(':');
+            const x = Number(args?.split(',')[0]);
+
+            return name === op && x >= 13 * TILE_PX && x < 14 * TILE_PX;
+        });
+
+    it('draws two bins on the rack tile before anybody has joined', () => {
+        const h = harness(null, assembly({ state: 'idle' }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(onRack(h.ops, 'strokeRoundedRect')).toHaveLength(2);
+    });
+
+    /**
+     * The panel got the sentence and the floor got a tick mark. `pickLabel` named
+     * the PICK — 'LONG FUSE' — which is the one thing on the tile that is actively
+     * wrong when the pick and the order disagree, and the disagreement itself was
+     * a 7 px chevron in a slightly different shade. `rackCaption` was already
+     * built and colour-coded and the world rack never called it.
+     */
+    it('says on the floor exactly what the panel says in the aisle', () => {
+        const h = harness(null, assembly({ state: 'idle', mg: rackMg('long', 'long') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const caption = rackCaption('long', 'long', true);
+
+        expect(h.texts.some((t) => t.text === caption.text && t.visible)).toBe(true);
+        expect(h.texts.some((t) => t.text === 'LONG FUSE')).toBe(false);
+    });
+
+    it('names the wanted length on the floor when the pick is on the other bin', () => {
+        const h = harness(null, assembly({ state: 'idle', mg: rackMg('long', 'short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        const caption = rackCaption('long', 'short', false);
+        const said = h.texts.find((t) => t.text === caption.text);
+
+        expect(said?.visible).toBe(true);
+        expect(said?.colour).toBe(`#${BOARD_COLOURS.urgent.toString(16)}`);
+    });
+
+    /**
+     * SHORT and LONG were told apart on the floor by a spool tail of 3 px against
+     * 7 px of hairline. The names are read down the bin because an 11 px bin has
+     * no room for them across it.
+     */
+    it('names both bins on the floor, to every client, with nobody joined', () => {
+        const h = harness(null, assembly({ state: 'idle' }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        for (const name of ['SHORT', 'LONG']) {
+            const label = h.texts.find((t) => t.text === name);
+
+            expect(label?.visible).toBe(true);
+            expect(label?.angle).not.toBe(0);
+        }
+    });
+
+    /**
+     * The pick is not wrong — `reconcileRoles` derives it from the active order
+     * — but B can override it, and the mismatch is otherwise caught nowhere
+     * until the Dock bonks the finished stick with WRONG FUSE, in the hands of
+     * a third player who did none of it.
+     */
+    it('marks the bin the order wants when the pick is on the other one', () => {
+        const h = harness(null, assembly({ state: 'idle', mg: rackMg('long', 'short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.ops.some((op) => op.startsWith(`lineStyle:2,${BOARD_COLOURS.urgent}`))).toBe(true);
+    });
+
+    it('marks neither bin while there is nothing on the board', () => {
+        const h = harness(null, assembly({ state: 'idle', mg: rackMg('long', '') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.ops.some((op) => op.startsWith(`lineStyle:2,${BOARD_COLOURS.urgent}`))).toBe(false);
+    });
+
+    /**
+     * `bPick` is seeded 'long' at `createJigState` and only ever derived from the
+     * order inside `if (state.b !== b)`. So from the whistle, with nobody at the
+     * rack, the wire says `bPick: 'long'` — and for roughly half of all orders the
+     * floor was telling every player on it that the rack was set to LONG and the
+     * order wanted SHORT, in the urgent amber, before anybody had touched it. A
+     * default dressed as a choice you are failing is the exact complaint this
+     * whole feature is about.
+     */
+    it('does not claim a pick nobody has made', () => {
+        const h = harness(null, assembly({ state: 'idle', mg: rackMg('long', 'short', '') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.texts.some((t) => t.text === 'LONG FUSE' && t.visible)).toBe(false);
+        expect(h.ops.some((op) => op.startsWith(`lineStyle:2,${BOARD_COLOURS.urgent}`))).toBe(false);
+    });
+
+    it('still marks the bin the order wants once somebody is standing there', () => {
+        const h = harness(null, assembly({ state: 'idle', mg: rackMg('long', 'short') }));
+
+        createStationsLayer(h.scene);
+        h.post();
+
+        expect(h.ops.some((op) => op.startsWith(`lineStyle:2,${BOARD_COLOURS.urgent}`))).toBe(true);
     });
 });

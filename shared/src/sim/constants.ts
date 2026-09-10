@@ -34,6 +34,12 @@ export const ITEM_ID_PREFIX: Record<ItemType, string> = {
     parts: 'p',
 };
 
+/**
+ * Process order. ADR 0015's chain rules walk a line in it, so it is the order
+ * the floor is read in and not a tuning knob a level may reorder.
+ */
+export const STATION_FLOW: readonly StationType[] = ['boom_powder', 'assembly', 'dock'];
+
 export const STATION_SHORT: Record<StationType, string> = {
     boom_powder: 'powder',
     assembly: 'assembly',

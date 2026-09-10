@@ -229,8 +229,16 @@ function putDown(world: World, item: ItemState, t: Tile, ignoreSessionId: string
 
 /** The ring is walked in `FACING_DIRS` order so the same drop always lands the same way. */
 export function placeNear(world: World, item: ItemState, t: Tile): boolean {
-    if (placeOnFloor(world, item, t)) return true;
+    return placeOnFloor(world, item, t) || placeBeside(world, item, t);
+}
 
+/**
+ * Everywhere `placeNear` searches except the tile itself, for the one tile an
+ * item must never settle on: the Jig's aisle refuses every swing while anything
+ * is lying on it, so a missed toss that landed there stopped the line with its
+ * own debris and nothing on any surface said why.
+ */
+export function placeBeside(world: World, item: ItemState, t: Tile): boolean {
     for (let radius = 1; radius <= 2; radius++) {
         for (const [dx, dy] of FACING_DIRS) {
             if (placeOnFloor(world, item, [t[0] + dx * radius, t[1] + dy * radius])) return true;

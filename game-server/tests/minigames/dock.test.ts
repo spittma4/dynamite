@@ -121,9 +121,9 @@ describe('parseDockMg', () => {
 
 const TICK = 0.05;
 const DOCK = 'dock-a';
-const LANE_A: Tile = [23, 4];
-const LANE_B: Tile = [23, 5];
-const RETURNS: Tile = [19, 12];
+const LANE_A: Tile = [22, 4];
+const LANE_B: Tile = [23, 4];
+const RETURNS: Tile = [18, 6];
 
 function sandboxLevel(level: LevelConfig): LevelConfig {
     level.day = { ...level.day, shiftSeconds: 0, orderBook: 0, endsOn: 'never' };
@@ -665,7 +665,7 @@ describe('departure', () => {
         const cargo = createItem(world, 'stick');
 
         rider.x = 25.5;
-        rider.y = 5.5;
+        rider.y = 2.5;
         giveToPlayer(world, cargo, 'session-1');
         world.reindexPlayers();
 
@@ -677,7 +677,7 @@ describe('departure', () => {
         expect(world.state.items.get(cargo.id)).toBeUndefined();
         expect(rider.stationId).toBe('');
         expect(rider.workTile).toBe('');
-        expect(rider.x).toBe(17.5);
+        expect(rider.x).toBe(9.5);
         expect(rider.y).toBe(15.5);
         expect(rider.bubble).toBe(copy.bubbles.sawTheHighway);
         expect(rider.bubbleUntil).toBe(62);
@@ -769,7 +769,8 @@ describe('the tailgate', () => {
         expect(world.state.truck.phase).toBe('docked');
 
         tailgate(world, player, 29.2, 'down');
-        stand(world, 'session-0', [22, 4]);
+        // Off the lanes and onto the dock's ring tile beside them.
+        stand(world, 'session-0', [21, 4]);
         jumpTo(world, 29.8);
         expect(world.state.truck.phase).toBe('docked');
 

@@ -72,6 +72,14 @@ export interface JigMg {
     surfaceReadyAt: number;
     bPhase: JigBPhase;
     bPick: FuseLength;
+    /**
+     * True while `bPick` is still the active order's own length and B has not
+     * overridden it — which is what lets the panel and the world rack say the
+     * pick was made *for* the player rather than draw it as a default they are
+     * being tested on. Cleared by a `pick` that disagrees, restored by one that
+     * agrees again, and cleared when B leaves.
+     */
+    bPickFromOrder: boolean;
     bFetchDoneAt: number;
     swingStartAt: number;
     aisleBlocked: boolean;
@@ -334,6 +342,7 @@ export function createJigState(cfg: JigConfig, tiles: JigTiles): JigState {
         surfaceReadyAt: 0,
         bPhase: 'idle',
         bPick: 'long',
+        bPickFromOrder: false,
         bFetchDoneAt: 0,
         swingStartAt: 0,
         aisleBlocked: false,
@@ -387,6 +396,7 @@ export function toMg(state: JigState): JigMg {
         surfaceReadyAt: round3(state.surfaceReadyAt),
         bPhase: state.bPhase,
         bPick: state.bPick,
+        bPickFromOrder: state.bPickFromOrder,
         bFetchDoneAt: round3(state.bFetchDoneAt),
         swingStartAt: round3(state.swingStartAt),
         aisleBlocked: state.aisleBlocked,
@@ -571,8 +581,17 @@ function reconcileRoles(state: JigState, view: JigTickView, effects: JigEffect[]
         state.bFetchDoneAt = 0;
         state.swingStartAt = 0;
         state.bPhase = b !== '' && view.bParts !== null ? 'holding' : 'idle';
+        state.bPickFromOrder = b !== '';
+    }
 
-        if (b !== '') state.bPick = view.orders[0]?.fuseLength ?? 'long';
+    // Every tick, not only when the occupant changes. Derived once, the pick
+    // expired on its own: a B who took the rack tile and stayed there kept the
+    // fuse length of whatever order was live when they arrived, through every
+    // rollover, and nothing told them. The `bPhase` guard is what keeps this out
+    // of `advanceB` and `resolveToss` — a set already fetched or in flight has
+    // its length baked into the item and is never retimed.
+    if (state.bPickFromOrder && state.b !== '' && state.bPhase === 'idle') {
+        state.bPick = view.orders[0]?.fuseLength ?? 'long';
     }
 
     // A set that is still in B's hands — a toss with nowhere to land, or a
@@ -967,7 +986,13 @@ function rackInput(
     effects: JigEffect[],
 ): void {
     if (op === 'pick') {
-        if (v === 'short' || v === 'long') state.bPick = v;
+        if (v === 'short' || v === 'long') {
+            state.bPick = v;
+            // Pressing back onto the order's own length hands the pick back to
+            // the order, rather than freezing B on an answer that happens to
+            // agree today and will not tomorrow.
+            state.bPickFromOrder = v === (view.orders[0]?.fuseLength ?? 'long');
+        }
 
         return;
     }

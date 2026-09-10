@@ -204,8 +204,8 @@ describe('the mg wire form', () => {
 
 /** Server module: a real world, a real station, driven only through F05's verbs. */
 
-const HOPPER: [number, number] = [4.5, 2.5];
-const WORK_TILE: [number, number] = [5, 4];
+const HOPPER: [number, number] = [4.5, 3.5];
+const WORK_TILE: [number, number] = [4, 5];
 
 interface SparkCall {
     stationId: string;

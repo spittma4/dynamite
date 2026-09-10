@@ -252,7 +252,7 @@ describe('jamming', () => {
         operator.stationId = 'powder-a';
 
         const casing = createItem(world, 'casing');
-        const outcome = dropItem(world, casing, [5, 4], [1, 0], '');
+        const outcome = dropItem(world, casing, [4, 5], [1, 0], '');
 
         expect(outcome.jamStationId).toBe('powder-a');
         expect(st.state).toBe('jammed');

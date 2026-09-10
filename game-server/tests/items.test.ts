@@ -23,6 +23,7 @@ import {
     itemsSystem,
     onAction,
     onInteract,
+    placeBeside,
     placeNear,
     placeOnFloor,
     releaseCarried,
@@ -293,13 +294,13 @@ describe('the floor', () => {
 
         // The assembly input shelf is furniture, but the tile is only a wall by
         // convention — an item may not be stacked on it either way.
-        layout.walls = layout.walls.filter((packed) => packed !== 9 * layout.width + 12);
+        layout.walls = layout.walls.filter((packed) => packed !== 4 * layout.width + 11);
 
         const world = makeWorld({ layout });
 
         expect(placeOnFloor(world, createItem(world, 'keg'), [0, 0])).toBe(false);
-        expect(placeOnFloor(world, createItem(world, 'keg'), [3, 3])).toBe(false);
-        expect(placeOnFloor(world, createItem(world, 'keg'), [12, 9])).toBe(false);
+        expect(placeOnFloor(world, createItem(world, 'keg'), [1, 7])).toBe(false);
+        expect(placeOnFloor(world, createItem(world, 'keg'), [11, 4])).toBe(false);
         expect(placeOnFloor(world, createItem(world, 'keg'), [5, 7])).toBe(true);
         expect(placeOnFloor(world, createItem(world, 'keg'), [5, 7])).toBe(false);
     });
@@ -310,7 +311,7 @@ describe('the floor', () => {
 
         keg.lit = true;
 
-        expect(placeOnFloor(world, keg, [3, 3])).toBe(true);
+        expect(placeOnFloor(world, keg, [1, 7])).toBe(true);
     });
 
     it('refuses a tile a player is standing on', () => {
@@ -344,6 +345,20 @@ describe('the floor', () => {
 
         expect(placeNear(world, second, [5, 7])).toBe(false);
         expect([second.x, second.y]).toEqual([-1, -1]);
+    });
+
+    /**
+     * The Jig's aisle is the one tile an item may not settle on: anything lying
+     * there refuses every subsequent swing (`jig.ts:985`), so a missed toss that
+     * landed on it stopped the line with its own debris.
+     */
+    it('places beside a free tile without ever using it', () => {
+        const world = makeWorld();
+        const item = createItem(world, 'keg');
+
+        expect(placeBeside(world, item, [5, 7])).toBe(true);
+        expect([item.x, item.y]).not.toEqual([5, 7]);
+        expect([item.x, item.y]).toEqual([6, 7]);
     });
 });
 
@@ -447,12 +462,12 @@ describe('lanes and spills', () => {
         const stick = createItem(world, 'stick');
 
         giveToPlayer(world, stick, 'session-0');
-        stageOnLane(world, stick, 'dock-a', [23, 5]);
+        stageOnLane(world, stick, 'dock-a', [23, 4]);
 
-        expect([stick.holder, stick.shelf, stick.x, stick.y]).toEqual(['dock-a', '', 23, 5]);
+        expect([stick.holder, stick.shelf, stick.x, stick.y]).toEqual(['dock-a', '', 23, 4]);
         expect(playerOf(world, 'session-0').carrying).toBe('');
-        expect(world.itemsAt(23, 5)).toEqual([]);
-        expect(floorItemAt(world, [23, 5])).toBeNull();
+        expect(world.itemsAt(23, 4)).toEqual([]);
+        expect(floorItemAt(world, [23, 4])).toBeNull();
     });
 
     it('adds a spill once, keeps walls clean, and removes it again', () => {
@@ -497,7 +512,7 @@ describe('interact: picking things up', () => {
     it('takes the newest item off a faced shelf', () => {
         const world = makeWorld({ players: 1 });
         const st = stationStateFor(world, 'assembly-a');
-        const player = stand(world, 'session-0', [11, 9], 0);
+        const player = stand(world, 'session-0', [10, 4], 0);
 
         shelfPush(world, st, 'in', createItem(world, 'keg'));
         shelfPush(world, st, 'in', createItem(world, 'keg'));
@@ -523,7 +538,7 @@ describe('interact: picking things up', () => {
 
     it('takes the broom off its hook and hangs it back up', () => {
         const world = makeWorld({ players: 1 });
-        const player = stand(world, 'session-0', [3, 10], 4);
+        const player = stand(world, 'session-0', [11, 15], 4);
 
         expect(onInteract(world, player)).toBe(true);
         expect(player.carrying).toBe('broom');
@@ -533,8 +548,8 @@ describe('interact: picking things up', () => {
 
     it('leaves the broom alone while somebody else has it', () => {
         const world = makeWorld({ players: 2 });
-        const first = stand(world, 'session-0', [3, 10], 4);
-        const second = stand(world, 'session-1', [3, 10], 4);
+        const first = stand(world, 'session-0', [11, 15], 4);
+        const second = stand(world, 'session-1', [11, 15], 4);
 
         onInteract(world, first);
 
@@ -554,7 +569,7 @@ describe('interact: picking things up', () => {
     it('starts an unjam on a jammed station tile', () => {
         const world = makeWorld({ players: 1 });
         const st = stationStateFor(world, 'powder-a');
-        const player = stand(world, 'session-0', [4, 4], 0);
+        const player = stand(world, 'session-0', [3, 5], 0);
 
         st.state = 'jammed';
 
@@ -565,11 +580,11 @@ describe('interact: picking things up', () => {
     it('ignores a second press while a chore is running', () => {
         const world = makeWorld({ players: 1 });
         const st = stationStateFor(world, 'powder-a');
-        const player = stand(world, 'session-0', [4, 4], 0);
+        const player = stand(world, 'session-0', [3, 5], 0);
 
         st.state = 'jammed';
         onInteract(world, player);
-        placeOnFloor(world, createItem(world, 'keg'), [5, 4]);
+        placeOnFloor(world, createItem(world, 'keg'), [5, 5]);
 
         expect(onInteract(world, player)).toBe(true);
         expect(player.carrying).toBe('');
@@ -599,7 +614,7 @@ describe('interact: putting things down', () => {
     it('shelves the carried item on a faced shelf with room', () => {
         const world = makeWorld({ players: 1 });
         const st = stationStateFor(world, 'assembly-a');
-        const player = stand(world, 'session-0', [11, 9], 0);
+        const player = stand(world, 'session-0', [10, 4], 0);
 
         giveToPlayer(world, createItem(world, 'keg'), 'session-0');
 
@@ -611,7 +626,7 @@ describe('interact: putting things down', () => {
     it('bonks and keeps hold of it when the shelf will not take it', () => {
         const world = makeWorld({ players: 1 });
         const st = stationStateFor(world, 'assembly-a');
-        const player = stand(world, 'session-0', [11, 9], 0);
+        const player = stand(world, 'session-0', [10, 4], 0);
 
         st.inputCap = 0;
         giveToPlayer(world, createItem(world, 'keg'), 'session-0');
@@ -635,7 +650,7 @@ describe('interact: putting things down', () => {
 
     it('passes the press on rather than dropping the item on a work tile', () => {
         const world = makeWorld({ players: 1 });
-        const player = stand(world, 'session-0', [4, 4], 0);
+        const player = stand(world, 'session-0', [3, 5], 0);
 
         giveToPlayer(world, createItem(world, 'keg'), 'session-0');
 
@@ -758,8 +773,8 @@ describe('the items tick', () => {
         const world = makeWorld();
         const st = stationStateFor(world, 'powder-a');
 
-        placeOnFloor(world, createItem(world, 'keg'), [3, 4]);
-        placeOnFloor(world, createItem(world, 'keg'), [4, 5]);
+        placeOnFloor(world, createItem(world, 'keg'), [3, 5]);
+        placeOnFloor(world, createItem(world, 'keg'), [5, 5]);
         placeOnFloor(world, createItem(world, 'keg'), [5, 7]);
         tick(world, 0.05);
 
@@ -854,8 +869,8 @@ describe('the F10 hooks this feature owes (contracts §10.4)', () => {
 
         const keg = createItem(world, 'keg');
 
-        expect(placeOnFloor(world, keg, [3, 4])).toBe(true);
-        expect(spark(world, 3, 4, 'fizzle')).toBe('lit');
+        expect(placeOnFloor(world, keg, [3, 5])).toBe(true);
+        expect(spark(world, 3, 5, 'fizzle')).toBe('lit');
         expect(keg.lit).toBe(true);
 
         expect(placeOnFloor(world, keg, bin(world))).toBe(true);

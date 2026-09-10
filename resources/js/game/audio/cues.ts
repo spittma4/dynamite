@@ -4,6 +4,8 @@
  * DOM, so every decision the engine makes has an answer a test can assert.
  */
 
+import { PRIME_KEG } from '../nouns';
+
 export type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 
 /**
@@ -179,7 +181,7 @@ export const CUES: Readonly<Record<CueName, CueSpec>> = {
             },
         ],
         purpose:
-            'A prime keg landing. Deeper than `thunk` rather than louder: a gain difference is the first distinction a noisy room destroys.',
+            `A ${PRIME_KEG.toLowerCase()} landing. Deeper than \`thunk\` rather than louder: a gain difference is the first distinction a noisy room destroys.`,
         seenAs: 'the bigger shake, the doubled confetti, the brass flag and the gold verdict badge',
     },
     clink: {

@@ -35,7 +35,7 @@ import {
     destroyItem,
     dropItem,
     giveToPlayer,
-    placeNear,
+    placeBeside,
     shelfPush,
 } from '../items';
 import { activeOrderId } from '../orders';
@@ -204,10 +204,15 @@ function toFloor(world: World, itemId: string, tile: Tile): void {
 
     if (item === undefined) return;
 
-    // Nowhere within two tiles of the aisle to put it: the set stays in the
-    // hands that threw it rather than being deleted, and the next tick reads
-    // those hands as a swing waiting to happen.
-    if (!placeNear(world, item, tile)) world.log(`jig: no room beside ${tile.join(',')}`);
+    // Beside the aisle, never on it. A set on the aisle tile refuses every swing
+    // after it (`shared/src/sim/jig.ts:985`), so the miss that produced it would
+    // stop the line until somebody worked out that the thing at their feet was
+    // the reason — one mistimed Space, self-inflicted and self-locking.
+    //
+    // Nowhere within two tiles to put it: the set stays in the hands that threw
+    // it rather than being deleted, and the next tick reads those hands as a
+    // swing waiting to happen.
+    if (!placeBeside(world, item, tile)) world.log(`jig: no room beside ${tile.join(',')}`);
 }
 
 /** The stick pops off the jig when A walks out mid-crimp (docs/17's drop table). */

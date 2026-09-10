@@ -55,13 +55,17 @@ Epic: **EL-187**. Five feature docs and two ADRs written 2026-09-09; no code yet
 Build order: contracts v2.2 → F15 (the floor moves, and F16's distances are measured
 against it) → F14 → F17 → F16 → F13.
 
-| # | Ticket | Feature | Doc |
-|---|--------|---------|-----|
-| F13 | EL-189 | Menu, settings, crew management | `F13-menu-settings-crew.md` |
-| F14 | EL-190 | Two difficulty dials, tempo floors, admin surface | `F14-difficulty-tuning.md` · ADR 0014 |
-| F15 | EL-191 | Hoppers, the fuse rack, the re-laid floor | `F15-legible-flow.md` · ADR 0015 |
-| F16 | EL-192 | Sprint and the fumble meter | `F16-sprint-and-fumble.md` |
-| F17 | EL-193 | Hats: published intent and the empty-peg staffing board | `F17-hats-and-roles.md` |
+| # | Ticket | Feature | Doc | |
+|---|--------|---------|-----|---|
+| F13 | EL-189 | Menu, settings, crew management | `F13-menu-settings-crew.md` | ☐ |
+| F14 | EL-190 | Two difficulty dials, tempo floors, admin surface | `F14-difficulty-tuning.md` · ADR 0014 | ☐ |
+| F15 | EL-191 | Hoppers, the fuse rack, the re-laid floor | `F15-legible-flow.md` · ADR 0015 | ⏳ |
+| F16 | EL-192 | Sprint and the fumble meter | `F16-sprint-and-fumble.md` | ☐ |
+| F17 | EL-193 | Hats: published intent and the empty-peg staffing board | `F17-hats-and-roles.md` | ☐ |
+
+F15 is ⏳ rather than ✅: design, implementation and unit tests are done, and the in-app pass is
+outstanding. It needs a signed-in session on `/factories/{factory}/play`, which is the one box no
+agent can tick for itself.
 
 Legend: ☐ not started · ⏳ in progress · ✅ done (all four header boxes ticked in the doc).
 
@@ -79,13 +83,21 @@ because F02's `ConfigMsg` type-imports `Copy`.
 - ~~The lobby needs **3 players** to start a day~~ — **resolved**: ADR 0013 makes Level 1 and
   Sandbox `players.min: 1` with a small-crew scaling breakpoint, so one browser can start a
   shift. Three or more is still the real game, and the lobby says so.
-- The floor still violates **ADR 0015** (forward is rightward): the layout named `one-line`
-  zigzags. F15/EL-191 re-lays it.
+- ~~The floor still violates **ADR 0015** (forward is rightward): the layout named `one-line`
+  zigzags~~ — **resolved 2026-09-10** by F15/EL-191. `one-line.json` is re-laid as one band on
+  rows 3–7, `checkFlowDirection` in `validateLevelOnLayout` makes the rule enforced rather than
+  observed, and the same geometry is carried by all five levels, the dev level and every fixture
+  pair. The haul is much shorter for it: keg pickup to Assembly's intake went 7 tiles to 2, and
+  Assembly's out tray to a ramp lane 14 to 5 — about 7.9 s of walking per stick removed at
+  `movement.tilesPerSecond: 4` and `carry.slowdown: 0.2`. Level 01's 60-stick book was above one
+  hauler's walking capacity before (51 sticks a shift, ignoring machine time) and is now well
+  inside it (152). Retuning is deliberately not part of the re-lay; ADR 0015 says the dial is
+  `movement.tilesPerSecond` or the gaps between machines, after a playtest.
 
 ## Progress
 
-Wave 5 complete 2026-09-09 (`a38f6d3`): **2067 tests green** — game-server 611, shared 418,
-client 853, Laravel 185 — all four typechecks clean, server boots on :2567, and the play page
+Wave 5 complete 2026-09-09 (`a38f6d3`): **2181 tests green** — game-server 619, shared 445,
+client 932, Laravel 185 — all four typechecks clean, server boots on :2567, and the play page
 was exercised in a real browser: the shift starts, the clock runs, the order book draws down
 and a truck arrives.
 

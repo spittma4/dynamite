@@ -206,7 +206,7 @@ describe('sparkRing', () => {
 
         kegOn(world, [7, 5]);
 
-        const nearer = kegOn(world, [4, 4]);
+        const nearer = kegOn(world, [3, 5]);
 
         expect(sparkRing(world, 'powder-a', 'slammerRedline')).toBe('lit');
         expect(fuseKeys(world)).toEqual([nearer.id]);
@@ -218,7 +218,7 @@ describe('sparkRing', () => {
         expect(sparkRing(world, 'powder-a', 'slammerRedline')).toBe('noFuel');
         expect(fuseKeys(world)).toEqual([]);
         expect(world.outbox).toEqual([
-            { to: 'all', name: 'fx', payload: { kind: 'spark', x: 4.5, y: 4.5 } },
+            { to: 'all', name: 'fx', payload: { kind: 'spark', x: 2.5, y: 4.5 } },
         ]);
     });
 
@@ -535,14 +535,14 @@ describe('blast', () => {
 
     it('turfs a worker off the machine it threw them away from', () => {
         const world = started();
-        const player = stand(world, 'session-0', [5, 4]);
+        const player = stand(world, 'session-0', [4, 5]);
 
         expect(stationJoin(world, player)).toBe(true);
         expect(player.stationId).toBe('powder-a');
 
-        kegOn(world, [4, 4]);
+        kegOn(world, [4, 6]);
         world.level.hazards.fuseSeconds = 0.1;
-        spark(world, 4, 4, 'slammerRedline');
+        spark(world, 4, 6, 'slammerRedline');
         step(world, 0.1);
 
         expect(player.stationId).toBe('');
@@ -568,17 +568,17 @@ describe('escalation', () => {
 
         expect(shelfPush(world, station, 'out', shelved)).toBe(true);
 
-        const worker = stand(world, 'session-0', [5, 4]);
+        const worker = stand(world, 'session-0', [4, 5]);
 
         expect(stationJoin(world, worker)).toBe(true);
 
         pile(world, [
-            [2, 4],
-            [3, 4],
             [2, 5],
             [3, 5],
+            [2, 6],
+            [3, 6],
         ]);
-        spark(world, 2, 4, 'slammerRedline');
+        spark(world, 2, 5, 'slammerRedline');
 
         for (let i = 0; i < 40; i++) step(world);
 
@@ -598,12 +598,12 @@ describe('escalation', () => {
         const world = started();
 
         pile(world, [
-            [2, 4],
-            [3, 4],
             [2, 5],
             [3, 5],
+            [2, 6],
+            [3, 6],
         ]);
-        spark(world, 2, 4, 'slammerRedline');
+        spark(world, 2, 5, 'slammerRedline');
 
         for (let i = 0; i < 200; i++) step(world);
 
@@ -661,18 +661,18 @@ describe('escalation', () => {
         };
 
         pile(world, [
-            [3, 4],
-            [4, 4],
-            [5, 4],
-            [6, 4],
-            [7, 4],
             [3, 5],
             [4, 5],
             [5, 5],
             [6, 5],
             [7, 5],
+            [3, 6],
+            [4, 6],
+            [5, 6],
+            [6, 6],
+            [7, 6],
         ]);
-        spark(world, 3, 4, 'slammerRedline');
+        spark(world, 3, 5, 'slammerRedline');
 
         for (let i = 0; i < 140; i++) step(world);
 
@@ -685,17 +685,22 @@ describe('escalation', () => {
         });
     });
 
-    /** docs/16: Powder's ring is 9 and its shelf is 6 — one spark, fifteen kegs. */
-    const FULL_RING: Tile[] = [
-        [3, 4],
-        [4, 4],
-        [6, 4],
-        [7, 4],
+    /**
+     * Nine contiguous tiles chosen along Powder's ring — not the ring, which is
+     * sixteen tiles on the re-laid floor. Nine plus the six on the shelf is the
+     * fifteen kegs one spark takes, and contiguous is what makes the chain
+     * propagate across all of them.
+     */
+    const PILE_TILES: Tile[] = [
+        [2, 5],
         [3, 5],
         [4, 5],
         [5, 5],
         [6, 5],
         [7, 5],
+        [8, 5],
+        [8, 4],
+        [8, 3],
     ];
 
     function stockedShelf(world: World, kegs: number): void {
@@ -703,7 +708,7 @@ describe('escalation', () => {
 
         if (station === undefined) throw new Error('no powder-a');
 
-        for (const tile of FULL_RING) kegOn(world, tile);
+        for (const tile of PILE_TILES) kegOn(world, tile);
 
         for (let i = 0; i < kegs; i++) {
             expect(shelfPush(world, station, 'out', createItem(world, 'keg'))).toBe(true);
@@ -765,18 +770,18 @@ describe('escalation', () => {
         world.level.hazards.explosionEndsRound = false;
 
         pile(world, [
-            [3, 4],
-            [4, 4],
-            [5, 4],
-            [6, 4],
-            [7, 4],
             [3, 5],
             [4, 5],
             [5, 5],
             [6, 5],
             [7, 5],
+            [3, 6],
+            [4, 6],
+            [5, 6],
+            [6, 6],
+            [7, 6],
         ]);
-        spark(world, 3, 4, 'slammerRedline');
+        spark(world, 3, 5, 'slammerRedline');
 
         for (let i = 0; i < 140; i++) step(world);
 
@@ -835,7 +840,7 @@ describe('repair', () => {
 
         station.state = 'damaged';
 
-        return stand(world, 'session-0', [5, 4]);
+        return stand(world, 'session-0', [4, 5]);
     }
 
     it('files the incident report over ten seconds and reopens the machine', () => {
@@ -886,7 +891,7 @@ describe('repair', () => {
 
     it('needs a damaged machine, a work tile and empty hands', () => {
         const world = started();
-        const player = stand(world, 'session-0', [5, 4]);
+        const player = stand(world, 'session-0', [4, 5]);
 
         expect(tryBeginRepair(world, 'session-0', 'powder-a')).toBe(false);
 
@@ -898,7 +903,7 @@ describe('repair', () => {
         stand(world, 'session-0', [9, 8]);
         expect(tryBeginRepair(world, 'session-0', 'powder-a')).toBe(false);
 
-        stand(world, 'session-0', [5, 4]);
+        stand(world, 'session-0', [4, 5]);
         player.carrying = 'broom';
         expect(tryBeginRepair(world, 'session-0', 'powder-a')).toBe(false);
     });
@@ -909,12 +914,12 @@ describe('beacon', () => {
         const world = started();
         const station = world.state.stations.get('powder-a');
 
-        for (const tile of [[3, 4], [4, 4], [6, 4], [7, 4]] as Tile[]) kegOn(world, tile);
+        for (const tile of [[2, 5], [3, 5], [5, 5], [6, 5]] as Tile[]) kegOn(world, tile);
 
         step(world);
         expect(station?.beacon).toBe('off');
 
-        kegOn(world, [3, 5]);
+        kegOn(world, [7, 5]);
         step(world);
         expect(station?.beacon).toBe('red');
 
@@ -938,7 +943,7 @@ describe('beacon', () => {
         step(world);
         expect(station.beacon).toBe('gold');
 
-        for (const tile of [[3, 4], [4, 4], [6, 4], [7, 4], [3, 5]] as Tile[]) kegOn(world, tile);
+        for (const tile of [[2, 5], [3, 5], [5, 5], [6, 5], [7, 5]] as Tile[]) kegOn(world, tile);
 
         step(world);
         expect(station.beacon).toBe('red');
@@ -946,9 +951,9 @@ describe('beacon', () => {
 });
 
 describe('the blast bin', () => {
-    /** Facing 6 is north (contracts §3), so the bin at [3, 3] is the faced tile. */
+    /** Facing 6 is north (contracts §3), so the bin at [1, 7] is the faced tile. */
     const NORTH = 6;
-    const EAST = 0;
+    const WEST = 4;
 
     function interact(world: World, sessionId: string, player: PlayerState): void {
         MESSAGE_HANDLERS.interact(
@@ -964,10 +969,10 @@ describe('the blast bin', () => {
 
     it('swallows a lit keg put down in it and credits the carrier', () => {
         const world = started();
-        const keg = kegOn(world, [3, 4]);
-        const player = stand(world, 'session-0', [3, 4]);
+        const keg = kegOn(world, [1, 8]);
+        const player = stand(world, 'session-0', [1, 8]);
 
-        spark(world, 3, 4, 'slammerRedline');
+        spark(world, 1, 8, 'slammerRedline');
         expect(giveToPlayer(world, keg, 'session-0')).toBe(true);
         step(world);
         world.outbox.length = 0;
@@ -989,17 +994,17 @@ describe('the blast bin', () => {
         expect(world.tally.destroyedByType.keg).toBe(0);
     });
 
-    /** A thrown keg rolls one tile on, so the bin catches one thrown at its wall. */
+    /** A thrown keg rolls one tile on, so the bin at [1,7] catches one against the west wall. */
     it('swallows a lit keg thrown into it', () => {
         const world = started();
-        const keg = kegOn(world, [1, 3]);
-        const player = stand(world, 'session-0', [1, 3]);
+        const keg = kegOn(world, [3, 7]);
+        const player = stand(world, 'session-0', [3, 7]);
 
-        spark(world, 1, 3, 'fizzle');
+        spark(world, 3, 7, 'fizzle');
         expect(giveToPlayer(world, keg, 'session-0')).toBe(true);
         world.tick(TICK);
 
-        player.facing = EAST;
+        player.facing = WEST;
         expect(onAction(world, player, world.now * 1000)).toBe(true);
 
         world.outbox.length = 0;
@@ -1016,15 +1021,15 @@ describe('the blast bin', () => {
 
     it('lets a lit keg land anywhere else with its fuse still burning', () => {
         const world = started();
-        const keg = kegOn(world, [6, 5]);
-        const player = stand(world, 'session-0', [6, 5]);
+        const keg = kegOn(world, [6, 6]);
+        const player = stand(world, 'session-0', [6, 6]);
 
-        spark(world, 6, 5, 'slammerRedline');
+        spark(world, 6, 6, 'slammerRedline');
         expect(giveToPlayer(world, keg, 'session-0')).toBe(true);
         player.facing = NORTH;
         interact(world, 'session-0', player);
 
-        expect(world.itemsAt(6, 4)).toEqual([keg.id]);
+        expect(world.itemsAt(6, 5)).toEqual([keg.id]);
         expect(fuseKeys(world)).toEqual([keg.id]);
         expect(world.state.items.has(keg.id)).toBe(true);
     });
@@ -1032,7 +1037,7 @@ describe('the blast bin', () => {
     it('is furniture to an unlit keg rather than a place to dump it', () => {
         const world = started();
         const keg = createItem(world, 'keg');
-        const player = stand(world, 'session-0', [3, 4]);
+        const player = stand(world, 'session-0', [1, 8]);
 
         expect(giveToPlayer(world, keg, 'session-0')).toBe(true);
         player.facing = NORTH;
@@ -1040,7 +1045,7 @@ describe('the blast bin', () => {
 
         expect(player.carrying).toBe(keg.id);
         expect(world.grooveEvents.niceSaves).toBe(0);
-        expect(onItemLanded(world, keg.id, 3, 3)).toBe('landed');
+        expect(onItemLanded(world, keg.id, 1, 7)).toBe('landed');
     });
 });
 
@@ -1048,7 +1053,7 @@ describe('resetHazards after a bad day', () => {
     it('sweeps the scorch, the damage and the soot off the floor', () => {
         const world = started();
         const station = world.state.stations.get('powder-a');
-        const player = stand(world, 'session-0', [5, 4]);
+        const player = stand(world, 'session-0', [4, 5]);
 
         if (station === undefined) throw new Error('no powder-a');
 

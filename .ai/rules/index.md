@@ -11,3 +11,5 @@ you are about to touch. `dynamite.md` applies everywhere.
 | `resources/js/game/**` | `client.md` — the Phaser client |
 | `app/**`, `routes/**`, `database/**`, `resources/views/**`, `tests/**` | `laravel.md` — the Laravel shell |
 | `config/game/**` | `config.md` — level, layout and copy JSON |
+| `config/game/layouts/**` | `layouts.md` — invariants a layout must satisfy that the drawing depends on |
+| `config/game/levels/**` | `levels.md` — invariants a station block must satisfy that the drawing depends on |

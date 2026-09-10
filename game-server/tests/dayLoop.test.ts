@@ -227,6 +227,12 @@ describe('the whistle', () => {
 
         if (player === undefined) throw new Error('no player');
 
+        // Out of the doorway and onto open floor: this is about the whistle not
+        // freezing input, not about how much elbow room a spawn tile has.
+        player.x = 10.5;
+        player.y = 10.5;
+        world.reindexPlayers();
+
         const startX = player.x;
 
         for (let step = 0; step < 10; step++) {

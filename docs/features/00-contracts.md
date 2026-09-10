@@ -403,8 +403,12 @@ Validation (`shared/src/config/validate.ts`, Node-only): `validateLevelConfig(in
 returns the config **with §13 defaults applied** (consumers never branch on `undefined`);
 `validateLayoutConfig(input): ValidationResult<LayoutConfig>`; `validateLevelOnLayout(level, layout): string[]`
 (`[]` = ok) checks: work, rack and ring tiles in bounds and not walls; anchor and shelf tiles in bounds;
-each shelf tile has ≥ 1 orthogonal in-bounds non-wall neighbour; no two stations share a work/rack/shelf/ring
-tile; `ramp` equals the dock station's `workTiles`; `truckBay` contains no wall. `ValidationResult<T> =
+each shelf tile has ≥ 1 orthogonal in-bounds non-wall neighbour; the tile **above** each shelf tile is a
+wall, because the hopper drawn on it rises into the machine and must never stand on a tile anybody walks
+on; no two stations share a work/rack/shelf/ring tile; `ramp` equals the dock station's `workTiles`;
+`truckBay` contains no wall; every station with a non-empty `floorRing` has a `beaconPoles` entry, because
+`tickBeacons` reddens any station with a ring and the client draws no lamp, no hazard stripes and no alarm
+without a pole to hang them on; plus `checkFlowDirection(level, errors)`, the four ADR 0015 rules. `ValidationResult<T> =
 { ok: true; value: T } | { ok: false; errors: string[] }`; the room throws `new Error(errors.join('\n'))`
 on `ok: false`. `shared/src/config/schema.json` is the JSON Schema (draft-07, self-contained) Laravel
 validates with by path.
@@ -692,6 +696,15 @@ modules: `shared/src/sim/slammer.ts` (F07: `SlammerMg`, `encodeMg`, `decodeMg`, 
 `idleMg`, `KEG_QUALITY` — no spark-tile picker); `shared/src/sim/jig.ts` (F08: `JigConfig` incl.
 `casings`, `JigMg`, `JigState`, `JigEvent`, `JigEffect`, `createJigState`, `reduceJig`, `toMg`,
 `stationStatus`, timing helpers); `shared/src/sim/orders.ts` + `shared/src/sim/dock.ts` (F09, §10.6).
+`JigMg` carries `bPickFromOrder: boolean` beside `bPick`: true while the pick is still the active
+order's own length and B has not overridden it. `reconcileRoles` re-derives `bPick` from
+`view.orders[0]` on every tick while it is true, `state.b !== ''` and `bPhase === 'idle'` — the
+phase guard is what keeps a set already fetched or in flight from being retimed — and a `pick` op
+sets it to whether the pressed length agrees with the active order. Read by the B panel and by the
+world rack tile, so both can say the game made this choice rather than draw it as a default the
+player is being tested on.
+`partsToFloor` lands through `placeBeside`, never `placeNear`: an item on the Jig's aisle tile
+refuses every subsequent swing, so a missed toss placed on it stopped the line with its own debris.
 One of those timing helpers carries a signature other features read:
 `crimpClicks(lastKnotAt: number, clicks: number, leadSeconds: number, clickSeconds: number):
 number[]` — four parameters since F14/EL-186, and it now places click `i` at
@@ -707,6 +720,7 @@ export function destroyItem(world: World, itemId: string): void;    // clears ha
 export function floorItemAt(world: World, t: Tile): ItemState | null;
 export function placeOnFloor(world: World, item: ItemState, t: Tile): boolean;   // false when blocked or occupied
 export function placeNear(world: World, item: ItemState, t: Tile): boolean;      // placeOnFloor at t, else ring search radius ≤ 2
+export function placeBeside(world: World, item: ItemState, t: Tile): boolean;    // the ring search alone — never t itself
 export function giveToPlayer(world: World, item: ItemState, sessionId: string): boolean;   // false when hands full
 export function takeCarried(world: World, sessionId: string): ItemState | null;  // holder '', x/y −1; null when empty
 export function releaseCarried(world: World, sessionId: string): void;           // disconnect: gentle put-down, no drop table
@@ -1074,3 +1088,31 @@ the config keys above.
 - Copy (joke lines) in `config/game/copy.json` through `Copy`; never inline. Functional strings with
   numbers (`TRUCK LEFT WITH 3/8`, `Need 3 players to start`) are code.
 - Consequences are player-caused, never random: callers roll `hazards.sparks.*` for a named cause.
+
+## v2.2 amendment — the flow invariant (ADR 0015, 2026-09-10)
+
+§8 `LevelConfig` gains two optional keys, and §13 gives neither a default — absent means the
+rule applies:
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `flowRightward` | `boolean?` | absent = `true` | The floor reads left to right in process order: an output shelf's x exceeds its station's work-tile x, an input shelf's x is below it, and each station sits right of its supplier. |
+| `flowExemption` | `string?` | — | Why this floor does not read left to right. Required when `flowRightward` is `false`, and an error when it is not. |
+
+Two validators hold this between them, and which one holds which half is the subject of an
+entire section of ADR 0015's Rejected list. The **pairing** rule — `flowRightward: false`
+requires a non-empty `flowExemption`, and a `flowExemption` without it is an error — is a
+`validateLevelConfig` semantic rule (`checkFlowExemption`), because it reads only the level and
+runs in Laravel's layout-free schema pass. The **four geometry rules** are
+`checkFlowDirection(level, errors)` inside `validateLevelOnLayout`, which is where every other
+tile invariant lives. `checkFlowDirection` re-checks the pairing itself rather than trusting the
+other validator to have run: `validateLevelOnLayout` is exported and callable alone, and an
+opt-out that switches the geometry off on a level nobody made the argument for is the one way
+this rule could be turned off by accident.
+
+The pair is deliberate: `notes` would have been the cheaper place to demand the argument and is
+not one, because every shipped level already carries a kilobyte of prose there, so the
+requirement would have been satisfied by text written about something else.
+
+No shipped level sets either key. The layout is `one-line` (28x18) and every station in every
+level satisfies the invariant.

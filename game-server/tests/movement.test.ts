@@ -9,7 +9,7 @@ import { makeWorld } from './helpers/world';
  * The open aisle of the `one-line` fixture: row 15 is clear from x = 1 to 26,
  * with the west wall at x = 0 for the push-out-of-a-wall case.
  */
-const AISLE_Y = 15.5;
+const AISLE_Y = 10.5;
 
 function bumpAt(bumps: BumpEvent[], index: number): BumpEvent {
     const bump = bumps[index];
@@ -122,7 +122,7 @@ describe('movementSystem speed', () => {
         expect(onItem.x).toBeCloseTo(10.5 + 0.08, 9);
 
         const onSpill = walker((world) => {
-            world.state.spillTiles.push(world.packTile(10, 15));
+            world.state.spillTiles.push(world.packTile(10, 10));
         });
 
         expect(onSpill.speed).toBeCloseTo(2.4, 9);

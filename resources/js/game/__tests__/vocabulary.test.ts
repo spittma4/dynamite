@@ -52,6 +52,33 @@ const RAW: Record<string, string> = import.meta.glob('../**/*.ts', {
 });
 
 /**
+ * Two places outside the client bundle where the game still talks to a player,
+ * and the guard could not see either: `config/game/copy.json` holds the joke
+ * lines (its `events.rushOrder` was quietly carrying a fifth name for the
+ * finished stick), and the server's three minigame modules hold the bonk texts —
+ * 'WRONG FUSE' at the ramp among them. A name is guarded by what a player reads,
+ * not by which package compiled it.
+ *
+ * `copy.json` cannot import a constant, so a joke line that needs to name a
+ * product has to go through a `{placeholder}` and `fill()`. Naming it by hand is
+ * exactly what this catches: 'GOLD DYNAMITE' was a fifth spelling of the
+ * finished stick, sitting unrendered in the file waiting for a surface to draw
+ * it.
+ */
+const OUTSIDE: Record<string, string> = {
+    ...import.meta.glob('../../../../config/game/*.json', {
+        query: '?raw',
+        import: 'default',
+        eager: true,
+    }),
+    ...import.meta.glob('../../../../game-server/src/sim/minigames/*.ts', {
+        query: '?raw',
+        import: 'default',
+        eager: true,
+    }),
+};
+
+/**
  * The code with its prose taken out. The comments are where these names are
  * *explained* — half the files below carry a paragraph about the spelling they
  * replaced — so scanning them would fail the guard for saying why it exists.
@@ -62,9 +89,15 @@ function code(source: string): string {
 
 // A key is relative to this file, so the tests themselves come back as './…'
 // and everything the client actually ships as '../…'.
-const FILES = Object.entries(RAW)
-    .filter(([path]) => path.startsWith('../'))
-    .map(([path, source]) => ({ name: path.slice('../'.length), code: code(source) }));
+const FILES = [
+    ...Object.entries(RAW)
+        .filter(([path]) => path.startsWith('../') && !path.startsWith('../../'))
+        .map(([path, source]) => ({ name: path.slice('../'.length), code: code(source) })),
+    ...Object.entries(OUTSIDE).map(([path, source]) => ({
+        name: path.replace(/^(\.\.\/)+/, ''),
+        code: code(source),
+    })),
+];
 
 /**
  * Which files write this name out. Bounded by non-identifier characters so the
@@ -73,9 +106,21 @@ const FILES = Object.entries(RAW)
  */
 function filesSaying(text: string): string[] {
     const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const spelling = new RegExp(`(?<![A-Za-z0-9_$])${escaped}(?![A-Za-z0-9_$])`);
+    const spelling = new RegExp(`(?<![A-Za-z0-9_$])${escaped}(?![A-Za-z0-9_$])`, caseFlag(text));
 
     return FILES.filter((file) => spelling.test(file.code)).map((file) => file.name);
+}
+
+/**
+ * A name with a space or a hyphen in it cannot be an identifier, so it is hunted
+ * in any case — which is how `RACK_STAKE` got away with writing 'fuse set' out
+ * in lower case for a whole feature. A single SHOUTY word is left case-sensitive
+ * on purpose: `KEGS` is a guarded sign and `kegs:` is a field on half the view
+ * objects in the client, and a guard that cannot tell them apart is one nobody
+ * can keep green.
+ */
+function caseFlag(text: string): string {
+    return /[^A-Za-z0-9_$]/.test(text) ? 'i' : '';
 }
 
 /**
@@ -139,8 +184,20 @@ describe('the signs quote the paint', () => {
  * and was read by a real playtester as a different object from the one the next
  * surface named.
  */
-const RETIRED: { spelling: RegExp; instead: string }[] = [
-    { spelling: /\bred[_ ]stick\b/i, instead: 'the recipe key, never the noun — use pluralOf' },
+const RETIRED: { spelling: RegExp; instead: string; exceptIn?: string[] }[] = [
+    {
+        spelling: /\bred[_ ]stick\b/i,
+        instead: 'the recipe key, never the noun — use pluralOf',
+        // The server's one legitimate use of the key: `Product` is a schema enum
+        // and the dock needs a fallback value for an order it cannot find. It is
+        // listed rather than regexed around, so the guard stays strong and the
+        // exception has to be argued for the next time somebody adds one.
+        exceptIn: ['game-server/src/sim/minigames/dock.ts'],
+    },
+    {
+        spelling: /\bGOLD DYNAMITE\b/i,
+        instead: `${pluralOf('stick')} — the gold is the prime keg's, not the stick's`,
+    },
     { spelling: /\bPARTS\b/, instead: FUSE_SET },
     { spelling: /\bfuse kit\b/i, instead: FUSE_SET },
     { spelling: /\bPRIME BOOM\b/i, instead: PRIME_KEG },
@@ -155,8 +212,11 @@ const RETIRED: { spelling: RegExp; instead: string }[] = [
 ];
 
 describe('names the game has retired', () => {
-    it.each(RETIRED)('never says $spelling again', ({ spelling }) => {
-        const offenders = FILES.filter((file) => spelling.test(file.code)).map((f) => f.name);
+    it.each(RETIRED)('never says $spelling again', ({ spelling, exceptIn }) => {
+        const allowed = new Set(exceptIn ?? []);
+        const offenders = FILES.filter(
+            (file) => spelling.test(file.code) && !allowed.has(file.name),
+        ).map((f) => f.name);
 
         expect(offenders).toEqual([]);
     });

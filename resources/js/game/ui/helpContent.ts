@@ -113,7 +113,7 @@ const STATIONS: Record<StationType, HelpSection> = {
             ['Space', 'Crimp: tap as the needle reaches the third click line.'],
             [
                 'At the rack',
-                `A ${FUSE_SET.toLowerCase()}: ← short · → long · hold Space to fetch and swing · release to toss it to A's cradle.`,
+                `The order picks the ${FUSE_SET.toLowerCase()} for you — the lit bin is the right one. ← short · → long to override. Hold Space to fetch and swing · release to toss it to A's cradle.`,
             ],
         ],
     },
@@ -165,6 +165,36 @@ const FLOW: HelpSection = {
 };
 
 /**
+ * The one system in the game with a countdown on it, and until now the only one
+ * with no presence in the panel a stuck player is told to open. The Slammer's
+ * rows introduce a spark and a pile and then leave both unexplained, and the two
+ * gold tiles at the ends of the line refuse an unlit item without a word — so a
+ * first-timer who guesses right and carries a keg over is silently refused for
+ * doing the correct thing.
+ *
+ * No seconds in it. `hazards.fuseSeconds` is a per-level knob and the burning
+ * fuse is already on screen counting itself down; a number written out here
+ * would be a second copy nothing keeps in step.
+ */
+const FIRE: HelpSection = {
+    title: 'When something catches',
+    rows: [
+        [
+            'A lit keg or stick',
+            'It burns down where it lies and then goes off, and everything piled in that machine\u2019s ring goes with it.',
+        ],
+        [
+            'Space',
+            'Stand on the burning tile with empty hands and press Space to stomp it out. It takes a moment, and you cannot move while you do.',
+        ],
+        [
+            'BLAST BIN',
+            'The gold tiles at each end of the line. Drop a burning item in and it is over. They take only what is already lit \u2014 an unlit keg is refused.',
+        ],
+    ],
+};
+
+/**
  * Help for where the player is standing. The station they are at comes first,
  * because that is the part nobody can guess; the floor controls stay below it
  * so the two are never in separate screens.
@@ -172,7 +202,7 @@ const FLOW: HelpSection = {
 export function helpSections(station: StationType | null, throwTiles: number): HelpSection[] {
     const floor = floorSection(throwTiles);
 
-    if (station && STATIONS[station]) return [STATIONS[station], FLOW, floor];
+    if (station && STATIONS[station]) return [STATIONS[station], FLOW, FIRE, floor];
 
-    return [FLOW, floor];
+    return [FLOW, FIRE, floor];
 }

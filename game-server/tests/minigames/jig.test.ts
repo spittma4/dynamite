@@ -412,6 +412,90 @@ describe('roles', () => {
         tickJig(state, { rackHands: ['b1'], orders: [{ orderId: 'o-1', fuseLength: 'short' }] });
 
         expect(state.bPick).toBe('short');
+        expect(state.bPickFromOrder).toBe(true);
+    });
+});
+
+/**
+ * The pick used to be derived once, inside `if (state.b !== b)`, and never
+ * again: a B who took the rack tile and stayed there kept the fuse length of
+ * whatever order was live when they arrived, through every rollover, for the
+ * rest of the shift. Nothing told them. They were not guessing wrong — they were
+ * being held to a stale answer, and the bill arrived three stations later when
+ * the Dock bonked somebody else's stick with WRONG FUSE.
+ */
+describe('the pick the order made', () => {
+    const short = [{ orderId: 'o-1', fuseLength: 'short' as const }];
+    const long = [{ orderId: 'o-2', fuseLength: 'long' as const }];
+
+    function atRack(orders = long): JigState {
+        const state = createJigState(CFG, TILES);
+
+        tickJig(state, { rackHands: ['b1'], orders });
+
+        return state;
+    }
+
+    it('follows the order across a rollover while B stands still', () => {
+        const state = atRack();
+
+        tickJig(state, { rackHands: ['b1'], orders: short });
+
+        expect(state.bPick).toBe('short');
+        expect(state.bPickFromOrder).toBe(true);
+    });
+
+    it('stops following the moment B picks the other bin', () => {
+        const state = atRack();
+
+        send(state, 'b1', 'pick', { v: 'short', view: { rackHands: ['b1'], orders: long } });
+
+        expect(state.bPick).toBe('short');
+        expect(state.bPickFromOrder).toBe(false);
+
+        tickJig(state, { rackHands: ['b1'], orders: long });
+
+        expect(state.bPick).toBe('short');
+    });
+
+    it('hands the pick back to the order when B presses back onto its length', () => {
+        const state = atRack();
+
+        send(state, 'b1', 'pick', { v: 'short', view: { rackHands: ['b1'], orders: long } });
+        send(state, 'b1', 'pick', { v: 'long', view: { rackHands: ['b1'], orders: long } });
+
+        expect(state.bPickFromOrder).toBe(true);
+
+        tickJig(state, { rackHands: ['b1'], orders: short });
+
+        expect(state.bPick).toBe('short');
+    });
+
+    /**
+     * A set already fetched or in flight is never retimed: the length is baked
+     * into the item the moment `createParts` fires, so re-deriving mid-phrase
+     * would make the panel disagree with what is in B's hands.
+     */
+    it('never retimes a set that is already fetched or in flight', () => {
+        const state = atRack();
+
+        send(state, 'b1', 'fetch', { at: 100 });
+        tickJig(state, { rackHands: ['b1'], orders: short });
+
+        expect(state.bPhase).toBe('fetching');
+        expect(state.bPick).toBe('long');
+    });
+
+    it('clears both when B walks away from the rack', () => {
+        const state = atRack();
+
+        tickJig(state, { rackHands: [] });
+
+        expect(state.bPickFromOrder).toBe(false);
+    });
+
+    it('publishes the flag on the wire, so the panel can say who chose', () => {
+        expect(toMg(atRack()).bPickFromOrder).toBe(true);
     });
 });
 
@@ -1336,8 +1420,8 @@ function run(world: World, seconds: number): void {
 /** A jig crewed past the clipboard: A on the first work tile, B on the rack. */
 function crewedJig(): { world: World; a: PlayerState; b: PlayerState } {
     const world = running(2);
-    const a = standOn(world, 'session-0', [13, 9]);
-    const b = standOn(world, 'session-1', [16, 9]);
+    const a = standOn(world, 'session-0', [13, 5]);
+    const b = standOn(world, 'session-1', [13, 7]);
 
     onInteract(world, a);
     onInteract(world, b);
@@ -1362,7 +1446,7 @@ function armCradle(world: World): void {
 
     leave(world, playerOf(world, 'session-1'));
     giveToPlayer(world, parts, 'session-1');
-    standOn(world, 'session-1', [14, 9]);
+    standOn(world, 'session-1', [14, 5]);
     run(world, 0.1);
 }
 
@@ -1465,7 +1549,7 @@ describe('the jig adapter', () => {
         settleOrder(world, 'o-1', 1);
         leave(world, b);
         run(world, 0.05);
-        onInteract(world, standOn(world, 'session-1', [16, 9]));
+        onInteract(world, standOn(world, 'session-1', [13, 7]));
         world.state.clock += 4;
         run(world, 0.1);
 
@@ -1556,7 +1640,13 @@ describe('the jig adapter', () => {
         expect(st.progress).toBeGreaterThan(0.24);
     });
 
-    it('puts a fetched parts set in B hands and litters the aisle on a bad toss', () => {
+    /**
+     * A missed toss drops the set beside the aisle and never on it. Landing it on
+     * the aisle refused every swing after it (`jig.ts:985`), so one mistimed
+     * Space — the most-pressed key in the game — stopped the whole line with its
+     * own debris, with B's panel still reading HOLD SPACE TO SWING.
+     */
+    it('puts a fetched parts set in B hands and drops it clear of the aisle on a bad toss', () => {
         const { world, b } = crewedJig();
 
         sendMg(world, b, 'fetch');
@@ -1571,8 +1661,26 @@ describe('the jig adapter', () => {
         run(world, 1);
 
         expect(b.carrying).toBe('');
-        expect(world.itemsAt(15, 9).length).toBe(1);
-        expect(mg(world).aisleBlocked).toBe(true);
+        // The rack sits below the left jig tile now, so the aisle is [13,6].
+        expect(world.itemsAt(13, 6)).toEqual([]);
+        expect(world.itemsAt(14, 6).length).toBe(1);
+        expect(mg(world).aisleBlocked).toBe(false);
+    });
+
+    it('lets B swing again after a missed toss', () => {
+        const { world, b } = crewedJig();
+
+        sendMg(world, b, 'fetch');
+        run(world, 0.7);
+        sendMg(world, b, 'swing');
+        run(world, 1);
+
+        sendMg(world, b, 'fetch');
+        run(world, 0.7);
+        sendMg(world, b, 'swing');
+        run(world, 0.1);
+
+        expect(mg(world).bPhase).toBe('swinging');
     });
 
     it('delivers the finished stick through complete and counts the defect', () => {
@@ -1595,7 +1703,7 @@ describe('the jig adapter', () => {
 
         leave(world, playerOf(world, 'session-1'));
         giveToPlayer(world, parts, 'session-1');
-        standOn(world, 'session-1', [14, 9]);
+        standOn(world, 'session-1', [14, 5]);
         run(world, 0.1);
 
         expect(mg(world).phase).toBe('knots');
@@ -1690,7 +1798,7 @@ describe('the jig adapter', () => {
         expect(mg(world).seated).not.toBeNull();
 
         shelveKeg(world);
-        onInteract(world, standOn(world, 'session-0', [13, 9]));
+        onInteract(world, standOn(world, 'session-0', [13, 5]));
         world.state.clock += 4;
         run(world, 0.1);
 
@@ -1769,7 +1877,7 @@ describe('the jig adapter', () => {
         run(world, 0.1);
         leave(world, a);
 
-        expect(world.isSpill(13, 9)).toBe(true);
+        expect(world.isSpill(13, 5)).toBe(true);
         expect(shelved(world, 'keg')).toBe(0);
         expect([...world.state.items.values()].some((item) => item.type === 'keg')).toBe(false);
     });

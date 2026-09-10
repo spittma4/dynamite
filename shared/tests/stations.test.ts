@@ -161,26 +161,26 @@ describe('tile geometry', () => {
     it('derives the bbox from the named tiles and the machine from the walls inside it', () => {
         const { bbox, machine } = footprintOf(powder, layout);
 
-        expect(bbox).toEqual({ x0: 4, y0: 2, x1: 7, y1: 4 });
+        expect(bbox).toEqual({ x0: 4, y0: 3, x1: 7, y1: 5 });
 
         const keys = machine.map(([x, y]: Tile) => `${x},${y}`).sort();
 
-        expect(keys).toEqual(['4,2', '4,3', '5,2', '5,3', '6,2', '6,3', '7,3']);
+        expect(keys).toEqual(['4,3', '4,4', '5,3', '5,4', '6,3', '6,4', '7,3', '7,4']);
     });
 
     it('puts the work, rack and ring tiles in the join zone and nothing else', () => {
         const zone = joinZoneOf(assembly);
 
-        expect(zone.has('13,9')).toBe(true);
-        expect(zone.has('16,9')).toBe(true);
+        expect(zone.has('13,5')).toBe(true);
+        expect(zone.has('13,7')).toBe(true);
         expect(zone.has('11,7')).toBe(true);
-        expect(zone.has('12,9')).toBe(false);
-        expect(zone.size).toBe(2 + 1 + 9);
+        expect(zone.has('11,4')).toBe(false);
+        expect(zone.size).toBe(2 + 1 + 20);
     });
 
     it('maps a tile to the role that stands on it', () => {
-        expect(roleForTile(assembly, [13, 9])).toBe('work');
-        expect(roleForTile(assembly, [16, 9])).toBe('rack');
+        expect(roleForTile(assembly, [13, 5])).toBe('work');
+        expect(roleForTile(assembly, [13, 7])).toBe('rack');
         expect(roleForTile(assembly, [11, 7])).toBe('helper');
         expect(roleForTile(assembly, [1, 1])).toBeNull();
     });

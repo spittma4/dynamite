@@ -1,8 +1,16 @@
-import { TILE_PX, type LayoutConfig, type StationState, type Tile, unpackTile } from '@shared';
+import {
+    TILE_PX,
+    type LayoutConfig,
+    type OrderState,
+    type StationState,
+    type Tile,
+    unpackTile,
+} from '@shared';
 import type Phaser from 'phaser';
 
-import { ORDER_BOARD } from '../nouns';
+import { NOTHING_ON_THE_BOARD, ORDER_BOARD } from '../nouns';
 import { UI } from './palette';
+import { wallBoardLine } from '../ui/orderBoard';
 import type { Factory } from '../scenes/Factory';
 
 /**
@@ -18,6 +26,8 @@ const GRID_ALPHA = 0.08;
 const SPILL_ALPHA = 0.55;
 const SCORCH_ALPHA = 0.5;
 const PROP_PX = 24;
+/** The board's live line sits under its name, on the same tile. */
+const BOARD_LINE_GAP = 11;
 const BEACON_RADIUS = 6;
 const BLINK_SECONDS = 0.5;
 
@@ -48,8 +58,9 @@ export const FLOOR_LABEL = {
 /**
  * The centre a label is actually drawn at, given how big it turned out.
  *
- * No shipped layout reaches this: `one-line.json`'s only blast bin is tile
- * [1, 8], whose 43 px caption starts at x = 26 inside an 896 px world. It is
+ * No shipped layout reaches this: `one-line.json`'s two blast bins are [1, 7]
+ * and [19, 7], and the leftmost 43 px caption starts at x = 26 inside an 896 px
+ * world. It is
  * here for the layout a designer writes tomorrow with a prop in column 0 or
  * row 0 — the map is resized to exactly `width × TILE_PX`
  * (`Factory.applyConfig`), so there is no margin to overhang into and the
@@ -104,8 +115,10 @@ export class FloorView {
     private beacons: Phaser.GameObjects.Graphics | null = null;
     private labels: Phaser.GameObjects.Text[] = [];
     private poleTiles: { id: string; x: number; y: number }[] = [];
+    private boardLine: Phaser.GameObjects.Text | null = null;
     private lastTileKey = '';
     private lastBeaconKey = '';
+    private lastBoardLine = '';
 
     constructor(
         private readonly scene: Factory,
@@ -212,7 +225,9 @@ export class FloorView {
         this.map = null;
         this.tiles = null;
         this.beacons = null;
+        this.boardLine = null;
         this.poleTiles = [];
+        this.lastBoardLine = '';
     }
 
     private ground(map: Phaser.GameObjects.Graphics, layout: LayoutConfig): void {
@@ -277,6 +292,27 @@ export class FloorView {
             TILE_PX,
         );
         this.label(ORDER_BOARD, board.x, board.y, 8);
+
+        // The board's second line, the only live text on the floor. It says the
+        // one thing the wall between Assembly and the Dock could never say: which
+        // fuse the order being worked wants. Without it the requirement lived on
+        // the Tab board and in the Jig's overlay and nowhere a hauler walking
+        // past could read it — and the ramp is where the mismatch is punished,
+        // usually in the hands of somebody who did none of the work.
+        this.boardLine = this.label(NOTHING_ON_THE_BOARD, board.x, board.y + BOARD_LINE_GAP, 8);
+    }
+
+    /**
+     * The board prop's live line. Repainted only when the sentence changes, so
+     * the caller can hand it every frame.
+     */
+    setOrderBoard(orders: Iterable<OrderState>): void {
+        const line = wallBoardLine(orders);
+
+        if (!this.boardLine || line === this.lastBoardLine) return;
+
+        this.lastBoardLine = line;
+        this.boardLine.setText(line);
     }
 
     /** Each ramp tile carries a chevron pointing at the dock door. */
@@ -325,7 +361,7 @@ export class FloorView {
         }
     }
 
-    private label(text: string, x: number, y: number, size: number): void {
+    private label(text: string, x: number, y: number, size: number): Phaser.GameObjects.Text {
         const label = this.scene.add.text(x, y, text, {
             fontFamily: 'monospace',
             fontSize: `${size}px`,
@@ -341,5 +377,7 @@ export class FloorView {
         label.setPosition(at.x, at.y);
         this.layer.add(label);
         this.labels.push(label);
+
+        return label;
     }
 }

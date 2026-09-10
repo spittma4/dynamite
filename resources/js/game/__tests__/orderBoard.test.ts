@@ -7,6 +7,7 @@ import {
     type BoardView,
     compareOrderIds,
     orderBoardRows,
+    wallBoardLine,
 } from '../ui/orderBoard';
 import { NOTHING_ON_THE_BOARD, TRUCK_LEAVING, truckIn, truckLeaves } from '../nouns';
 import { truckHeadline } from '../minigames/Dock';
@@ -186,6 +187,52 @@ describe('orderBoardRows', () => {
         const columns = rows.map((row) => row.text.indexOf('TRUCK IN'));
 
         expect(columns[0]).toBe(columns[1]);
+    });
+});
+
+/**
+ * The wall board at [18,3] drew the word ORDERS and nothing else, and it is the
+ * one surface between Assembly and the Dock that every hauler walks past. The
+ * fuse a stick has to carry was on the Tab board and in the Jig's own overlay
+ * and nowhere in world space — so the hauler who eats the WRONG FUSE bonk at the
+ * ramp had no way to see the requirement from where they were standing.
+ */
+describe('wallBoardLine', () => {
+    it('names the fuse the order at the top of the book wants', () => {
+        expect(wallBoardLine([order({ id: 'o-2', fuseLength: 'short' })])).toBe('SHORT FUSE');
+    });
+
+    it('reads the book in order, not in arrival order', () => {
+        const orders = [
+            order({ id: 'o-10', fuseLength: 'short' }),
+            order({ id: 'o-2', fuseLength: 'long' }),
+        ];
+
+        expect(wallBoardLine(orders)).toBe('LONG FUSE');
+    });
+
+    it('skips an order that is already settled', () => {
+        const orders = [
+            order({ id: 'o-1', fuseLength: 'short', status: 'shipped' }),
+            order({ id: 'o-2', fuseLength: 'long' }),
+        ];
+
+        expect(wallBoardLine(orders)).toBe('LONG FUSE');
+    });
+
+    it('says the empty book in the words every other surface uses', () => {
+        expect(wallBoardLine([])).toBe(NOTHING_ON_THE_BOARD);
+    });
+
+    /**
+     * The same wording the Tab board's own fuse column uses, so the wall and the
+     * clipboard are one sentence rather than two spellings.
+     */
+    it('quotes the column the Tab board already prints', () => {
+        const orders = [order({ id: 'o-1', fuseLength: 'long' })];
+        const row = orderBoardRows(orders, view())[0];
+
+        expect(row?.text).toContain(wallBoardLine(orders));
     });
 });
 

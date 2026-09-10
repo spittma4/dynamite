@@ -2,6 +2,7 @@ import { TILE_PX, type LayoutConfig } from '@shared';
 import { describe, expect, it } from 'vitest';
 
 import { FLOOR_LABEL, FloorView, beaconColour, clampLabel } from '../render/Floor';
+import { NOTHING_ON_THE_BOARD, ORDER_BOARD } from '../nouns';
 import { UI } from '../render/palette';
 import type { Factory } from '../scenes/Factory';
 
@@ -114,7 +115,7 @@ function measure(text: string, style: TextStyle): { width: number; height: numbe
     return { width: text.length * size * 0.6 + stroke, height: size + stroke };
 }
 
-function paint(layout: LayoutConfig): Painted[] {
+function painter(layout: LayoutConfig): { painted: Painted[]; view: FloorView } {
     const painted: Painted[] = [];
     const scene = stub({
         add: stub({
@@ -139,14 +140,25 @@ function paint(layout: LayoutConfig): Painted[] {
                         label.x = px;
                         label.y = py;
                     },
+                    // The board's live line is the one label that changes after
+                    // it is drawn, so what it ends up saying has to be readable.
+                    setText: (value: string) => {
+                        label.text = value;
+                    },
                 });
             },
         }),
     }) as unknown as Factory;
 
-    new FloorView(scene, stub({}) as never).draw(layout);
+    const view = new FloorView(scene, stub({}) as never);
 
-    return painted;
+    view.draw(layout);
+
+    return { painted, view };
+}
+
+function paint(layout: LayoutConfig): Painted[] {
+    return painter(layout).painted;
 }
 
 /**
@@ -274,6 +286,35 @@ describe('the labels on the floor', () => {
         expect(bins).toHaveLength(2);
 
         for (const bin of bins) expect(bin.width).toBeGreaterThan(TILE_PX);
+    });
+
+    /**
+     * The prop drew the word ORDERS and nothing else, and it is the one surface
+     * between Assembly and the Dock that every hauler walks past. Until now the
+     * required fuse length existed on the Tab board and in the Jig's overlay and
+     * nowhere in world space, so the hauler who eats the WRONG FUSE bonk at the
+     * ramp could not see the requirement from where they stood.
+     */
+    it('carries what the order wants under the board prop, live', () => {
+        const { painted, view } = painter(edgeLayout());
+
+        view.setOrderBoard([
+            { id: 'o-1', fuseLength: 'short', status: 'open' },
+            { id: 'o-2', fuseLength: 'long', status: 'open' },
+        ] as never);
+
+        const said = painted.map((label) => label.text);
+
+        expect(said).toContain(ORDER_BOARD);
+        expect(said).toContain('SHORT FUSE');
+    });
+
+    it('says the empty book rather than going blank when the day is done', () => {
+        const { painted, view } = painter(edgeLayout());
+
+        view.setOrderBoard([] as never);
+
+        expect(painted.map((label) => label.text)).toContain(NOTHING_ON_THE_BOARD);
     });
 
     it('keeps every label inside the world, at all four walls', () => {
